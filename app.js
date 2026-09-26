@@ -54,7 +54,7 @@ async function syncToServer() {
     const res = await fetch(api('/api/data'), {
       method: 'PUT',
       headers: authHeaders(),
-      body: JSON.stringify({ accounts: state.accounts, entries: state.entries, seq: state.seq, currency: state.user.currency }),
+      body: JSON.stringify({ accounts: state.accounts, entries: state.entries, seq: state.seq, currency: state.user.currency, budgets: state.budgets || {}, recurring: state.recurring || [] }),
     });
     if (res.status === 401) { endSession(); return false; }
     return res.ok;
@@ -269,8 +269,43 @@ document.getElementById('accountsList').addEventListener('click', ev => {
   }
 });
 
+function renderBudgets() {
+  const m = todayISO().slice(0, 7);
+  const spent = {};
+  for (const e of state.entries) {
+    if (!e.date.startsWith(m)) continue;
+    for (const l of e.lines) {
+      const a = accById(l.accountId);
+      if (a && a.type === 'Gasto') spent[a.id] = round2((spent[a.id] || 0) + (Number(l.debit) || 0) - (Number(l.credit) || 0));
+    }
+  }
+  const gastos = state.accounts.filter(a => a.type === 'Gasto' && !a.archived);
+  document.getElementById('budgetsBox').innerHTML = gastos.length ? gastos.map(a => {
+    const s = spent[a.id] || 0;
+    const b = Number(state.budgets[a.id]) || 0;
+    const pct = b > 0 ? Math.min(100, Math.round(s / b * 100)) : 0;
+    const cls = !b ? '' : (s > b ? 'over' : (pct >= 80 ? 'warn' : 'ok'));
+    const msg = !b ? '<span class="muted small">sin límite</span>'
+      : (s > b ? `⚠️ superado por ${fmt(s - b)}` : (pct >= 80 ? `⚠️ ${pct} % usado` : `${pct} % usado`));
+    return `<div class="budget-row">
+      <span class="budget-name">${esc(a.name)}<br /><span class="muted small">${fmt(s)}${b ? ' de ' + fmt(b) : ''} · ${msg}</span></span>
+      <span class="budget-bar"><span class="fill ${cls}" style="width:${pct}%"></span></span>
+      <input type="number" min="0" step="1" placeholder="Límite €" value="${b || ''}" data-budget="${a.id}" title="Límite mensual en €" />
+    </div>`;
+  }).join('') : '<p class="muted">No hay cuentas de gasto.</p>';
+}
+document.getElementById('budgetsBox').addEventListener('change', ev => {
+  const id = ev.target.dataset.budget;
+  if (!id) return;
+  const v = round2(ev.target.value);
+  if (v > 0) state.budgets[id] = v;
+  else delete state.budgets[id];
+  save(); renderBudgets(); renderDashboard();
+});
+
 // ---------- Informes ----------
 function renderReports() {
+  renderBudgets();
   const t = totalsByAccount();
   let td = 0, th = 0;
   document.getElementById('trialTable').querySelector('tbody').innerHTML = state.accounts
@@ -441,6 +476,8 @@ document.getElementById('fileImport').addEventListener('change', ev => {
       state.accounts = data.accounts;
       state.entries = data.entries || [];
       state.seq = data.seq || state.entries.length + 1;
+      state.budgets = (data.budgets && typeof data.budgets === 'object') ? data.budgets : {};
+      state.recurring = Array.isArray(data.recurring) ? data.recurring : [];
       if (data.currency) state.user.currency = data.currency;
       save(); renderAll();
       const ok = await syncToServer();
@@ -576,6 +613,8 @@ function freshState(name) {
     accounts: BASE_ACCOUNTS.map(a => ({ id: uid(), ...a, archived: false })),
     entries: [],
     seq: 1,
+    budgets: {},
+    recurring: [],
   };
 }
 function endSession() {
@@ -598,6 +637,8 @@ async function loadUserData() {
     state.accounts = server.accounts;
     state.entries = server.entries || [];
     state.seq = server.seq || state.entries.length + 1;
+    state.budgets = (server.budgets && typeof server.budgets === 'object') ? server.budgets : {};
+    state.recurring = Array.isArray(server.recurring) ? server.recurring : [];
     state.user = { name: currentUser.name, currency: server.currency || 'EUR' };
   } else {
     // Usuario sin datos en la BD: NUNCA hereda la contabilidad de otro usuario.
@@ -618,7 +659,9 @@ async function loadUserData() {
       }
     }
     state.user = { name: currentUser.name, currency: (state.user && state.user.currency) || 'EUR' };
-    save(); // persiste en BD vía queueSync + caché local
+    if (!state.budgets || typeof state.budgets !== 'object') state.budgets = {};
+    if (!Array.isArray(state.recurring)) state.recurring = [];
+    save();
     await syncToServer();
   }
   try { localStorage.setItem(userKey(), JSON.stringify(state)); } catch {}

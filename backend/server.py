@@ -166,6 +166,29 @@ def _num(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
+def _validate_lines(lines, ids):
+    """Devuelve (debe, haber, error)."""
+    if not isinstance(lines, list) or len(lines) < 2:
+        return 0, 0, "Todo asiento necesita al menos 2 líneas."
+    d = h = 0.0
+    for l in lines:
+        if not isinstance(l, dict):
+            return 0, 0, "Línea de asiento inválida."
+        if l.get("accountId") not in ids:
+            return 0, 0, "Línea con cuenta desconocida."
+        db, cr = l.get("debit", 0), l.get("credit", 0)
+        if not _num(db) or not _num(cr) or db < 0 or cr < 0:
+            return 0, 0, "Importes inválidos en un asiento."
+        if db > 0 and cr > 0:
+            return 0, 0, "Una línea no puede tener debe y haber."
+        if db == 0 and cr == 0:
+            return 0, 0, "Línea sin importe."
+        d, h = d + db, h + cr
+    if round(d, 2) != round(h, 2) or d <= 0:
+        return 0, 0, "Asiento descuadrado: debe ≠ haber."
+    return d, h, None
+
+
 def validate_data(body):
     """Valida la contabilidad antes de guardarla. None = válido, str = error."""
     if not isinstance(body, dict):
@@ -196,25 +219,31 @@ def validate_data(body):
             _date(*map(int, e["date"].split("-")))
         except ValueError:
             return "Fecha inexistente en un asiento."
-        lines = e.get("lines")
-        if not isinstance(lines, list) or len(lines) < 2:
-            return "Todo asiento necesita al menos 2 líneas."
-        d = h = 0.0
-        for l in lines:
-            if not isinstance(l, dict):
-                return "Línea de asiento inválida."
-            if l.get("accountId") not in ids:
-                return "Línea con cuenta desconocida."
-            db, cr = l.get("debit", 0), l.get("credit", 0)
-            if not _num(db) or not _num(cr) or db < 0 or cr < 0:
-                return "Importes inválidos en un asiento."
-            if db > 0 and cr > 0:
-                return "Una línea no puede tener debe y haber."
-            if db == 0 and cr == 0:
-                return "Línea sin importe."
-            d, h = d + db, h + cr
-        if round(d, 2) != round(h, 2) or d <= 0:
-            return "Asiento descuadrado: debe ≠ haber."
+        _, _, err = _validate_lines(e.get("lines"), ids)
+        if err:
+            return err
+    budgets = body.get("budgets", {})
+    if not isinstance(budgets, dict):
+        return "Presupuestos inválidos."
+    for k, v in budgets.items():
+        if not isinstance(k, str) or not _num(v) or v < 0:
+            return "Presupuesto inválido."
+    rec = body.get("recurring", [])
+    if not isinstance(rec, list):
+        return "Recurrentes inválidos."
+    for r in rec:
+        if not isinstance(r, dict):
+            return "Plantilla recurrente inválida."
+        if not isinstance(r.get("desc"), str) or not r["desc"].strip():
+            return "Plantilla recurrente sin descripción."
+        if not isinstance(r.get("day"), int) or not 1 <= r["day"] <= 28:
+            return "Día inválido en plantilla recurrente."
+        if "lastRun" in r and (not isinstance(r["lastRun"], str) or
+                               not re.match(r"^\d{4}-\d{2}$", r["lastRun"])):
+            return "Marca de generación inválida."
+        _, _, err = _validate_lines(r.get("lines"), ids)
+        if err:
+            return err
     return None
 
 

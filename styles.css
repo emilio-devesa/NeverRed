@@ -151,6 +151,13 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .auth-form { display: flex; flex-direction: column; gap: 10px; }
 .auth-form[hidden] { display: none; }
 .auth-form .btn { margin-top: 4px; }
+.budget-row { display: grid; grid-template-columns: 1fr 1fr 110px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.budget-row input { width: 100%; }
+.budget-bar { height: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.budget-bar .fill { display: block; height: 100%; background: var(--green); }
+.budget-bar .fill.warn { background: #f59e0b; }
+.budget-bar .fill.over { background: var(--red); }
+@media (max-width: 860px) { .budget-row { grid-template-columns: 1fr; } }
 .file-warn {
   background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.4);
   color: #fca5a5; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 4px 0;
