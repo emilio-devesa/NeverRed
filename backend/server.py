@@ -131,11 +131,25 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- utilidades --
     def _cors_headers(self):
-        # Permite que la app funcione incluso abierta como archivo local (file://)
-        # apuntando a http://127.0.0.1:8000. App personal local: riesgo minimo.
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        # Solo se permite CORS al mismo origen y al modo archivo local
+        # (Origin: null). Cualquier otro sitio no recibe cabeceras.
+        from urllib.parse import urlparse as _up
+        origin = self.headers.get("Origin") or ""
+        host = (self.headers.get("Host") or "").split(":")[0]
+        allowed = None
+        if origin == "null":
+            allowed = "*"  # index.html abierto con doble clic
+        elif origin:
+            try:
+                if _up(origin).hostname in (host, "127.0.0.1", "localhost"):
+                    allowed = origin
+            except Exception:
+                allowed = None
+        if allowed:
+            self.send_header("Access-Control-Allow-Origin", allowed)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 
     def _send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
