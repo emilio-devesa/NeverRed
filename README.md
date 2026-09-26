@@ -36,6 +36,12 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - **Panel**: patrimonio neto, ecuación fundamental en vivo, gráfico ingresos vs gastos 6 meses, accesos rápidos (sueldo, gasto, transferencia).
 - **Datos locales**: todo se guarda en `localStorage`. Exporta/importa JSON para copia de seguridad.
 
+## Capturas
+
+![Vista general de la contabilidad](docs/neverred.jpeg)
+![Libro diario](docs/diario.jpeg)
+![Libro mayor](docs/mayor.jpeg)
+
 ## Reglas contables aplicadas
 
 - Todo asiento exige ≥ 2 líneas, importes > 0 y `Σ Debe = Σ Haber`.
