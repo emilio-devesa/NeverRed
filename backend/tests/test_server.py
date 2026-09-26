@@ -184,6 +184,58 @@ class ServerCase(unittest.TestCase):
         _, h, _ = call(self.port, "/api/health", origin="https://maligno.example")
         self.assertIsNone(h.get("Access-Control-Allow-Origin"))
 
+    def test_sesiones_y_auditoria(self):
+        import server as srv
+        import sqlite3
+        st, _, d = call(self.port, "/api/register", "POST",
+                        {"name": "ses", "email": "ses@t.local", "password": "secreta123"})
+        t1 = d["token"]
+        st, _, d = call(self.port, "/api/login", "POST",
+                        {"email": "ses@t.local", "password": "secreta123"})
+        t2 = d["token"]
+        st, _, got = call(self.port, "/api/sessions", token=t1)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(got["sessions"]), 2)
+        cur = [s for s in got["sessions"] if s["current"]]
+        self.assertEqual(len(cur), 1)
+        st, _, done = call(self.port, "/api/sessions/rotate", "POST", token=t1)
+        self.assertEqual(st, 200)
+        self.assertEqual(done["closed"], 1)
+        st, _, _ = call(self.port, "/api/me", token=t2)
+        self.assertEqual(st, 401)
+        st, _, _ = call(self.port, "/api/me", token=t1)
+        self.assertEqual(st, 200)
+        st, _, me = call(self.port, "/api/me", token=t1)
+        self.assertEqual(st, 200)
+        con = sqlite3.connect(srv.DB_PATH)
+        acts = [r[0] for r in con.execute(
+            "SELECT action FROM audit_log WHERE user_id = ? ORDER BY id",
+            (me["user"]["id"],))]
+        con.close()
+        for a in ("register", "login", "sessions_rotate"):
+            self.assertIn(a, acts)
+
+    def test_validacion_extra(self):
+        tok = mkuser(self.port, "extra")
+        bad = json.loads(json.dumps(VALID_DATA))
+        bad["budgets"] = {"a1": -5}
+        st, _, _ = call(self.port, "/api/data", "PUT", bad, token=tok)
+        self.assertEqual(st, 400)
+        bad = json.loads(json.dumps(VALID_DATA))
+        bad["recurring"] = [{"desc": "x", "day": 99, "lines": bad["entries"][0]["lines"]}]
+        st, _, _ = call(self.port, "/api/data", "PUT", bad, token=tok)
+        self.assertEqual(st, 400)
+        good = json.loads(json.dumps(VALID_DATA))
+        good["budgets"] = {"a1": 200}
+        good["recurring"] = [{"id": "r1", "desc": "Alquiler",
+                              "day": 5, "lastRun": "2026-09",
+                              "lines": good["entries"][0]["lines"]}]
+        st, _, _ = call(self.port, "/api/data", "PUT", good, token=tok)
+        self.assertEqual(st, 200)
+        st, _, got = call(self.port, "/api/data", token=tok)
+        self.assertEqual(got["data"]["budgets"], {"a1": 200})
+        self.assertEqual(len(got["data"]["recurring"]), 1)
+
     def test_logout(self):
         tok = mkuser(self.port, "salir")
         st, _, _ = call(self.port, "/api/logout", "POST", token=tok)

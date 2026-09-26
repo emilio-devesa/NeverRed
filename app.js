@@ -869,6 +869,32 @@ document.getElementById('btnConfirmReset').addEventListener('click', async () =>
   } catch { err.textContent = 'Sin conexión con el servidor.'; }
 });
 
+// ---------- Sesiones ----------
+const sessionsModal = document.getElementById('sessionsModal');
+async function loadSessions() {
+  const box = document.getElementById('sessionsList');
+  box.innerHTML = '<p class="muted small">Cargando…</p>';
+  try {
+    const res = await fetch(api('/api/sessions'), { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error();
+    box.innerHTML = (data.sessions || []).map(s => {
+      const until = new Date(s.expires_at * 1000).toLocaleDateString('es-ES');
+      return `<div class="acc-row"><span class="code">…${esc(s.id.slice(-4))}</span>
+        <span>${s.current ? 'Este dispositivo ✓' : 'Otro dispositivo'}</span>
+        <span class="bal muted small">hasta ${until}</span></div>`;
+    }).join('') || '<p class="muted">Sin sesiones.</p>';
+  } catch { box.innerHTML = '<p class="error">No se pudieron cargar.</p>'; }
+}
+document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); });
+document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);
+document.getElementById('btnRotateSessions').addEventListener('click', async () => {
+  try {
+    await fetch(api('/api/sessions/rotate'), { method: 'POST', headers: authHeaders() });
+    loadSessions();
+  } catch {}
+});
+
 // ---------- Cambio de contraseña ----------
 const passwordModal = document.getElementById('passwordModal');
 document.getElementById('btnPassword').addEventListener('click', () => {
@@ -899,7 +925,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; } });
 
 async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo

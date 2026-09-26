@@ -219,6 +219,7 @@
   <footer class="footer">
     <span>NeverRed · tus datos viven en tu navegador (localStorage). Exporta copia de seguridad cuando quieras.</span>
     <span><button class="btn ghost small" id="btnPassword">Cambiar contraseña</button>
+    <button class="btn ghost small" id="btnSessions">Sesiones</button>
     <button class="btn ghost small" id="btnDeleteAccount">Eliminar mi cuenta</button>
     <button class="btn ghost small" id="btnWipe">Borrar todo</button></span>
   </footer>
@@ -338,6 +339,21 @@
           <span class="spacer"></span>
           <button class="btn primary" id="btnConfirmReset">Guardar nueva contraseña</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SESIONES -->
+  <div class="modal-backdrop" id="sessionsModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3>Sesiones activas</h3>
+      <p class="muted small">Dispositivos donde tu cuenta está abierta. Puedes cerrar todas salvo esta.</p>
+      <div id="sessionsList" class="list"></div>
+      <p id="sessionsError" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnCloseSessions">Cerrar</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btnRotateSessions">Cerrar las demás</button>
       </div>
     </div>
   </div>

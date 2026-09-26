@@ -32,7 +32,7 @@ DB_PATH = os.environ.get(
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
-SESSION_DAYS = 30
+SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 PBKDF2_ITERATIONS = 200_000
 VERSION = os.environ.get("NEVERRED_VERSION", "1.0.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
@@ -101,6 +101,13 @@ def init_db():
             created_at INTEGER NOT NULL,
             expires_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT ''
+        );
         """
     )
     con.commit()
@@ -129,6 +136,17 @@ def verify_password(password, stored):
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+def audit(action, user_id=None, detail=""):
+    try:
+        con = db()
+        con.execute("INSERT INTO audit_log (ts, user_id, action, detail) VALUES (?,?,?,?)",
+                    (int(time.time()), user_id, action, str(detail)[:200]))
+        con.commit()
+        con.close()
+    except Exception:
+        pass
 
 
 APP_URL = os.environ.get("NEVERRED_APP_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -381,6 +399,7 @@ class Handler(BaseHTTPRequestHandler):
         con.commit()
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
+        audit("register", user_id, email)
         token = self._new_session(user_id)
         self._set_session_cookie(token)
         self._send_json(201, {"token": token, "user": public_user(user)})
@@ -397,7 +416,9 @@ class Handler(BaseHTTPRequestHandler):
         user = con.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         con.close()
         if user is None or not verify_password(password, user["password_hash"]):
+            audit("login_fail", None, email)
             return self._send_json(401, {"error": "Correo o contrasena incorrectos."})
+        audit("login", user["id"])
         rate_reset(self.client_address[0])
         token = self._new_session(user["id"])
         self._set_session_cookie(token)
@@ -427,6 +448,7 @@ class Handler(BaseHTTPRequestHandler):
                     (user["id"], mine))
         con.commit()
         con.close()
+        audit("password_change", user["id"])
         self._send_json(200, {"ok": True})
 
     def _api_logout(self):
@@ -467,6 +489,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 print("[neverred] No se pudo enviar el correo: %s" % e)
         con.close()
+        if user is not None:
+            audit("reset_request", user["id"])
         self._send_json(200, {"ok": True})
 
     def _api_reset_confirm(self):
@@ -492,6 +516,7 @@ class Handler(BaseHTTPRequestHandler):
         con.execute("DELETE FROM sessions WHERE user_id = ?", (row["user_id"],))
         con.commit()
         con.close()
+        audit("reset_confirm", row["user_id"])
         self._send_json(200, {"ok": True})
 
     def _api_delete_account(self):
@@ -504,7 +529,36 @@ class Handler(BaseHTTPRequestHandler):
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         con.commit()
         con.close()
+        audit("account_delete", user["id"], user["email"])
         self._send_json(200, {"ok": True})
+
+    def _api_sessions(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesion no valida."})
+        mine = self._current_token() or ""
+        con = db()
+        rows = con.execute(
+            "SELECT token, created_at, expires_at FROM sessions WHERE user_id = ?"
+            " AND expires_at > ? ORDER BY created_at",
+            (user["id"], int(time.time()))).fetchall()
+        con.close()
+        self._send_json(200, {"sessions": [
+            {"id": t[:12], "current": t == mine, "created_at": c, "expires_at": e}
+            for t, c, e in rows]})
+
+    def _api_sessions_rotate(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesion no valida."})
+        mine = self._current_token() or ""
+        con = db()
+        cur = con.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?",
+                          (user["id"], mine))
+        con.commit()
+        con.close()
+        audit("sessions_rotate", user["id"], "cerradas=%d" % cur.rowcount)
+        self._send_json(200, {"ok": True, "closed": cur.rowcount})
 
     def _api_get_data(self):
         user = self._auth_user()
@@ -543,7 +597,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - firma de la stdlib
         path = urlparse(self.path).path
         if path == "/api/health":
-            return self._send_json(200, {"ok": True, "version": "1.0"})
+            return self._send_json(200, {"ok": True, "version": VERSION})
+        if path == "/api/sessions":
+            return self._api_sessions()
         if path == "/api/me":
             return self._api_me()
         if path == "/api/data":
@@ -566,6 +622,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_reset_request()
         if path == "/api/reset-confirm":
             return self._api_reset_confirm()
+        if path == "/api/sessions/rotate":
+            return self._api_sessions_rotate()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
