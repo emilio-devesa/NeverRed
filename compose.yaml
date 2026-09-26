@@ -1,0 +1,11 @@
+services:
+  neverred:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - neverred-data:/data   # la BD sobrevive a rebuilds y reinicios
+    restart: unless-stopped
+
+volumes:
+  neverred-data:

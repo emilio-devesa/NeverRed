@@ -22,7 +22,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "neverred.db")
+# Ruta de la BD configurable (imprescindible para Docker/volúmenes)
+DB_PATH = os.environ.get(
+    "NEVERRED_DB",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "neverred.db"),
+)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
@@ -267,6 +271,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- enrutado --
     def do_GET(self):  # noqa: N802 - firma de la stdlib
         path = urlparse(self.path).path
+        if path == "/api/health":
+            return self._send_json(200, {"ok": True, "version": "1.0"})
         if path == "/api/me":
             return self._api_me()
         if path == "/api/data":
@@ -328,8 +334,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Servidor de NeverRed (API + SQLite).")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     args = parser.parse_args()
     init_db()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)

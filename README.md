@@ -62,4 +62,48 @@ backend/neverred.db — base de datos (se crea al arrancar; no versionar con dat
 | POST | `/api/logout` | Invalida el token (cabecera `Authorization: Bearer …`) |
 | GET | `/api/me` | Usuario de la sesión actual |
 | GET | `/api/data` | Datos contables del usuario |
-| PUT | `/api/data` | Guarda `{accounts, entries, seq, currency}` del usuario |
+| GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
+
+## Despliegue
+
+### Opción A — Docker (recomendada)
+
+```bash
+docker build -t neverred .
+docker run -d --name neverred -p 8000:8000 -v neverred-data:/data --restart unless-stopped neverred
+```
+
+O con Compose (incluido `compose.yaml`):
+
+```bash
+docker compose up -d --build
+```
+
+- La BD vive en el volumen (`/data/neverred.db` vía `NEVERRED_DB`) y sobrevive a rebuilds.
+- Variables: `HOST` (por defecto `0.0.0.0` en Docker), `PORT`, `NEVERRED_DB`.
+- La imagen usa `python:3.12-slim`, usuario no-root y healthcheck contra `/api/health`.
+
+### Opción B — Servidor/VPS clásico
+
+```bash
+python3 backend/server.py --host 0.0.0.0 --port 8000
+```
+
+Para producción, ponlo detrás de un proxy inverso con HTTPS (Caddy, Nginx) y
+supervísalo con systemd o similar. Copia de seguridad: basta con respaldar
+`backend/neverred.db` (o usar Exportar JSON desde la app).
+
+## Releases
+
+1. Deja el árbol limpio (`git status`) y actualiza este README si hay cambios visibles.
+2. Crea el tag de versión (semántico: `vMAYOR.menor.parche`):
+   ```bash
+   git tag -a v1.0.0 -m "NeverRed v1.0.0: primer release"
+   git push origin main --tags
+   ```
+3. En GitHub → Releases → Draft a new release → elige el tag y pega las notas
+   (qué incluye, credenciales demo si aplica, cómo desplegar con Docker).
+4. Para regenerar el usuario de demostración en cualquier entorno:
+   ```bash
+   python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
+   ```
