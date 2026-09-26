@@ -40,18 +40,14 @@ jobs:
 
       - name: Humo del backend (registro + login + datos)
         run: |
-          python3 backend/server.py --port 8123 &
-          SRV=$!
-          sleep 2
-          curl -fsS http://127.0.0.1:8123/api/health
-          TOK=$(curl -fsS -X POST http://127.0.0.1:8123/api/register \
-            -H 'Content-Type: application/json' \
-            -d '{"name":"CI","email":"ci@test.local","password":"secreta123"}' \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
-          curl -fsS -X PUT http://127.0.0.1:8123/api/data \
-            -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK" \
-            -d '{"accounts":[],"entries":[],"seq":1,"currency":"EUR"}'
-          kill $SRV
+          python3 backend/tests/test_server.py 2>&1 | tail -3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Tests del frontal (lógica contable)
+        run: node --test frontend/tests/
 
       - uses: docker/build-push-action@v6
         with:

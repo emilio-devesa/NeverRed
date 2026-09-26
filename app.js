@@ -2,8 +2,9 @@
 'use strict';
 
 const LS_KEY = 'neverred_v1';
-const TYPES = ['Activo', 'Pasivo', 'Patrimonio', 'Ingreso', 'Gasto'];
-const DEBIT_NATURE = new Set(['Activo', 'Gasto']); // suben por el Debe
+// Lógica contable pura compartida con los tests (lib/contabilidad.js)
+const TYPES = NR.TYPES;
+const DEBIT_NATURE = NR.DEBIT_NATURE;
 
 const BASE_ACCOUNTS = [
   { code: '570', name: 'Caja · Efectivo', type: 'Activo' },
@@ -66,42 +67,17 @@ function fmt(n) {
   catch { return (n || 0).toFixed(2); }
 }
 function fmtNum(n) { return new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
-function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+function round2(n) { return NR.round2(n); }
 
-// ---------- Lógica contable ----------
+// ---------- Lógica contable (delegada en NR, testeada en frontend/tests/) ----------
 const accById = id => state.accounts.find(a => a.id === id);
-function entryTotal(e) {
-  const d = round2(e.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0));
-  const h = round2(e.lines.reduce((s, l) => s + (Number(l.credit) || 0), 0));
-  return { d, h, balanced: d === h && d > 0 };
-}
+function entryTotal(e) { return NR.entryTotal(e); }
 /** Totales por cuenta: {id: {debit, credit}} */
-function totalsByAccount() {
-  const t = {};
-  for (const a of state.accounts) t[a.id] = { debit: 0, credit: 0 };
-  for (const e of state.entries) for (const l of e.lines) {
-    if (!t[l.accountId]) t[l.accountId] = { debit: 0, credit: 0 };
-    t[l.accountId].debit = round2(t[l.accountId].debit + (Number(l.debit) || 0));
-    t[l.accountId].credit = round2(t[l.accountId].credit + (Number(l.credit) || 0));
-  }
-  return t;
-}
+function totalsByAccount() { return NR.totalsByAccount(state.accounts, state.entries); }
 /** Saldo contable signed según naturaleza: + significa saldo normal. */
-function balanceOf(acc, t) {
-  const d = t[acc.id]?.debit || 0, h = t[acc.id]?.credit || 0;
-  return DEBIT_NATURE.has(acc.type) ? round2(d - h) : round2(h - d);
-}
-function typeTotals() {
-  const t = totalsByAccount();
-  const out = { Activo: 0, Pasivo: 0, Patrimonio: 0, Ingreso: 0, Gasto: 0 };
-  for (const a of state.accounts) out[a.type] = round2(out[a.type] + balanceOf(a, t));
-  return out;
-}
-function isBooksBalanced() {
-  const tt = typeTotals();
-  // Activo = Pasivo + Patrimonio + (Ingreso - Gasto)  =>  Activo - Pasivo - Patrimonio - Ingreso + Gasto = 0
-  return round2(tt.Activo - tt.Pasivo - tt.Patrimonio - tt.Ingreso + tt.Gasto) === 0;
-}
+function balanceOf(acc, t) { return NR.balanceOf(acc, t); }
+function typeTotals() { return NR.typeTotals(state.accounts, state.entries); }
+function isBooksBalanced() { return NR.isBooksBalanced(state.accounts, state.entries); }
 
 // ---------- Navegación ----------
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
