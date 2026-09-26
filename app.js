@@ -44,16 +44,16 @@ function save() {
 }
 /** Sube los datos a la base de datos (con anti-rebote para no saturar la API). */
 function queueSync() {
-  if (!sessionToken) return;
+  if (!sessionToken && !currentUser) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(syncToServer, 800);
 }
 async function syncToServer() {
-  if (!sessionToken) return null;
+  if (!sessionToken && !currentUser) return null;
   try {
     const res = await fetch(api('/api/data'), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+      headers: authHeaders(),
       body: JSON.stringify({ accounts: state.accounts, entries: state.entries, seq: state.seq, currency: state.user.currency }),
     });
     if (res.status === 401) { endSession(); return false; }
@@ -497,6 +497,12 @@ document.getElementById('btnStartWelcome').addEventListener('click', () => {
 const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
 const api = p => API_BASE + p;
 const FROM_FILE = location.protocol === 'file:';
+// Sesión por cookie HttpOnly; el token Bearer solo se usa en modo archivo local.
+function authHeaders(extra) {
+  const h = Object.assign({ 'Content-Type': 'application/json' }, extra);
+  if (FROM_FILE && sessionToken) h['Authorization'] = 'Bearer ' + sessionToken;
+  return h;
+}
 const authOverlay = document.getElementById('authOverlay');
 const authNote = document.getElementById('authBackendNote');
 
@@ -547,14 +553,20 @@ document.getElementById('formLogin').addEventListener('submit', ev => {
 });
 document.getElementById('btnLogout').addEventListener('click', async () => {
   try {
-    await fetch(api('/api/logout'), { method: 'POST', headers: { 'Authorization': 'Bearer ' + sessionToken } });
+    await fetch(api('/api/logout'), { method: 'POST', headers: authHeaders() });
   } catch {}
   endSession();
 });
 
 function startSession(token, user) {
-  sessionToken = token; currentUser = user;
-  try { localStorage.setItem('neverred_session', token); } catch {}
+  // En modo servidor manda la cookie HttpOnly (el token no se guarda en JS);
+  // en modo archivo se conserva el Bearer en localStorage.
+  sessionToken = FROM_FILE ? token : null;
+  currentUser = user;
+  try {
+    if (FROM_FILE) localStorage.setItem('neverred_session', token);
+    else localStorage.removeItem('neverred_session');
+  } catch {}
   loadUserData().then(enterApp);
 }
 /** Contabilidad vacía con el plan de cuentas base: cada usuario empieza de cero. */
@@ -577,7 +589,7 @@ function endSession() {
 async function loadUserData() {
   let server = null;
   try {
-    const res = await fetch(api('/api/data'), { headers: { 'Authorization': 'Bearer ' + sessionToken } });
+    const res = await fetch(api('/api/data'), { headers: authHeaders() });
     if (res.status === 401) { endSession(); return; }
     server = (await res.json()).data || {};
   } catch { server = null; }
@@ -631,7 +643,7 @@ document.getElementById('btnDeleteAccount').addEventListener('click', async () =
   try {
     await fetch(api('/api/account'), {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + sessionToken },
+      headers: authHeaders(),
     });
   } catch {}
   try {
@@ -701,7 +713,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
   try {
     const res = await fetch(api('/api/password'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+      headers: authHeaders(),
       body: JSON.stringify({
         current: document.getElementById('pwCurrent').value,
         new: document.getElementById('pwNew').value,
@@ -750,10 +762,14 @@ async function boot() {
   }
   authNote.textContent = 'Recuperando tu sesión…';
   try {
-    const res = await fetch(api('/api/me'), { headers: { 'Authorization': 'Bearer ' + sessionToken } });
+    const res = await fetch(api('/api/me'), { headers: authHeaders() });
     if (!res.ok) throw new Error('sin sesión');
     const { user } = await res.json();
     currentUser = user;
+    if (!FROM_FILE) { // la cookie manda: olvida tokens Bearer antiguos
+      sessionToken = null;
+      try { localStorage.removeItem('neverred_session'); } catch {}
+    }
     await loadUserData();
     enterApp();
   } catch {

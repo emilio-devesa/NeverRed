@@ -23,13 +23,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402
 
 
-def call(port, path, method="GET", payload=None, token=None, origin=None):
+def call(port, path, method="GET", payload=None, token=None, origin=None, cookie=None):
     req = urllib.request.Request(
         "http://127.0.0.1:%d%s" % (port, path), method=method,
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json"})
     if token:
         req.add_header("Authorization", "Bearer " + token)
+    if cookie:
+        req.add_header("Cookie", cookie)
     if origin:
         req.add_header("Origin", origin)
     try:
@@ -187,6 +189,23 @@ class ServerCase(unittest.TestCase):
         st, _, _ = call(self.port, "/api/logout", "POST", token=tok)
         self.assertEqual(st, 200)
         st, _, _ = call(self.port, "/api/me", token=tok)
+        self.assertEqual(st, 401)
+
+    def test_cookie_httponly(self):
+        st, headers, _ = call(self.port, "/api/register", "POST",
+                              {"name": "ck", "email": "ck@t.local", "password": "secreta123"})
+        self.assertEqual(st, 201)
+        set_cookie = headers.get("Set-Cookie", "")
+        self.assertIn("nr_session=", set_cookie)
+        self.assertIn("HttpOnly", set_cookie)
+        self.assertIn("SameSite=Lax", set_cookie)
+        cookie = set_cookie.split(";")[0]
+        st, _, me = call(self.port, "/api/me", cookie=cookie)  # sin Bearer
+        self.assertEqual(st, 200)
+        self.assertEqual(me["user"]["email"], "ck@t.local")
+        st, _, _ = call(self.port, "/api/logout", "POST", cookie=cookie)
+        self.assertEqual(st, 200)
+        st, _, _ = call(self.port, "/api/me", cookie=cookie)
         self.assertEqual(st, 401)
 
     def test_reset_password(self):

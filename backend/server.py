@@ -132,6 +132,8 @@ def public_user(row):
 
 APP_URL = os.environ.get("NEVERRED_APP_URL", "http://127.0.0.1:8000").rstrip("/")
 RESET_TTL = int(os.environ.get("NEVERRED_RESET_TTL", "3600"))
+SESSION_COOKIE = "nr_session"
+COOKIE_SECURE = False  # se activa al servir por TLS (ver main)
 
 
 def _send_reset_email(to, link):
@@ -251,8 +253,32 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self._cors_headers()
+        if getattr(self, "_cookie", None):
+            self.send_header("Set-Cookie", self._cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def _set_session_cookie(self, token):
+        parts = ["%s=%s" % (SESSION_COOKIE, token), "Path=/", "HttpOnly",
+                 "SameSite=Lax", "Max-Age=%d" % (SESSION_DAYS * 86400)]
+        if COOKIE_SECURE:
+            parts.append("Secure")
+        self._cookie = "; ".join(parts)
+
+    def _clear_session_cookie(self):
+        self._cookie = "%s=; Path=/; Max-Age=0" % SESSION_COOKIE
+
+    def _current_token(self):
+        # Cookie HttpOnly primero; Bearer solo para el modo archivo local.
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            if "=" in part:
+                k, v = part.strip().split("=", 1)
+                if k == SESSION_COOKIE and v:
+                    return v
+        auth = self.headers.get("Authorization") or ""
+        if auth.startswith("Bearer "):
+            return auth[len("Bearer "):].strip() or None
+        return None
 
     def _read_json(self):
         try:
@@ -267,10 +293,7 @@ class Handler(BaseHTTPRequestHandler):
             return None
 
     def _auth_user(self):
-        auth = self.headers.get("Authorization") or ""
-        if not auth.startswith("Bearer "):
-            return None
-        token = auth[len("Bearer "):].strip()
+        token = self._current_token()
         if not token:
             return None
         con = db()
@@ -329,6 +352,7 @@ class Handler(BaseHTTPRequestHandler):
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
         token = self._new_session(user_id)
+        self._set_session_cookie(token)
         self._send_json(201, {"token": token, "user": public_user(user)})
 
     def _api_login(self):
@@ -346,6 +370,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "Correo o contrasena incorrectos."})
         rate_reset(self.client_address[0])
         token = self._new_session(user["id"])
+        self._set_session_cookie(token)
         self._send_json(200, {"token": token, "user": public_user(user)})
 
     def _api_password(self):
@@ -363,8 +388,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(
                 400, {"error": "La nueva contrasena debe tener al menos 8 caracteres."}
             )
-        auth = self.headers.get("Authorization") or ""
-        mine = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
+        mine = self._current_token() or ""
         con = db()
         con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                     (hash_password(new), user["id"]))
@@ -376,13 +400,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True})
 
     def _api_logout(self):
-        auth = self.headers.get("Authorization") or ""
-        token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
+        token = self._current_token()
         if token:
             con = db()
             con.execute("DELETE FROM sessions WHERE token = ?", (token,))
             con.commit()
             con.close()
+        self._clear_session_cookie()
         self._send_json(200, {"ok": True})
 
     def _api_me(self):
@@ -571,6 +595,8 @@ def main():
     scheme = "http"
     if cert and key and os.path.isfile(cert) and os.path.isfile(key):
         import ssl
+        global COOKIE_SECURE
+        COOKIE_SECURE = True
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)
         srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
