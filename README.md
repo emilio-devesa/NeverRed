@@ -20,7 +20,12 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 
 - La BD se crea sola en `backend/neverred.db` (tablas `users`, `sessions`, `user_data`).
 - Las contraseñas **nunca** se guardan en texto plano: hash PBKDF2-HMAC-SHA256 con sal aleatoria.
-- Las sesiones usan token aleatorio con caducidad de 30 días.
+- Las sesiones usan token aleatorio con caducidad de 30 días, servido en
+  **cookie `HttpOnly` + `SameSite=Lax`** (`Secure` con TLS). El `Bearer` solo
+  se usa en el modo archivo local.
+- **Recuperar contraseña**: enlace de un solo uso (1 h) por correo con SMTP
+  estándar (`NEVERRED_SMTP_HOST/PORT/USER/PASS/FROM`, `NEVERRED_APP_URL`).
+  Sin SMTP, el enlace sale por la consola (desarrollo).
 - **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
 - **CORS restringido** al mismo origen y al modo archivo local.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, usa TLS (directo o tras Caddy/Nginx).
@@ -75,6 +80,8 @@ Dockerfile, compose.yaml, .dockerignore — empaquetado Docker
 | POST | `/api/login` | `{email, password}` → `200 {token, user}` (401 si falla) |
 | POST | `/api/logout` | Invalida el token (cabecera `Authorization: Bearer …`) |
 | POST | `/api/password` | `{current, new}` cambia la contraseña y cierra otras sesiones |
+| POST | `/api/reset-request` | `{email}` envía enlace de recuperación (1 h, sin filtrar usuarios) |
+| POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
 | DELETE | `/api/account` | Elimina el usuario y todos sus datos |
 | GET | `/api/me` | Usuario de la sesión actual |
 | GET | `/api/data` | Datos contables del usuario |
@@ -115,7 +122,12 @@ python3 backend/backup.py              # backend/backups/, conserva las 14 últi
 ```
 
 o por cron cada noche (ver cabecera del script). La app también permite
-Exportar JSON manual. Tests del backend: `python3 backend/tests/test_server.py`.
+Exportar JSON manual. Tests:
+
+```bash
+python3 backend/tests/test_server.py   # backend: 12 tests (solo stdlib)
+node --test frontend/tests/            # frontal: lógica contable (sin dependencias)
+```
 
 ## Releases (automáticas con GitHub Actions)
 
