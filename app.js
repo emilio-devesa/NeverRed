@@ -195,6 +195,7 @@ function entryCard(e) {
     <table class="entry-lines">${lines}</table>
     <div class="entry-actions">
       <button class="btn ghost small" data-edit="${e.id}">Editar</button>
+      <button class="btn ghost small" data-dupe="${e.id}">Duplicar</button>
       <button class="btn ghost small" data-del="${e.id}">Eliminar</button>
     </div></article>`;
 }
@@ -209,16 +210,26 @@ function renderDiario() {
   document.getElementById('diarioList').innerHTML = list.length ? list.map(entryCard).join('')
     : '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>';
 }
+function dupeEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  openEntryModal({
+    desc: e.desc + ' (copia)',
+    lines: e.lines.map(l => ({ accountId: l.accountId, debit: l.debit, credit: l.credit })),
+  });
+}
 document.getElementById('diarioList').addEventListener('click', ev => {
-  const ed = ev.target.dataset.edit, del = ev.target.dataset.del;
+  const ed = ev.target.dataset.edit, del = ev.target.dataset.del, dupe = ev.target.dataset.dupe;
   if (ed) openEntryModal(null, ed);
+  if (dupe) dupeEntry(dupe);
   if (del && confirm('¿Eliminar este asiento?')) {
     state.entries = state.entries.filter(e => e.id !== del); save(); renderAll();
   }
 });
 document.getElementById('recentList').addEventListener('click', ev => {
-  const ed = ev.target.dataset.edit;
+  const ed = ev.target.dataset.edit, dupe = ev.target.dataset.dupe;
   if (ed) { switchTab('diario'); openEntryModal(null, ed); }
+  if (dupe) dupeEntry(dupe);
 });
 ['searchDiario', 'filterFrom', 'filterTo'].forEach(id => document.getElementById(id).addEventListener('input', renderDiario));
 function switchTab(name) {
@@ -235,6 +246,7 @@ function renderMayor() {
   if (!sel.value && sel.options.length) sel.selectedIndex = 0;
   const acc = accById(sel.value) || state.accounts[0];
   if (!acc) { document.getElementById('mayorTable').querySelector('tbody').innerHTML = ''; return; }
+  const q = (document.getElementById('mayorSearch').value || '').toLowerCase();
   const rows = [];
   let run = 0;
   const entries = [...state.entries].sort((a, b) => a.date.localeCompare(b.date));
@@ -242,6 +254,7 @@ function renderMayor() {
     if (l.accountId !== acc.id) continue;
     const d = Number(l.debit) || 0, h = Number(l.credit) || 0;
     run = round2(run + (DEBIT_NATURE.has(acc.type) ? d - h : h - d));
+    if (q && !e.desc.toLowerCase().includes(q) && !e.date.includes(q)) continue;
     rows.push(`<tr><td>${esc(e.date)}</td><td>${esc(e.desc)}</td><td>${esc(acc.name)}</td>
       <td class="num">${d ? fmtNum(d) : ''}</td><td class="num">${h ? fmtNum(h) : ''}</td><td class="num"><strong>${fmt(run)}</strong></td></tr>`);
   }
@@ -252,6 +265,7 @@ function renderMayor() {
     rows.join('') || '<tr><td colspan="6" class="muted">Sin movimientos en esta cuenta.</td></tr>';
 }
 document.getElementById('mayorAccount').addEventListener('change', renderMayor);
+document.getElementById('mayorSearch').addEventListener('input', renderMayor);
 
 // ---------- Cuentas ----------
 function renderAccounts() {
