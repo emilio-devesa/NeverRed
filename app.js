@@ -952,3 +952,8 @@ async function boot() {
 function endSessionKeepOverlay() { authOverlay.hidden = false; }
 document.getElementById('btnRetryBackend').addEventListener('click', boot);
 boot();
+
+// PWA: carcasa offline (solo en modo servidor; la API siempre necesita red)
+if ('serviceWorker' in navigator && !FROM_FILE) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
