@@ -105,8 +105,9 @@ docker compose up -d --build
 python3 backend/server.py --host 0.0.0.0 --port 8000
 ```
 
-Para producción, ponlo detrás de un proxy inverso con HTTPS (Caddy, Nginx) o
-sirve TLS directo con `NEVERRED_TLS_CERT`/`NEVERRED_TLS_KEY`, y supervísalo
+Para producción, sirve siempre por **HTTPS**: tras un proxy con TLS automático
+(Caddy, con ejemplo listo en `Caddyfile`) o TLS directo con
+`NEVERRED_TLS_CERT`/`NEVERRED_TLS_KEY`, y supervísalo
 con systemd o similar. Copias de seguridad:
 
 ```bash

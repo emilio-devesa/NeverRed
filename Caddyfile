@@ -1,0 +1,7 @@
+# NeverRed tras Caddy con HTTPS automático (Let's Encrypt).
+# Uso: cambia contabilidad.ejemplo.com por tu dominio y ejecuta
+#   caddy run   (o `docker run -p 80:80 -p 443:443 -v $PWD/Caddyfile:/etc/caddy/Caddyfile caddy`)
+# con la app en local: HOST=127.0.0.1 PORT=8000 python3 backend/server.py
+contabilidad.ejemplo.com {
+	reverse_proxy 127.0.0.1:8000
+}
