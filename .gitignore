@@ -1,5 +1,6 @@
 # Datos de ejecución local (se regeneran solos)
 *.db
+backend/backups/
 __pycache__/
 # Basura de macOS
 .DS_Store
