@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeverRed — Contabilidad personal por partida doble</title>
+  <meta name="description" content="NeverRed: empieza y mantén tu contabilidad personal con el sistema de doble partida. Sin números rojos." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+</head>
+<body>
+  <!-- Acceso: bloquea la app hasta registrarse o iniciar sesión -->
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <div class="brand">
+        <img src="icon.svg" class="logo" alt="" />
+        <div><h1>NeverRed</h1><p>Nunca en rojo · doble partida</p></div>
+      </div>
+      <h2 id="authTitle">Crea tu cuenta para empezar</h2>
+      <p class="muted small">Tus datos se guardan en la base de datos de NeverRed, asociados a tu usuario.</p>
+      <div class="auth-tabs">
+        <button class="tab active" id="tabRegister" type="button">Registrarse</button>
+        <button class="tab" id="tabLogin" type="button">Iniciar sesión</button>
+      </div>
+      <form id="formRegister" class="auth-form">
+        <label>Nombre<input type="text" id="regName" placeholder="Ej. Emilio" maxlength="40" autocomplete="name" /></label>
+        <label>Correo electrónico<input type="email" id="regEmail" placeholder="tu@correo.com" required autocomplete="email" /></label>
+        <label>Contraseña (mín. 8 caracteres)<input type="password" id="regPassword" placeholder="••••••••" required minlength="8" autocomplete="new-password" /></label>
+        <p class="error" id="regError" role="alert"></p>
+        <button class="btn primary" type="submit" id="btnRegister">Crear cuenta y entrar</button>
+      </form>
+      <form id="formLogin" class="auth-form" hidden>
+        <label>Correo electrónico<input type="email" id="loginEmail" placeholder="tu@correo.com" required autocomplete="email" /></label>
+        <label>Contraseña<input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" /></label>
+        <p class="error" id="loginError" role="alert"></p>
+        <button class="btn primary" type="submit" id="btnLogin">Entrar</button>
+      </form>
+      <p class="muted small" id="authBackendNote">Conectando con la base de datos…</p>
+      <div id="authFileWarn" class="file-warn" hidden>
+        ⚠️ Has abierto <code>index.html</code> directamente como archivo. La forma correcta es abrir
+        <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a> con el servidor arrancado
+        (<code>python3 backend/server.py</code>).
+      </div>
+      <button class="btn ghost" id="btnRetryBackend" type="button" hidden>Reintentar conexión</button>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="icon.svg" class="logo" alt="" />
+      <div>
+        <h1>NeverRed</h1>
+        <p>Nunca en rojo · doble partida</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab active" data-view="inicio" role="tab">Inicio</button>
+      <button class="tab" data-view="diario" role="tab">Diario</button>
+      <button class="tab" data-view="mayor" role="tab">Mayor</button>
+      <button class="tab" data-view="cuentas" role="tab">Cuentas</button>
+      <button class="tab" data-view="informes" role="tab">Informes</button>
+    </nav>
+    <div class="top-actions">
+      <span id="userEmail" class="muted small" title="Usuario actual"></span>
+      <span id="balanceBadge" class="badge ok" title="Cuadre contable">✓ Cuadrado</span>
+      <button id="btnExport" class="btn ghost" title="Exportar datos JSON">Exportar</button>
+      <button id="btnImport" class="btn ghost" title="Importar datos JSON">Importar</button>
+      <button id="btnLogout" class="btn ghost" title="Cerrar sesión">Salir</button>
+      <input type="file" id="fileImport" accept=".json,application/json" hidden />
+    </div>
+  </header>
+
+  <main>
+    <!-- INICIO / DASHBOARD -->
+    <section id="view-inicio" class="view active">
+      <div class="hero">
+        <div>
+          <h2>Hola, <span id="userName">contable</span> 👋</h2>
+          <p class="muted">Cada euro tiene dos caras: de dónde viene y a dónde va. Si <strong>debe = haber</strong>, tus cuentas nunca estarán en rojo sin que lo sepas.</p>
+          <div class="quick-actions">
+            <button class="btn primary" id="btnNewEntry">+ Nuevo asiento</button>
+            <button class="btn" id="btnQuickIncome">Cobrar sueldo</button>
+            <button class="btn" id="btnQuickExpense">Pagar gasto</button>
+            <button class="btn" id="btnQuickTransfer">Transferencia</button>
+          </div>
+        </div>
+        <div class="equation card">
+          <h3>Ecuación fundamental</h3>
+          <p class="formula">Activo = Pasivo + Patrimonio + (Ingresos − Gastos)</p>
+          <p id="equationStatus" class="muted">—</p>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="card kpi"><span class="label">Patrimonio neto</span><strong id="kpiNet">—</strong><span class="hint">Activo − Pasivo</span></div>
+        <div class="card kpi"><span class="label">Total activo</span><strong id="kpiAssets">—</strong><span class="hint">Lo que tienes</span></div>
+        <div class="card kpi"><span class="label">Total pasivo</span><strong id="kpiLiab">—</strong><span class="hint">Lo que debes</span></div>
+        <div class="card kpi"><span class="label">Resultado (mes)</span><strong id="kpiResult">—</strong><span class="hint">Ingresos − gastos</span></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Ingresos vs gastos · últimos 6 meses</h3>
+          <canvas id="chartFlow" width="600" height="260"></canvas>
+        </div>
+        <div class="card">
+          <h3>Últimos asientos</h3>
+          <div id="recentList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="card explainer">
+        <h3>¿Cómo funciona la doble partida? (30 segundos)</h3>
+        <ol>
+          <li><strong>Cada hecho económico se registra dos veces:</strong> un <em>debe</em> y un <em>haber</em> por el mismo importe.</li>
+          <li><strong>Ejemplo:</strong> cobras 1.500 € de sueldo → <code>Debe: Banco 1.500</code> / <code>Haber: Sueldos 1.500</code>.</li>
+          <li><strong>Regla de oro:</strong> si en algún asiento Debe ≠ Haber, NeverRed no te deja guardarlo. Así es imposible descuadrar.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- DIARIO -->
+    <section id="view-diario" class="view">
+      <div class="toolbar">
+        <h2>Libro diario</h2>
+        <div class="toolbar-row">
+          <input id="searchDiario" type="search" placeholder="Buscar por descripción o cuenta…" />
+          <input id="filterFrom" type="date" title="Desde" />
+          <input id="filterTo" type="date" title="Hasta" />
+          <button class="btn primary" id="btnNewEntry2">+ Nuevo asiento</button>
+        </div>
+      </div>
+      <div id="diarioList" class="list"></div>
+    </section>
+
+    <!-- MAYOR -->
+    <section id="view-mayor" class="view">
+      <div class="toolbar">
+        <h2>Libro mayor</h2>
+        <div class="toolbar-row">
+          <select id="mayorAccount"></select>
+        </div>
+      </div>
+      <div class="card">
+        <div class="mayor-head">
+          <div><span class="muted">Cuenta</span><h3 id="mayorName">—</h3></div>
+          <div><span class="muted">Saldo actual</span><h3 id="mayorBalance">—</h3></div>
+          <div><span class="muted">Naturaleza</span><h3 id="mayorNature">—</h3></div>
+        </div>
+        <table class="table" id="mayorTable">
+          <thead><tr><th>Fecha</th><th>Asiento</th><th>Descripción</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CUENTAS -->
+    <section id="view-cuentas" class="view">
+      <div class="toolbar">
+        <h2>Plan de cuentas</h2>
+        <div class="toolbar-row">
+          <button class="btn primary" id="btnNewAccount">+ Nueva cuenta</button>
+          <button class="btn ghost" id="btnReset">Restablecer plan base</button>
+        </div>
+      </div>
+      <p class="muted">Cinco familias. Naturaleza <strong>deudora</strong> (Activo, Gasto: suben por el debe) y <strong>acreedora</strong> (Pasivo, Patrimonio, Ingreso: suben por el haber).</p>
+      <div id="accountsList" class="accounts"></div>
+    </section>
+
+    <!-- INFORMES -->
+    <section id="view-informes" class="view">
+      <div class="toolbar"><h2>Informes</h2></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Balance de comprobación</h3>
+          <p class="muted">Suma de debe, haber y saldo por cuenta. El total debe cuadrar.</p>
+          <table class="table" id="trialTable">
+            <thead><tr><th>Cuenta</th><th>Tipo</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
+            <tbody></tbody>
+            <tfoot><tr><th colspan="2">Totales</th><th class="num" id="trialDebe">—</th><th class="num" id="trialHaber">—</th><th class="num" id="trialSaldo">—</th></tr></tfoot>
+          </table>
+          <button class="btn ghost" id="btnCsvTrial">Descargar CSV</button>
+        </div>
+        <div>
+          <div class="card">
+            <h3>Cuenta de resultados (PyG)</h3>
+            <div id="pnlBox"></div>
+          </div>
+          <div class="card">
+            <h3>Balance general</h3>
+            <div id="balanceBox"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>NeverRed · tus datos viven en tu navegador (localStorage). Exporta copia de seguridad cuando quieras.</span>
+    <button class="btn ghost small" id="btnWipe">Borrar todo</button>
+  </footer>
+
+  <!-- MODAL ASIENTO -->
+  <div class="modal-backdrop" id="entryModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="entryTitle">
+      <h3 id="entryTitle">Nuevo asiento</h3>
+      <p class="muted small">Un asiento necesita al menos 2 líneas y <strong>Total debe = Total haber</strong>.</p>
+      <div class="form-grid">
+        <label>Fecha<input type="date" id="entryDate" /></label>
+        <label class="span2">Descripción<input type="text" id="entryDesc" placeholder="Ej. Nómina enero" maxlength="120" /></label>
+      </div>
+      <table class="table lines">
+        <thead><tr><th>Cuenta</th><th class="num">Debe</th><th class="num">Haber</th><th></th></tr></thead>
+        <tbody id="entryLines"></tbody>
+        <tfoot><tr><th>Total</th><th class="num" id="totalDebe">0,00 €</th><th class="num" id="totalHaber">0,00 €</th><th></th></tr></tfoot>
+      </table>
+      <p id="entryError" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnAddLine">+ Añadir línea</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnCancelEntry">Cancelar</button>
+        <button class="btn primary" id="btnSaveEntry">Guardar asiento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CUENTA -->
+  <div class="modal-backdrop" id="accountModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3 id="accountTitle">Nueva cuenta</h3>
+      <div class="form-grid">
+        <label class="span2">Nombre<input type="text" id="accName" placeholder="Ej. Banco BBVA" maxlength="60" /></label>
+        <label>Tipo
+          <select id="accType">
+            <option value="Activo">Activo</option>
+            <option value="Pasivo">Pasivo</option>
+            <option value="Patrimonio">Patrimonio</option>
+            <option value="Ingreso">Ingreso</option>
+            <option value="Gasto">Gasto</option>
+          </select>
+        </label>
+        <label>Código<input type="text" id="accCode" placeholder="Ej. 572" maxlength="10" /></label>
+      </div>
+      <p id="accError" class="error"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnCancelAcc">Cancelar</button>
+        <button class="btn primary" id="btnSaveAcc">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL BIENVENIDA -->
+  <div class="modal-backdrop" id="welcomeModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3>Bienvenido a NeverRed 🟢</h3>
+      <p class="muted">En 1 minuto dejamos tu contabilidad lista con un <strong>asiento de apertura</strong> (partida doble desde el minuto cero).</p>
+      <div class="form-grid">
+        <label class="span2">Tu nombre<input type="text" id="wName" placeholder="Ej. Emilio" maxlength="40" /></label>
+        <label>Moneda
+          <select id="wCurrency"><option value="EUR">EUR €</option><option value="USD">USD $</option><option value="MXN">MXN $</option><option value="GBP">GBP £</option></select>
+        </label>
+        <label>Efectivo inicial<input type="number" id="wCash" value="500" min="0" step="0.01" /></label>
+        <label class="span2">Saldo en banco<input type="number" id="wBank" value="2000" min="0" step="0.01" /></label>
+        <label class="span2">Deudas iniciales (tarjetas, préstamos)<input type="number" id="wDebt" value="0" min="0" step="0.01" /></label>
+      </div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnSkipWelcome">Empezar vacío</button>
+        <button class="btn primary" id="btnStartWelcome">Crear mi contabilidad</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
