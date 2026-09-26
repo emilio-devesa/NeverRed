@@ -48,15 +48,16 @@ function queueSync() {
   saveTimer = setTimeout(syncToServer, 800);
 }
 async function syncToServer() {
-  if (!sessionToken) return;
+  if (!sessionToken) return null;
   try {
     const res = await fetch(api('/api/data'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
       body: JSON.stringify({ accounts: state.accounts, entries: state.entries, seq: state.seq, currency: state.user.currency }),
     });
-    if (res.status === 401) { endSession(); return; }
-  } catch { /* sin conexión: queda la copia local y se reintenta en el próximo guardado */ }
+    if (res.status === 401) { endSession(); return false; }
+    return res.ok;
+  } catch { return null; /* sin conexión: queda la copia local y se reintenta luego */ }
 }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -442,11 +443,23 @@ document.getElementById('btnImport').addEventListener('click', () => document.ge
 document.getElementById('fileImport').addEventListener('change', ev => {
   const f = ev.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
+    const backup = JSON.stringify(state);
     try {
       const data = JSON.parse(r.result);
-      if (!data.accounts || !data.entries) throw new Error('formato inválido');
-      state = data; save(); renderAll(); alert('Datos importados correctamente.');
+      if (!Array.isArray(data.accounts) || !Array.isArray(data.entries)) throw new Error('formato inválido');
+      state.accounts = data.accounts;
+      state.entries = data.entries || [];
+      state.seq = data.seq || state.entries.length + 1;
+      if (data.currency) state.user.currency = data.currency;
+      save(); renderAll();
+      const ok = await syncToServer();
+      if (ok === false) {
+        state = JSON.parse(backup); save(); renderAll();
+        alert('Archivo no válido: la base de datos lo ha rechazado. Se han restaurado tus datos.');
+      } else {
+        alert('Datos importados correctamente.');
+      }
     } catch { alert('Archivo no válido.'); }
   };
   r.readAsText(f); ev.target.value = '';

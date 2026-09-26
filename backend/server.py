@@ -13,11 +13,13 @@ La base de datos se crea automaticamente en backend/neverred.db.
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
 import sqlite3
 import time
+from datetime import date as _date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -120,6 +122,65 @@ def verify_password(password, stored):
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+VALID_TYPES = ("Activo", "Pasivo", "Patrimonio", "Ingreso", "Gasto")
+
+
+def _num(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def validate_data(body):
+    """Valida la contabilidad antes de guardarla. None = válido, str = error."""
+    if not isinstance(body, dict):
+        return "Cuerpo JSON invalido."
+    accounts = body.get("accounts", [])
+    entries = body.get("entries", [])
+    if not isinstance(accounts, list) or not isinstance(entries, list):
+        return "Formato de datos invalido."
+    ids = set()
+    for a in accounts:
+        if not isinstance(a, dict):
+            return "Cuenta inválida."
+        if not isinstance(a.get("id"), str) or not a["id"]:
+            return "Cuenta sin identificador."
+        if a.get("type") not in VALID_TYPES:
+            return "Tipo de cuenta inválido: %r." % (a.get("type"),)
+        if not isinstance(a.get("name"), str) or not a["name"].strip():
+            return "Cuenta sin nombre."
+        if "code" in a and not isinstance(a["code"], str):
+            return "Código de cuenta inválido."
+        ids.add(a["id"])
+    for e in entries:
+        if not isinstance(e, dict):
+            return "Asiento inválido."
+        if not isinstance(e.get("date"), str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", e["date"]):
+            return "Fecha inválida en un asiento."
+        try:
+            _date(*map(int, e["date"].split("-")))
+        except ValueError:
+            return "Fecha inexistente en un asiento."
+        lines = e.get("lines")
+        if not isinstance(lines, list) or len(lines) < 2:
+            return "Todo asiento necesita al menos 2 líneas."
+        d = h = 0.0
+        for l in lines:
+            if not isinstance(l, dict):
+                return "Línea de asiento inválida."
+            if l.get("accountId") not in ids:
+                return "Línea con cuenta desconocida."
+            db, cr = l.get("debit", 0), l.get("credit", 0)
+            if not _num(db) or not _num(cr) or db < 0 or cr < 0:
+                return "Importes inválidos en un asiento."
+            if db > 0 and cr > 0:
+                return "Una línea no puede tener debe y haber."
+            if db == 0 and cr == 0:
+                return "Línea sin importe."
+            d, h = d + db, h + cr
+        if round(d, 2) != round(h, 2) or d <= 0:
+            return "Asiento descuadrado: debe ≠ haber."
+    return None
 
 
 # ---------------- Servidor HTTP ----------------
@@ -317,12 +378,9 @@ class Handler(BaseHTTPRequestHandler):
         if user is None:
             return self._send_json(401, {"error": "Sesion no valida."})
         body = self._read_json()
-        if not isinstance(body, dict):
-            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
-        # Validacion minima de forma (la validacion contable vive en el frontend)
-        for key in ("accounts", "entries"):
-            if key in body and not isinstance(body[key], list):
-                return self._send_json(400, {"error": "Formato de datos invalido."})
+        err = validate_data(body)
+        if err:
+            return self._send_json(400, {"error": err})
         con = db()
         con.execute(
             "INSERT INTO user_data (user_id, data, updated_at) VALUES (?,?,?) "
