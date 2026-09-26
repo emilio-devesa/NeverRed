@@ -34,6 +34,7 @@
         <label>Contraseña<input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" /></label>
         <p class="error" id="loginError" role="alert"></p>
         <button class="btn primary" type="submit" id="btnLogin">Entrar</button>
+        <p class="small muted"><a href="#" id="linkReset">¿Olvidaste tu contraseña?</a></p>
       </form>
       <p class="muted small" id="authBackendNote">Conectando con la base de datos…</p>
       <div id="authFileWarn" class="file-warn" hidden>
@@ -288,6 +289,36 @@
         <span class="spacer"></span>
         <button class="btn ghost" id="btnCancelPw">Cancelar</button>
         <button class="btn primary" id="btnSavePw">Cambiar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL RECUPERAR CONTRASEÑA -->
+  <div class="modal-backdrop" id="resetModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3>Recuperar contraseña</h3>
+      <div id="resetStepEmail">
+        <p class="muted small">Te enviaremos un enlace válido durante 1 hora.</p>
+        <div class="form-grid">
+          <label class="span2">Correo electrónico<input type="email" id="resetEmail" autocomplete="email" /></label>
+        </div>
+        <p id="resetError" class="error" role="alert"></p>
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button class="btn ghost" id="btnCancelReset">Cancelar</button>
+          <button class="btn primary" id="btnSendReset">Enviar enlace</button>
+        </div>
+      </div>
+      <div id="resetStepNew" hidden>
+        <p class="muted small">Escribe tu nueva contraseña.</p>
+        <div class="form-grid">
+          <label class="span2">Nueva contraseña (mín. 8 caracteres)<input type="password" id="resetNew" autocomplete="new-password" /></label>
+        </div>
+        <p id="resetError2" class="error" role="alert"></p>
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button class="btn primary" id="btnConfirmReset">Guardar nueva contraseña</button>
+        </div>
       </div>
     </div>
   </div>

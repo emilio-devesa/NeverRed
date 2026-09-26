@@ -665,6 +665,51 @@ document.getElementById('btnDeleteAccount').addEventListener('click', async () =
   alert('Tu cuenta ha sido eliminada.');
 });
 
+// ---------- Recuperar contraseña ----------
+const resetModal = document.getElementById('resetModal');
+let resetToken = null;
+try { resetToken = new URLSearchParams(location.search).get('reset'); } catch { resetToken = null; }
+function openReset(stepNew) {
+  document.getElementById('resetStepEmail').hidden = !!stepNew;
+  document.getElementById('resetStepNew').hidden = !stepNew;
+  document.getElementById('resetError').textContent = '';
+  document.getElementById('resetError2').textContent = '';
+  resetModal.hidden = false;
+}
+document.getElementById('linkReset').addEventListener('click', ev => { ev.preventDefault(); openReset(false); });
+document.getElementById('btnCancelReset').addEventListener('click', () => resetModal.hidden = true);
+document.getElementById('btnSendReset').addEventListener('click', async () => {
+  const err = document.getElementById('resetError');
+  err.textContent = '';
+  try {
+    await fetch(api('/api/reset-request'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: document.getElementById('resetEmail').value.trim() }),
+    });
+    err.style.color = 'var(--green)';
+    err.textContent = 'Si el correo está registrado, recibirás el enlace en unos minutos.';
+  } catch { err.textContent = 'Sin conexión con el servidor.'; }
+});
+document.getElementById('btnConfirmReset').addEventListener('click', async () => {
+  const err = document.getElementById('resetError2');
+  err.textContent = '';
+  try {
+    const res = await fetch(api('/api/reset-confirm'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: resetToken, new: document.getElementById('resetNew').value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { err.textContent = data.error || 'No se pudo completar.'; return; }
+    resetModal.hidden = true;
+    resetToken = null;
+    try { history.replaceState(null, '', location.pathname); } catch {}
+    setAuthTab('login');
+    authNote.textContent = 'Contraseña actualizada. Inicia sesión con la nueva.';
+  } catch { err.textContent = 'Sin conexión con el servidor.'; }
+});
+
 // ---------- Cambio de contraseña ----------
 const passwordModal = document.getElementById('passwordModal');
 document.getElementById('btnPassword').addEventListener('click', () => {
@@ -695,7 +740,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; } });
 
 async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo
@@ -720,6 +765,7 @@ async function boot() {
     endSessionKeepOverlay();
     return;
   }
+  if (resetToken) { openReset(true); return; } // viene del enlace del correo
   if (!sessionToken) {
     authNote.textContent = FROM_FILE
       ? 'Conectado con la base de datos ✓ Regístrate (o mejor: abre http://127.0.0.1:8000).'

@@ -94,6 +94,12 @@ def init_db():
             data TEXT NOT NULL DEFAULT '{}',
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS password_resets (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
         """
     )
     con.commit()
@@ -122,6 +128,33 @@ def verify_password(password, stored):
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+APP_URL = os.environ.get("NEVERRED_APP_URL", "http://127.0.0.1:8000").rstrip("/")
+RESET_TTL = int(os.environ.get("NEVERRED_RESET_TTL", "3600"))
+
+
+def _send_reset_email(to, link):
+    """Envía el correo de recuperación (stdlib). Sin SMTP, lo muestra por consola (desarrollo)."""
+    host = os.environ.get("NEVERRED_SMTP_HOST")
+    if not host:
+        print("[neverred] SMTP sin configurar. Enlace de recuperación para %s: %s" % (to, link))
+        return
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["Subject"] = "NeverRed: recupera tu contraseña"
+    msg["From"] = os.environ.get("NEVERRED_SMTP_FROM", "neverred@localhost")
+    msg["To"] = to
+    msg.set_content(
+        "Hola,\n\nPide cambiar tu contraseña en NeverRed (caduca en 1 hora):\n%s\n\n"
+        "Si no fuiste tú, ignora este correo.\n" % link)
+    port = int(os.environ.get("NEVERRED_SMTP_PORT", "587"))
+    with smtplib.SMTP(host, port, timeout=15) as s:
+        s.starttls()
+        if os.environ.get("NEVERRED_SMTP_USER"):
+            s.login(os.environ["NEVERRED_SMTP_USER"], os.environ.get("NEVERRED_SMTP_PASS", ""))
+        s.send_message(msg)
 
 
 VALID_TYPES = ("Activo", "Pasivo", "Patrimonio", "Ingreso", "Gasto")
@@ -358,6 +391,55 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "Sesion no valida."})
         self._send_json(200, {"user": public_user(user)})
 
+    def _api_reset_request(self):
+        if rate_limited(self.client_address[0]):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
+        body = self._read_json() or {}
+        email = str(body.get("email") or "").strip().lower()
+        # Respuesta idéntica exista o no el correo (no filtrar usuarios)
+        con = db()
+        user = con.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if user is not None:
+            token = secrets.token_urlsafe(32)
+            th = hashlib.sha256(token.encode()).hexdigest()
+            now = int(time.time())
+            con.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+            con.execute(
+                "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at)"
+                " VALUES (?,?,?,?)", (th, user["id"], now, now + RESET_TTL))
+            con.commit()
+            try:
+                _send_reset_email(email, "%s/?reset=%s" % (APP_URL, token))
+            except Exception as e:
+                print("[neverred] No se pudo enviar el correo: %s" % e)
+        con.close()
+        self._send_json(200, {"ok": True})
+
+    def _api_reset_confirm(self):
+        body = self._read_json()
+        if not body:
+            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+        token = str(body.get("token") or "")
+        new = str(body.get("new") or "")
+        if len(new) < MIN_PASSWORD_LEN:
+            return self._send_json(
+                400, {"error": "La nueva contrasena debe tener al menos 8 caracteres."})
+        th = hashlib.sha256(token.encode()).hexdigest()
+        con = db()
+        row = con.execute(
+            "SELECT * FROM password_resets WHERE token_hash = ? AND expires_at > ?",
+            (th, int(time.time()))).fetchone()
+        if row is None:
+            con.close()
+            return self._send_json(400, {"error": "Enlace inválido o caducado."})
+        con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                    (hash_password(new), row["user_id"]))
+        con.execute("DELETE FROM password_resets WHERE user_id = ?", (row["user_id"],))
+        con.execute("DELETE FROM sessions WHERE user_id = ?", (row["user_id"],))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True})
+
     def _api_delete_account(self):
         user = self._auth_user()
         if user is None:
@@ -426,6 +508,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_logout()
         if path == "/api/password":
             return self._api_password()
+        if path == "/api/reset-request":
+            return self._api_reset_request()
+        if path == "/api/reset-confirm":
+            return self._api_reset_confirm()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib

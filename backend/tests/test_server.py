@@ -189,6 +189,47 @@ class ServerCase(unittest.TestCase):
         st, _, _ = call(self.port, "/api/me", token=tok)
         self.assertEqual(st, 401)
 
+    def test_reset_password(self):
+        links = []
+        orig = server._send_reset_email
+        server._send_reset_email = lambda to, link: links.append((to, link))
+        try:
+            # No filtra si el correo existe
+            st, _, _ = call(self.port, "/api/reset-request", "POST",
+                            {"email": "nadie@t.local"})
+            self.assertEqual(st, 200)
+            self.assertEqual(links, [])
+            st, _, _ = call(self.port, "/api/reset-request", "POST",
+                            {"email": "rst@t.local"})
+            # usuario aún no existe: tampoco hay enlace
+            self.assertEqual(st, 200)
+            tok = mkuser(self.port, "rst")
+            st, _, _ = call(self.port, "/api/reset-request", "POST",
+                            {"email": "rst@t.local"})
+            self.assertEqual(st, 200)
+            self.assertEqual(len(links), 1)
+            token = links[0][1].split("reset=")[1]
+            st, _, _ = call(self.port, "/api/reset-confirm", "POST",
+                            {"token": token, "new": "corta"})
+            self.assertEqual(st, 400)
+            st, _, _ = call(self.port, "/api/reset-confirm", "POST",
+                            {"token": "invalido", "new": "nueva00000"})
+            self.assertEqual(st, 400)
+            st, _, _ = call(self.port, "/api/reset-confirm", "POST",
+                            {"token": token, "new": "nueva00000"})
+            self.assertEqual(st, 200)
+            # el enlace es de un solo uso y la sesión anterior murió
+            st, _, _ = call(self.port, "/api/me", token=tok)
+            self.assertEqual(st, 401)
+            st, _, _ = call(self.port, "/api/reset-confirm", "POST",
+                            {"token": token, "new": "otra00000"})
+            self.assertEqual(st, 400)
+            st, _, _ = call(self.port, "/api/login", "POST",
+                            {"email": "rst@t.local", "password": "nueva00000"})
+            self.assertEqual(st, 200)
+        finally:
+            server._send_reset_email = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
