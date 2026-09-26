@@ -358,6 +358,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "Sesion no valida."})
         self._send_json(200, {"user": public_user(user)})
 
+    def _api_delete_account(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesion no valida."})
+        con = db()
+        con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True})
+
     def _api_get_data(self):
         user = self._auth_user()
         if user is None:
@@ -419,6 +431,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
         if urlparse(self.path).path == "/api/data":
             return self._api_put_data()
+        return self._send_json(404, {"error": "Ruta no encontrada."})
+
+    def do_DELETE(self):  # noqa: N802 - firma de la stdlib
+        if urlparse(self.path).path == "/api/account":
+            return self._api_delete_account()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_OPTIONS(self):  # noqa: N802 - firma de la stdlib

@@ -634,6 +634,23 @@ function enterApp() {
   }
 }
 
+// ---------- Eliminar cuenta ----------
+document.getElementById('btnDeleteAccount').addEventListener('click', async () => {
+  if (!confirm('¿Eliminar tu cuenta y TODA tu contabilidad? Esta acción no se puede deshacer.')) return;
+  if (!confirm('Última confirmación: se borrarán tu usuario y todos tus datos del servidor.')) return;
+  try {
+    await fetch(api('/api/account'), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + sessionToken },
+    });
+  } catch {}
+  try {
+    localStorage.removeItem(userKey());
+  } catch {}
+  endSession();
+  alert('Tu cuenta ha sido eliminada.');
+});
+
 // ---------- Cambio de contraseña ----------
 const passwordModal = document.getElementById('passwordModal');
 document.getElementById('btnPassword').addEventListener('click', () => {
