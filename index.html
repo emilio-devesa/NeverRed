@@ -130,7 +130,6 @@
           <input id="filterTo" type="date" title="Hasta" />
           <button class="btn primary" id="btnNewEntry2">+ Nuevo asiento</button>
           <button class="btn ghost" id="btnCsv">Importar CSV</button>
-          <input type="file" id="fileCsv" accept=".csv,text/csv" hidden />
         </div>
       </div>
       <div class="card">
@@ -336,6 +335,27 @@
           <span class="spacer"></span>
           <button class="btn primary" id="btnConfirmReset">Guardar nueva contraseña</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CSV -->
+  <div class="modal-backdrop" id="csvModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3>Importar movimientos del banco (CSV)</h3>
+      <p class="muted small">Una fila por movimiento: <code>fecha; descripción; importe</code>. Fecha <code>dd/mm/aaaa</code> o <code>aaaa-mm-dd</code>; importe con coma o punto (negativo = pago, positivo = cobro).</p>
+      <div class="form-grid">
+        <label class="span2">Archivo CSV<input type="file" id="csvFileInput" accept=".csv,text/csv" /></label>
+        <label>Cuenta del banco<select id="csvBank"></select></label>
+        <label>Cuenta para cobros (+)<select id="csvIncome"></select></label>
+        <label class="span2">Cuenta para pagos (−)<select id="csvExpense"></select></label>
+      </div>
+      <p id="csvError" class="error" role="alert"></p>
+      <div id="csvPreview" class="list"></div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnCancelCsv">Cancelar</button>
+        <button class="btn primary" id="btnSaveCsv" disabled>Importar</button>
       </div>
     </div>
   </div>

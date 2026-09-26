@@ -159,6 +159,85 @@ function drawChart() {
   ctx.fillStyle = '#9aa5b4'; ctx.fillText('Gastos', 109, 17);
 }
 
+// ---------- Importar CSV del banco ----------
+const csvModal = document.getElementById('csvModal');
+let csvRows = [];
+function fillCsvSelects() {
+  const opts = type => state.accounts.filter(a => a.type === type && !a.archived)
+    .map(a => `<option value="${a.id}">${esc(a.code + ' · ' + a.name)}</option>`).join('');
+  document.getElementById('csvBank').innerHTML = opts('Activo') || '<option value="">—</option>';
+  document.getElementById('csvIncome').innerHTML = opts('Ingreso') || '<option value="">—</option>';
+  document.getElementById('csvExpense').innerHTML = opts('Gasto') || '<option value="">—</option>';
+}
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return { rows: [], bad: 0 };
+  const delim = (lines[0].split(';').length >= lines[0].split(',').length) ? ';' : ',';
+  const rows = [];
+  let bad = 0;
+  for (const ln of lines.slice(0, 500)) {
+    const cols = ln.split(delim).map(c => c.trim().replace(/^"|"$/g, ''));
+    if (cols.length < 3) { bad++; continue; }
+    let iso = null;
+    let m = cols[0].match(/^(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})$/);
+    if (m) iso = `${m[3]}-${m[2]}-${m[1]}`;
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(cols[0])) iso = cols[0];
+    let num = cols[2].replace(/\s/g, '');
+    if (num.includes(',')) num = num.replace(/\./g, '').replace(',', '.');
+    const amount = round2(num);
+    if (!iso || !cols[1] || !isFinite(amount) || amount === 0) { bad++; continue; }
+    const dt = new Date(iso + 'T00:00:00');
+    if (isNaN(dt)) { bad++; continue; }
+    rows.push({ date: iso, desc: cols[1].slice(0, 120), amount });
+  }
+  return { rows, bad };
+}
+document.getElementById('btnCsv').addEventListener('click', () => {
+  fillCsvSelects();
+  document.getElementById('csvError').textContent = '';
+  document.getElementById('csvPreview').innerHTML = '';
+  document.getElementById('btnSaveCsv').disabled = true;
+  csvRows = [];
+  csvModal.hidden = false;
+});
+document.getElementById('btnCancelCsv').addEventListener('click', () => csvModal.hidden = true);
+document.getElementById('csvFileInput').addEventListener('change', ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const { rows, bad } = parseCsv(String(r.result || ''));
+    csvRows = rows;
+    document.getElementById('csvError').textContent = bad ? `${bad} fila(s) descartadas por formato.` : '';
+    document.getElementById('csvPreview').innerHTML =
+      (rows.slice(0, 5).map(x => `<div class="acc-row"><span class="code">${esc(x.date)}</span><span>${esc(x.desc)}</span><span class="bal">${fmtNum(x.amount)}</span></div>`).join('') || '<p class="muted">Sin filas válidas.</p>') +
+      (rows.length > 5 ? `<p class="muted small">…y ${rows.length - 5} más (${rows.length} en total).</p>` : '');
+    document.getElementById('btnSaveCsv').disabled = !rows.length;
+  };
+  r.readAsText(f);
+  ev.target.value = '';
+});
+document.getElementById('btnSaveCsv').addEventListener('click', () => {
+  const bank = document.getElementById('csvBank').value;
+  const inc = document.getElementById('csvIncome').value;
+  const exp = document.getElementById('csvExpense').value;
+  const err = document.getElementById('csvError');
+  if (!bank || !csvRows.length) { err.textContent = 'Falta la cuenta del banco o no hay filas.'; return; }
+  let n = 0;
+  for (const x of csvRows) {
+    const a = Math.abs(x.amount);
+    const lines = x.amount > 0
+      ? (inc ? [{ accountId: bank, debit: a, credit: 0 }, { accountId: inc, debit: 0, credit: a }] : null)
+      : (exp ? [{ accountId: exp, debit: a, credit: 0 }, { accountId: bank, debit: 0, credit: a }] : null);
+    if (!lines) continue;
+    state.entries.push({ id: uid(), n: state.seq++, date: x.date, desc: x.desc, lines });
+    n++;
+  }
+  csvModal.hidden = true;
+  save(); renderAll();
+  alert(`Importados ${n} movimientos como asientos cuadrados.`);
+});
+
 // ---------- Recurrentes ----------
 function renderRecurring() {
   const list = state.recurring || [];
@@ -820,7 +899,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; } });
 
 async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo
