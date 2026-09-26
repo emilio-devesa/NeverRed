@@ -26,6 +26,9 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - **Recuperar contraseña**: enlace de un solo uso (1 h) por correo con SMTP
   estándar (`NEVERRED_SMTP_HOST/PORT/USER/PASS/FROM`, `NEVERRED_APP_URL`).
   Sin SMTP, el enlace sale por la consola (desarrollo).
+- **Sesiones**: listado propio y rotación (`GET /api/sessions`,
+  `POST /api/sessions/rotate`); caducidad con `NEVERRED_SESSION_DAYS`.
+- **Auditoría**: `audit_log` registra accesos, cambios de clave, resets y borrados.
 - **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
 - **CORS restringido** al mismo origen y al modo archivo local.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, usa TLS (directo o tras Caddy/Nginx).
@@ -43,6 +46,10 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - **Plan de cuentas**: 5 familias (Activo, Pasivo, Patrimonio, Ingreso, Gasto), crear/editar/archivar.
 - **Informes**: balance de comprobación (con CSV), cuenta de resultados (PyG) y balance general.
 - **Panel**: patrimonio neto, ecuación fundamental en vivo, gráfico ingresos vs gastos 6 meses, accesos rápidos (sueldo, gasto, transferencia).
+- **Presupuestos**: límite mensual por gasto con avisos al 80 % y al superar.
+- **Recurrentes**: plantillas mensuales (nómina, alquiler) con generación sin duplicados.
+- **Importar CSV** del banco (`fecha;descripción;importe`) como asientos cuadrados.
+- **PWA**: instalable y carcasa offline (la API necesita red).
 - **Datos locales**: todo se guarda en `localStorage`. Exporta/importa JSON para copia de seguridad.
 
 ## Capturas
