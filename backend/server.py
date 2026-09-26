@@ -32,6 +32,25 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
 SESSION_DAYS = 30
 PBKDF2_ITERATIONS = 200_000
+VERSION = os.environ.get("NEVERRED_VERSION", "1.0.0")
+# Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
+RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
+RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
+_rate = {}  # ip -> [intentos, fin_ventana_ts]
+
+
+def rate_limited(ip):
+    now = int(time.time())
+    count, reset = _rate.get(ip, (0, now + RATE_WINDOW))
+    if now > reset:
+        count, reset = 0, now + RATE_WINDOW
+    count += 1
+    _rate[ip] = [count, reset]
+    return count > RATE_MAX
+
+
+def rate_reset(ip):
+    _rate.pop(ip, None)
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -171,6 +190,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- API --
     def _api_register(self):
+        if rate_limited(self.client_address[0]):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
             return self._send_json(400, {"error": "Cuerpo JSON invalido."})
@@ -203,6 +224,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(201, {"token": token, "user": public_user(user)})
 
     def _api_login(self):
+        if rate_limited(self.client_address[0]):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
             return self._send_json(400, {"error": "Cuerpo JSON invalido."})
@@ -213,6 +236,7 @@ class Handler(BaseHTTPRequestHandler):
         con.close()
         if user is None or not verify_password(password, user["password_hash"]):
             return self._send_json(401, {"error": "Correo o contrasena incorrectos."})
+        rate_reset(self.client_address[0])
         token = self._new_session(user["id"])
         self._send_json(200, {"token": token, "user": public_user(user)})
 
