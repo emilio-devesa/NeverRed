@@ -621,9 +621,37 @@ function enterApp() {
   }
 }
 
+// ---------- Cambio de contraseña ----------
+const passwordModal = document.getElementById('passwordModal');
+document.getElementById('btnPassword').addEventListener('click', () => {
+  document.getElementById('pwCurrent').value = '';
+  document.getElementById('pwNew').value = '';
+  document.getElementById('pwError').textContent = '';
+  passwordModal.hidden = false;
+});
+document.getElementById('btnCancelPw').addEventListener('click', () => passwordModal.hidden = true);
+document.getElementById('btnSavePw').addEventListener('click', async () => {
+  const err = document.getElementById('pwError');
+  err.textContent = '';
+  try {
+    const res = await fetch(api('/api/password'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+      body: JSON.stringify({
+        current: document.getElementById('pwCurrent').value,
+        new: document.getElementById('pwNew').value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { err.textContent = data.error || 'No se pudo cambiar la contraseña.'; return; }
+    passwordModal.hidden = true;
+    alert('Contraseña cambiada. Las demás sesiones se han cerrado.');
+  } catch { err.textContent = 'Sin conexión con el servidor.'; }
+});
+
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; } });
 
 async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo

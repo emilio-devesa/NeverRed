@@ -197,7 +197,8 @@
 
   <footer class="footer">
     <span>NeverRed · tus datos viven en tu navegador (localStorage). Exporta copia de seguridad cuando quieras.</span>
-    <button class="btn ghost small" id="btnWipe">Borrar todo</button>
+    <span><button class="btn ghost small" id="btnPassword">Cambiar contraseña</button>
+    <button class="btn ghost small" id="btnWipe">Borrar todo</button></span>
   </footer>
 
   <!-- MODAL ASIENTO -->
@@ -268,6 +269,23 @@
         <span class="spacer"></span>
         <button class="btn ghost" id="btnSkipWelcome">Empezar vacío</button>
         <button class="btn primary" id="btnStartWelcome">Crear mi contabilidad</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONTRASEÑA -->
+  <div class="modal-backdrop" id="passwordModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3>Cambiar contraseña</h3>
+      <div class="form-grid">
+        <label class="span2">Contraseña actual<input type="password" id="pwCurrent" autocomplete="current-password" /></label>
+        <label class="span2">Nueva contraseña (mín. 8 caracteres)<input type="password" id="pwNew" autocomplete="new-password" /></label>
+      </div>
+      <p id="pwError" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnCancelPw">Cancelar</button>
+        <button class="btn primary" id="btnSavePw">Cambiar</button>
       </div>
     </div>
   </div>

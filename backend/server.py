@@ -240,6 +240,33 @@ class Handler(BaseHTTPRequestHandler):
         token = self._new_session(user["id"])
         self._send_json(200, {"token": token, "user": public_user(user)})
 
+    def _api_password(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesion no valida."})
+        body = self._read_json()
+        if not body:
+            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+        current = str(body.get("current") or "")
+        new = str(body.get("new") or "")
+        if not verify_password(current, user["password_hash"]):
+            return self._send_json(403, {"error": "La contrasena actual no es correcta."})
+        if len(new) < MIN_PASSWORD_LEN:
+            return self._send_json(
+                400, {"error": "La nueva contrasena debe tener al menos 8 caracteres."}
+            )
+        auth = self.headers.get("Authorization") or ""
+        mine = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
+        con = db()
+        con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                    (hash_password(new), user["id"]))
+        # Cierra las demás sesiones (la actual sigue válida)
+        con.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?",
+                    (user["id"], mine))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True})
+
     def _api_logout(self):
         auth = self.headers.get("Authorization") or ""
         token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else ""
@@ -313,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_login()
         if path == "/api/logout":
             return self._api_logout()
+        if path == "/api/password":
+            return self._api_password()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
