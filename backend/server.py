@@ -406,7 +406,15 @@ def main():
     args = parser.parse_args()
     init_db()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
-    print("NeverRed en http://{}:{}  (BD: {})".format(args.host, args.port, DB_PATH))
+    cert, key = os.environ.get("NEVERRED_TLS_CERT"), os.environ.get("NEVERRED_TLS_KEY")
+    scheme = "http"
+    if cert and key and os.path.isfile(cert) and os.path.isfile(key):
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cert, key)
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        scheme = "https"
+    print("NeverRed en {}://{}:{}  (BD: {})".format(scheme, args.host, args.port, DB_PATH))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
