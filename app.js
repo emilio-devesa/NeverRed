@@ -159,6 +159,51 @@ function drawChart() {
   ctx.fillStyle = '#9aa5b4'; ctx.fillText('Gastos', 109, 17);
 }
 
+// ---------- Recurrentes ----------
+function renderRecurring() {
+  const list = state.recurring || [];
+  document.getElementById('recurringList').innerHTML = list.length ? list.map(r => {
+    const t = entryTotal({ lines: r.lines });
+    return `<div class="acc-row"><span>↻ día ${r.day}</span><span>${esc(r.desc)}</span>
+      <span class="bal">${fmt(t.d)}</span>
+      <span class="muted small">${r.lastRun ? 'generado ' + r.lastRun : 'pendiente'}</span>
+      <button class="btn ghost small" data-rec-del="${r.id}">Quitar</button></div>`;
+  }).join('') : '<p class="muted small">Sin plantillas. Usa “↻ Mensual” en cualquier asiento.</p>';
+}
+document.getElementById('recurringList').addEventListener('click', ev => {
+  const del = ev.target.dataset.recDel;
+  if (del) { state.recurring = state.recurring.filter(r => r.id !== del); save(); renderAll(); }
+});
+function makeMonthly(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e || (state.recurring || []).some(r => r.desc === e.desc)) return;
+  state.recurring.push({
+    id: uid(), desc: e.desc,
+    day: Math.min(28, parseInt(e.date.slice(8), 10) || 1),
+    lines: e.lines.map(l => ({ accountId: l.accountId, debit: l.debit, credit: l.credit })),
+    lastRun: null,
+  });
+  save(); renderAll();
+}
+document.getElementById('btnRunRecurring').addEventListener('click', () => {
+  const now = new Date();
+  const mk = todayISO().slice(0, 7);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let n = 0;
+  for (const r of state.recurring || []) {
+    if (r.lastRun === mk) continue;
+    const day = String(Math.min(r.day, lastDay)).padStart(2, '0');
+    state.entries.push({
+      id: uid(), n: state.seq++, date: `${mk}-${day}`, desc: r.desc,
+      lines: r.lines.map(l => ({ accountId: l.accountId, debit: l.debit, credit: l.credit })),
+    });
+    r.lastRun = mk; n++;
+  }
+  if (!n) { alert('Nada pendiente: las plantillas de este mes ya están generadas.'); return; }
+  save(); renderAll();
+  alert(`Generados ${n} asiento(s) del mes.`);
+});
+
 // ---------- Diario ----------
 function entryCard(e) {
   const { d } = entryTotal(e);
@@ -172,6 +217,7 @@ function entryCard(e) {
     <div class="entry-actions">
       <button class="btn ghost small" data-edit="${e.id}">Editar</button>
       <button class="btn ghost small" data-dupe="${e.id}">Duplicar</button>
+      <button class="btn ghost small" data-monthly="${e.id}" title="Crear plantilla mensual">↻ Mensual</button>
       <button class="btn ghost small" data-del="${e.id}">Eliminar</button>
     </div></article>`;
 }
@@ -185,6 +231,7 @@ function renderDiario() {
     e.lines.some(l => (accById(l.accountId)?.name || '').toLowerCase().includes(q)));
   document.getElementById('diarioList').innerHTML = list.length ? list.map(entryCard).join('')
     : '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>';
+  renderRecurring();
 }
 function dupeEntry(id) {
   const e = state.entries.find(x => x.id === id);
@@ -195,17 +242,19 @@ function dupeEntry(id) {
   });
 }
 document.getElementById('diarioList').addEventListener('click', ev => {
-  const ed = ev.target.dataset.edit, del = ev.target.dataset.del, dupe = ev.target.dataset.dupe;
+  const ed = ev.target.dataset.edit, del = ev.target.dataset.del, dupe = ev.target.dataset.dupe, mon = ev.target.dataset.monthly;
   if (ed) openEntryModal(null, ed);
   if (dupe) dupeEntry(dupe);
+  if (mon) makeMonthly(mon);
   if (del && confirm('¿Eliminar este asiento?')) {
     state.entries = state.entries.filter(e => e.id !== del); save(); renderAll();
   }
 });
 document.getElementById('recentList').addEventListener('click', ev => {
-  const ed = ev.target.dataset.edit, dupe = ev.target.dataset.dupe;
+  const ed = ev.target.dataset.edit, dupe = ev.target.dataset.dupe, mon = ev.target.dataset.monthly;
   if (ed) { switchTab('diario'); openEntryModal(null, ed); }
   if (dupe) dupeEntry(dupe);
+  if (mon) makeMonthly(mon);
 });
 ['searchDiario', 'filterFrom', 'filterTo'].forEach(id => document.getElementById(id).addEventListener('input', renderDiario));
 function switchTab(name) {

@@ -153,6 +153,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .auth-form .btn { margin-top: 4px; }
 .budget-row { display: grid; grid-template-columns: 1fr 1fr 110px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .budget-row input { width: 100%; }
+.rec-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }
+.rec-head h3 { margin: 0; }
+.rec-head p { margin: 4px 0 0; }
 .budget-bar { height: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .budget-bar .fill { display: block; height: 100%; background: var(--green); }
 .budget-bar .fill.warn { background: #f59e0b; }

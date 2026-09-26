@@ -129,7 +129,19 @@
           <input id="filterFrom" type="date" title="Desde" />
           <input id="filterTo" type="date" title="Hasta" />
           <button class="btn primary" id="btnNewEntry2">+ Nuevo asiento</button>
+          <button class="btn ghost" id="btnCsv">Importar CSV</button>
+          <input type="file" id="fileCsv" accept=".csv,text/csv" hidden />
         </div>
+      </div>
+      <div class="card">
+        <div class="rec-head">
+          <div>
+            <h3>Asientos recurrentes</h3>
+            <p class="muted small">Plantillas mensuales (nómina, alquiler, suscripciones). Marca cualquier asiento como mensual y genera los pendientes.</p>
+          </div>
+          <button class="btn primary" id="btnRunRecurring">Generar pendientes del mes</button>
+        </div>
+        <div id="recurringList" class="list"></div>
       </div>
       <div id="diarioList" class="list"></div>
     </section>
