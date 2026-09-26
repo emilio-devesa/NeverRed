@@ -21,8 +21,12 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - La BD se crea sola en `backend/neverred.db` (tablas `users`, `sessions`, `user_data`).
 - Las contraseñas **nunca** se guardan en texto plano: hash PBKDF2-HMAC-SHA256 con sal aleatoria.
 - Las sesiones usan token aleatorio con caducidad de 30 días.
+- **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
+- **CORS restringido** al mismo origen y al modo archivo local.
+- **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, usa TLS (directo o tras Caddy/Nginx).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se limpia el estado en memoria y nadie hereda los datos de otro usuario.
+- **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
 
 > Sin el servidor en marcha (p. ej. abriendo `index.html` directamente), la pantalla de acceso avisará de que no hay conexión.
 
@@ -70,6 +74,8 @@ Dockerfile, compose.yaml, .dockerignore — empaquetado Docker
 | POST | `/api/register` | `{name, email, password}` → `201 {token, user}` (409 si el correo existe) |
 | POST | `/api/login` | `{email, password}` → `200 {token, user}` (401 si falla) |
 | POST | `/api/logout` | Invalida el token (cabecera `Authorization: Bearer …`) |
+| POST | `/api/password` | `{current, new}` cambia la contraseña y cierra otras sesiones |
+| DELETE | `/api/account` | Elimina el usuario y todos sus datos |
 | GET | `/api/me` | Usuario de la sesión actual |
 | GET | `/api/data` | Datos contables del usuario |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
@@ -99,9 +105,16 @@ docker compose up -d --build
 python3 backend/server.py --host 0.0.0.0 --port 8000
 ```
 
-Para producción, ponlo detrás de un proxy inverso con HTTPS (Caddy, Nginx) y
-supervísalo con systemd o similar. Copia de seguridad: basta con respaldar
-`backend/neverred.db` (o usar Exportar JSON desde la app).
+Para producción, ponlo detrás de un proxy inverso con HTTPS (Caddy, Nginx) o
+sirve TLS directo con `NEVERRED_TLS_CERT`/`NEVERRED_TLS_KEY`, y supervísalo
+con systemd o similar. Copias de seguridad:
+
+```bash
+python3 backend/backup.py              # backend/backups/, conserva las 14 últimas
+```
+
+o por cron cada noche (ver cabecera del script). La app también permite
+Exportar JSON manual. Tests del backend: `python3 backend/tests/test_server.py`.
 
 ## Releases (automáticas con GitHub Actions)
 
