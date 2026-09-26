@@ -49,8 +49,12 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 index.html  — vistas: inicio, diario, mayor, cuentas, informes + modales y acceso
 styles.css  — tema oscuro/claro, responsive
 app.js      — estado, lógica contable, render, sincronización con la API (sin librerías)
+icon.svg    — icono pixelado estilo panel de bolsa
 backend/server.py — API (registro/login/sesiones/datos) + SQLite + servidor estático
+backend/seed_demo.py — genera el usuario demo con 6 meses de movimientos
 backend/neverred.db — base de datos (se crea al arrancar; no versionar con datos reales)
+Dockerfile, compose.yaml, .dockerignore — empaquetado Docker
+.github/workflows/release.yml — release automática al publicar tags v*
 ```
 
 ## API
@@ -93,17 +97,19 @@ Para producción, ponlo detrás de un proxy inverso con HTTPS (Caddy, Nginx) y
 supervísalo con systemd o similar. Copia de seguridad: basta con respaldar
 `backend/neverred.db` (o usar Exportar JSON desde la app).
 
-## Releases
+## Releases (automáticas con GitHub Actions)
 
-1. Deja el árbol limpio (`git status`) y actualiza este README si hay cambios visibles.
-2. Crea el tag de versión (semántico: `vMAYOR.menor.parche`):
-   ```bash
-   git tag -a v1.0.0 -m "NeverRed v1.0.0: primer release"
-   git push origin main --tags
-   ```
-3. En GitHub → Releases → Draft a new release → elige el tag y pega las notas
-   (qué incluye, credenciales demo si aplica, cómo desplegar con Docker).
-4. Para regenerar el usuario de demostración en cualquier entorno:
-   ```bash
-   python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
-   ```
+Publicar un tag `v*` dispara el workflow `Release`, que verifica el backend
+(health + registro + guardado de datos), construye la imagen Docker, la sube a
+`ghcr.io/emilio-devesa/neverred` (tags `X.Y.Z`, `X.Y` y `latest`) y crea la
+Release con notas y comandos de despliegue:
+
+```bash
+git tag -a v1.1.0 -m "NeverRed v1.1.0" && git push origin v1.1.0
+```
+
+Antes del tag: deja el árbol limpio (`git status`) y actualiza este README si
+hay cambios visibles. Para regenerar el usuario de demostración:
+```bash
+python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
+```
