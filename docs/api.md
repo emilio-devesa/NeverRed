@@ -22,4 +22,5 @@ Sesión en cookie `HttpOnly` (`Bearer` solo para el modo archivo local). CORS re
 | POST | `/api/sessions/rotate` | Cierra las demás sesiones |
 | GET | `/api/data` | Contabilidad del usuario |
 | PUT | `/api/data` | Guarda `{accounts, entries, seq, currency, budgets, recurring}` (validado: asientos cuadrados) |
+| POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | `200 {ok: true, version}` |

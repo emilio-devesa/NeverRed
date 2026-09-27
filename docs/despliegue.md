@@ -32,6 +32,8 @@ Sirve siempre por **HTTPS**: tras Caddy con TLS automático (ejemplo en `Caddyfi
 | `NEVERRED_DB` | `backend/neverred.db` | Ruta de la BD (`/data/neverred.db` en Docker) |
 | `NEVERRED_TLS_CERT`, `NEVERRED_TLS_KEY` | — | HTTPS directo |
 | `NEVERRED_SESSION_DAYS` | `30` | Caducidad de sesiones |
+| `NEVERRED_QUIT_WHEN_IDLE` | — | `1` = apaga el servidor al cerrar la última pestaña (modo `.app` macOS) |
+| `NEVERRED_IDLE_TIMEOUT` | `20` | Segundos sin latidos antes de apagar |
 | `NEVERRED_RATE_MAX`, `NEVERRED_RATE_WINDOW` | `10`, `600` | Anti fuerza bruta |
 | `NEVERRED_SMTP_HOST/PORT/USER/PASS/FROM` | — | Correos de recuperación |
 | `NEVERRED_APP_URL` | `http://127.0.0.1:8000` | Enlaces del correo |
