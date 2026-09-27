@@ -1,5 +1,10 @@
 # NeverRed — Historial de cambios
 
+## v1.6.0 — Actualización automática
+- La app macOS comprueba versiones al abrir: diálogo nativo con changelog
+  e Instalar (descarga, sustituye y reabre) / Omitir / Más tarde
+- Demo documentada: `backend/seed_demo.py` → demo@neverred.local
+
 ## v1.5.0 — Robustez y producto
 - SQLite en WAL + busy_timeout, índices y tope de 10 sesiones
 - Sincronización con ETag: aviso y resolución de conflictos, insignia de estado
