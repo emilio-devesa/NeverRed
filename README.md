@@ -4,6 +4,16 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 > Cada euro tiene dos caras: de dónde viene y a dónde va. Si **debe = haber**, nunca estarás en rojo sin saberlo.
 
+## Descargar para macOS (sin instalar nada)
+
+1. Descarga el `.dmg` de tu Mac (Intel o Apple Silicon) desde
+   **Releases** en GitHub.
+2. Ábrelo y arrastra **NeverRed** a **Aplicaciones**.
+3. Doble clic en NeverRed: se abre en tu navegador. Listo.
+
+No pide instalar Python ni nada más (usa lo que ya trae macOS). Tus datos
+quedan en tu Mac (`~/Library/Application Support/NeverRed`).
+
 ## Puesta en marcha (con usuarios y base de datos)
 
 La app requiere registrarse con correo y contraseña antes de usarla. Los usuarios y sus datos contables se guardan en una base de datos SQLite a través del servidor incluido (solo biblioteca estándar de Python, sin dependencias):

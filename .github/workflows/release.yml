@@ -60,7 +60,10 @@ jobs:
         with:
           generate_release_notes: true
           body: |
-            ## Desplegar con Docker 🐳
+            ## Descargar 📥
+            - **macOS (sin instalar nada)**: baja el `.dmg` de tu Mac (Intel o
+              Apple Silicon) en *Assets*, arrástralo a Aplicaciones y haz doble clic.
+            - **Docker** 🐳:
             ```bash
             docker run -d --name neverred -p 8000:8000 \
               -v neverred-data:/data --restart unless-stopped \
