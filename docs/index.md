@@ -29,8 +29,9 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 ## Qué verás
 
-![Vista general](neverred.jpeg)
-![Libro diario](diario.jpeg)
-![Libro mayor](mayor.jpeg)
+![Acceso](NeverRed-Login.jpeg)
+![Libro diario](NeverRed-Diario.jpeg)
+![Libro mayor](NeverRed-Mayor.jpeg)
+![Informes](NeverRed-Informes.jpeg)
 
 Sigue en la [guía de uso](guia).
