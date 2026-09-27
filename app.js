@@ -944,6 +944,7 @@ function endSession() {
   sessionToken = null; currentUser = null;
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior
+  nukeServiceWorker(); // la próxima entrada cargará la última versión, nunca caché vieja
   try { localStorage.removeItem('neverred_session'); } catch {}
   quickUser = null;
   document.getElementById('quickLogin').hidden = true;
@@ -1207,7 +1208,24 @@ boot();
 
 // PWA: carcasa offline (solo en modo servidor; la API siempre necesita red)
 if ('serviceWorker' in navigator && !FROM_FILE) {
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Si el SW instala una versión nueva habiendo ya una activa, recarga solo
+  let refreshed = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !refreshed) { refreshed = true; location.reload(); }
+  });
+}
+// Service worker: al salir se anula el registro y se borra la caché
+// para que la próxima entrada cargue siempre la última versión.
+async function nukeServiceWorker() {
+  try {
+    if (!('serviceWorker' in navigator) || !('caches' in window)) return;
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  } catch {}
 }
 
 // Latido de pestaña: el servidor apaga todo al cerrar la última (modo .app).
