@@ -24,6 +24,7 @@ cp lib/contabilidad.js "$RES/lib/"
 cp backend/server.py "$RES/backend/"
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
+cp packaging/macos/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
 chmod +x "$APP/Contents/MacOS/NeverRed" "$APP/Contents/MacOS/check-update.sh"
 
 # Icono .icns a partir del SVG (QuickLook + iconutil, todo de serie)

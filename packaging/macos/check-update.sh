@@ -46,12 +46,23 @@ except Exception:
 ')"
 [ "$NEWER" = "1" ] || exit 0
 
-# Diálogo nativo de macOS: Instalar / Más tarde / Omitir versión
-CHOICE="$(NOTES="$NOTES" REMOTE="$REMOTE" osascript -e '
+# Diálogo: pregunta separada del changelog (campo con scroll); si falla,
+# se recurre al diálogo simple del sistema.
+NOTES_FILE="$DATA/release-notes.txt"
+printf '%s' "$NOTES" > "$NOTES_FILE"
+CHOICE="$(python3 "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+case "$CHOICE" in
+  install) CHOICE='Instalar' ;;
+  skip) CHOICE='Omitir versión' ;;
+  later) CHOICE='Más tarde' ;;
+  *)
+    CHOICE="$(NOTES="$NOTES" REMOTE="$REMOTE" osascript -e '
 set notes to system attribute "NOTES"
 set ver to system attribute "REMOTE"
 display dialog "Hay una nueva versión de NeverRed (" & ver & ") disponible." & return & return & notes buttons {"Omitir versión", "Más tarde", "Instalar"} default button "Instalar" cancel button "Más tarde" with title "Actualización de NeverRed" giving up after 120
 ' 2>/dev/null | sed -n 's/.*button returned:\(.*\)/\1/p')" || exit 0
+    ;;
+esac
 
 case "$CHOICE" in
   *Omitir*) echo "$REMOTE" > "$DATA/skipped_version"; exit 0 ;;
