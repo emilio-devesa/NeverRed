@@ -10,6 +10,13 @@ URL="http://127.0.0.1:$PORT"
 PIDF="$DATA/server.pid"
 mkdir -p "$DATA"
 
+# Actualizaciones: si instala una nueva, ya reabre la app y salimos
+if [ -x "$HERE/check-update.sh" ]; then
+  UPD=0
+  "$HERE/check-update.sh" "$HERE" "$DATA" || UPD=$?
+  if [ "$UPD" -eq 42 ]; then exit 0; fi
+fi
+
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null \
    && curl -sf -o /dev/null "$URL/api/health" 2>/dev/null; then
   /usr/bin/open "$URL"  # ya estaba en marcha: solo abre el navegador

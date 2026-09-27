@@ -18,6 +18,10 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 No pide instalar Python ni nada más (usa lo que ya trae macOS). Tus datos
 quedan en tu Mac (`~/Library/Application Support/NeverRed`).
 
+La app comprueba actualizaciones al abrirse: si hay versión nueva muestra
+un diálogo con los cambios y opciones de **Instalar** (descarga, sustituye
+y reabre sola), **Omitir versión** o **Más tarde**.
+
 NeverRed vive en el Dock mientras está abierta: al salir de ella
 (cmd+Q o clic derecho → Salir) se detiene el servidor y no queda
 actividad en segundo plano. Volver a abrirla reutiliza el servidor si
