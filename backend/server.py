@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import date as _date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Ruta de la BD configurable (imprescindible para Docker/volúmenes)
@@ -886,7 +886,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- estaticos --
     def _serve_static(self, path):
-        rel = "index.html" if path in ("/", "") else path.lstrip("/")
+        rel = "index.html" if path in ("/", "") else unquote(path).lstrip("/")
         if ".." in rel or rel.startswith("backend/") or rel.startswith(".git/"):
             return self._send_json(403, {"error": "Acceso denegado."})
         if rel.endswith(".db"):

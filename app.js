@@ -778,18 +778,23 @@ function rememberKnown(user) {
     localStorage.setItem(KNOWN_KEY, JSON.stringify(list.slice(0, 8)));
   } catch {}
 }
-function avatarColor(email) {
-  let h = 0;
-  for (const c of String(email)) h = (h * 31 + c.codePointAt(0)) % 360;
-  return `hsl(${h}, 55%, 45%)`;
+function avatarSrc(name) {
+  const ch = String(name || '?').trim().toLowerCase().normalize('NFC')[0] || '?';
+  const file = /[a-zñ]/.test(ch) ? encodeURIComponent(ch) : 'default';
+  return `assets/avatars/${file}.svg`;
+}
+function maskEmail(email) {
+  const parts = String(email).split('@');
+  if (parts.length !== 2) return email;
+  return parts[0].slice(0, 3) + '***@' + parts[1];
 }
 let quickUser = null;
 function demoRow() {
   return `
     <div class="acc-row">
-      <span class="avatar" style="background:${avatarColor(DEMO_EMAIL)}">D</span>
+      <img class="avatar" src="${avatarSrc('Demo')}" alt="Avatar demo" />
       <button class="btn ghost known-row" data-demo="1" type="button">
-        <span class="who">Demo<small>${esc(DEMO_EMAIL)} · datos de prueba</small></span>
+        <span class="who">Demo<small>${esc(maskEmail(DEMO_EMAIL))} · datos de prueba</small></span>
       </button>
     </div>`;
 }
@@ -797,9 +802,9 @@ function renderKnown() {
   const list = knownUsers().filter(u => u.email !== DEMO_EMAIL);
   const rows = list.map(u => `
     <div class="acc-row">
-      <span class="avatar" style="background:${avatarColor(u.email)}">${esc((u.name || u.email)[0].toUpperCase())}</span>
+      <img class="avatar" src="${avatarSrc(u.name)}" alt="Avatar de ${esc(u.name)}" />
       <button class="btn ghost known-row" data-known="${esc(u.email)}" type="button">
-        <span class="who">${esc(u.name)}<small>${esc(u.email)}</small></span>
+        <span class="who">${esc(u.name)}<small>${esc(maskEmail(u.email))}</small></span>
       </button>
       <button class="btn ghost small known-forget" data-forget="${esc(u.email)}" type="button" title="Olvidar en este navegador">✕</button>
     </div>`).join('');
@@ -844,10 +849,10 @@ function openQuick(u) {
   document.getElementById('knownBox').hidden = true;
   document.getElementById('authTabsWrap').hidden = true;
   document.getElementById('quickLogin').hidden = false;
-  document.getElementById('quickAvatar').textContent = (u.name || u.email)[0].toUpperCase();
-  document.getElementById('quickAvatar').style.background = avatarColor(u.email);
+  document.getElementById('quickAvatar').src = avatarSrc(u.name);
+  document.getElementById('quickAvatar').alt = 'Avatar de ' + u.name;
   document.getElementById('quickName').textContent = u.name;
-  document.getElementById('quickEmail').textContent = u.email;
+  document.getElementById('quickEmail').textContent = maskEmail(u.email);
   document.getElementById('quickPassword').value = '';
   document.getElementById('quickError').textContent = '';
   document.getElementById('quickPassword').focus();
