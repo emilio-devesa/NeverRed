@@ -1,5 +1,12 @@
 # NeverRed — Historial de cambios
 
+## v1.7.3 — Seis bugfixes
+- Icono propio en el AppImage de Linux (PNG vía rsvg)
+- Auto-update en Linux también al reabrir; Python con Tk garantizado
+- Diálogo macOS siempre con changelog desplazable
+- Versión visible en el pie; avatares incluidos en los paquetes
+- Login sin recorte superior en pantallas bajas
+
 ## v1.7.2 — Pulido del acceso
 - Avatares en imagen por letra, correos enmascarados y scroll propio del acceso
 - El servidor decodifica rutas con caracteres especiales (p. ej. ñ)
