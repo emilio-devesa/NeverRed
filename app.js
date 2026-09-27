@@ -767,35 +767,8 @@ function setAuthTab(which) {
 document.getElementById('tabRegister').addEventListener('click', () => setAuthTab('register'));
 document.getElementById('tabLogin').addEventListener('click', () => setAuthTab('login'));
 
-// ---------- Probar sin registrarse (usuario demo) ----------
-document.getElementById('btnDemo').addEventListener('click', async () => {
-  const err = document.getElementById('demoError');
-  const btn = document.getElementById('btnDemo');
-  err.textContent = '';
-  btn.disabled = true;
-  btn.textContent = 'Preparando demo…';
-  try {
-    const res = await fetch(api('/api/demo'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.token) {
-      err.textContent = data.error || 'No se pudo preparar la demo.';
-      return;
-    }
-    startSession(data.token, data.user);
-  } catch {
-    err.textContent = FROM_FILE
-      ? 'No se pudo contactar con la API en http://127.0.0.1:8000.'
-      : 'No hay conexión con el servidor. Ejecuta: python3 backend/server.py';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Probar sin registrarse';
-  }
-});
-
 // ---------- Usuarios conocidos (estilo login de macOS) ----------
+const DEMO_EMAIL = 'demo@neverred.local';
 const KNOWN_KEY = 'neverred_known_users';
 function knownUsers() { try { return JSON.parse(localStorage.getItem(KNOWN_KEY) || '[]'); } catch { return []; } }
 function rememberKnown(user) {
@@ -811,10 +784,18 @@ function avatarColor(email) {
   return `hsl(${h}, 55%, 45%)`;
 }
 let quickUser = null;
+function demoRow() {
+  return `
+    <div class="acc-row">
+      <span class="avatar" style="background:${avatarColor(DEMO_EMAIL)}">D</span>
+      <button class="btn ghost known-row" data-demo="1" type="button">
+        <span class="who">Demo<small>${esc(DEMO_EMAIL)} · datos de prueba</small></span>
+      </button>
+    </div>`;
+}
 function renderKnown() {
-  const list = knownUsers();
-  document.getElementById('knownBox').hidden = !list.length || !!quickUser;
-  document.getElementById('knownList').innerHTML = list.map(u => `
+  const list = knownUsers().filter(u => u.email !== DEMO_EMAIL);
+  const rows = list.map(u => `
     <div class="acc-row">
       <span class="avatar" style="background:${avatarColor(u.email)}">${esc((u.name || u.email)[0].toUpperCase())}</span>
       <button class="btn ghost known-row" data-known="${esc(u.email)}" type="button">
@@ -822,6 +803,27 @@ function renderKnown() {
       </button>
       <button class="btn ghost small known-forget" data-forget="${esc(u.email)}" type="button" title="Olvidar en este navegador">✕</button>
     </div>`).join('');
+  document.getElementById('knownBox').hidden = !!quickUser;
+  document.getElementById('knownList').innerHTML = rows + demoRow(); // Demo siempre el último
+}
+async function enterDemo() {
+  authNote.textContent = 'Preparando datos de prueba…';
+  try {
+    const res = await fetch(api('/api/demo'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) {
+      authNote.textContent = data.error || 'No se pudo preparar la demo.';
+      return;
+    }
+    startSession(data.token, data.user);
+  } catch {
+    authNote.textContent = FROM_FILE
+      ? 'No se pudo contactar con la API en http://127.0.0.1:8000.'
+      : 'No hay conexión con el servidor. Ejecuta: python3 backend/server.py';
+  }
 }
 document.getElementById('knownList').addEventListener('click', ev => {
   const f = ev.target.closest('[data-forget]');
@@ -830,6 +832,7 @@ document.getElementById('knownList').addEventListener('click', ev => {
     renderKnown();
     return;
   }
+  if (ev.target.closest('[data-demo]')) { enterDemo(); return; }
   const k = ev.target.closest('[data-known]');
   if (k) {
     const u = knownUsers().find(x => x.email === k.dataset.known);
