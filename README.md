@@ -52,7 +52,8 @@ python3 backend/server.py
 
 Abre entonces **http://127.0.0.1:8000** y entra: lo primero es el inicio
 de sesión (con casilla **Recuérdame** y lista de usuarios de ese
-navegador: un clic y solo pide la contraseña, al estilo macOS).
+navegador: avatar, nombre y correo enmascarado; un clic y solo pide la
+contraseña, al estilo macOS).
 Opciones del servidor: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
 
 Para verla con datos de ejemplo, entra como **Demo** (último en la lista

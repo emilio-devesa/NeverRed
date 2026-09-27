@@ -1,5 +1,9 @@
 # NeverRed — Historial de cambios
 
+## v1.7.2 — Pulido del acceso
+- Avatares en imagen por letra, correos enmascarados y scroll propio del acceso
+- El servidor decodifica rutas con caracteres especiales (p. ej. ñ)
+
 ## v1.7.1 — Acceso y actualizaciones
 - Login estilo macOS: usuarios conocidos con avatar, solo-contraseña y Recuérdame
 - Demo siempre última en la lista, con entrada directa e idempotente
