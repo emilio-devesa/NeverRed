@@ -21,7 +21,9 @@ quedan en tu Mac (`~/Library/Application Support/NeverRed`).
 NeverRed vive en el Dock mientras está abierta: al salir de ella
 (cmd+Q o clic derecho → Salir) se detiene el servidor y no queda
 actividad en segundo plano. Volver a abrirla reutiliza el servidor si
-ya estaba en marcha.
+ya estaba en marcha. Y si cierras su última pestaña en el navegador,
+todo se apaga solo en unos 20 segundos (las demás pestañas no se
+ven afectadas).
 
 > La app no está firmada con certificado Apple: la primera vez, ábrela con
 > clic derecho → **Abrir** y confirma.
