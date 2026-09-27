@@ -1,5 +1,9 @@
 # NeverRed — Historial de cambios
 
+## v1.7.4 — Caché bajo control
+- Al salir se anula el service worker y se borran cachés
+- Recarga automática ante versión nueva del frontal
+
 ## v1.7.3 — Seis bugfixes
 - Icono propio en el AppImage de Linux (PNG vía rsvg)
 - Auto-update en Linux también al reabrir; Python con Tk garantizado
