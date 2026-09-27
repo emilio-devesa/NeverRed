@@ -983,3 +983,22 @@ boot();
 if ('serviceWorker' in navigator && !FROM_FILE) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+// Latido de pestaña: el servidor apaga todo al cerrar la última (modo .app).
+// Cada pestaña tiene id propio (sessionStorage); las demás pestañas del
+// navegador no laten y no se ven afectadas.
+let tabId = null;
+try { tabId = sessionStorage.getItem('neverred_tab'); } catch { tabId = null; }
+if (!tabId) { tabId = uid(); try { sessionStorage.setItem('neverred_tab', tabId); } catch {} }
+function pingTab() {
+  try {
+    fetch(api('/api/ping'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tab: tabId }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
+pingTab();
+setInterval(pingTab, 10000);

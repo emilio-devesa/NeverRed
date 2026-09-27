@@ -18,6 +18,7 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=/usr/bin/python3; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
+export NEVERRED_QUIT_WHEN_IDLE=1 NEVERRED_IDLE_TIMEOUT=20
 "$PY" "$RES/backend/server.py" >"$DATA/server.log" 2>&1 &
 SRV=$!
 echo $SRV > "$PIDF"

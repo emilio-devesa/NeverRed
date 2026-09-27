@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
 from datetime import date as _date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,6 +54,17 @@ def rate_limited(ip):
 
 def rate_reset(ip):
     _rate.pop(ip, None)
+
+
+# Latidos de pestaña para el autoapagado (lo activa el lanzador de macOS con
+# NEVERRED_QUIT_WHEN_IDLE=1): cada pestaña late cada 10 s; sin latidos durante
+# IDLE_TIMEOUT segundos y tras 60 s de arranque, el servidor se apaga solo.
+QUIT_WHEN_IDLE = os.environ.get("NEVERRED_QUIT_WHEN_IDLE") == "1"
+IDLE_TIMEOUT = int(os.environ.get("NEVERRED_IDLE_TIMEOUT", "20"))
+_tabs = {}
+_tabs_lock = threading.Lock()
+_had_tabs = False
+_start_ts = int(time.time())
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -136,6 +148,35 @@ def verify_password(password, stored):
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+def tab_seen(tab):
+    """Registra el latido de una pestaña (id único por sessionStorage)."""
+    global _had_tabs
+    with _tabs_lock:
+        _tabs[tab] = time.time()
+        _had_tabs = True
+
+
+def prune_tabs(now=None):
+    """Elimina pestañas sin latido reciente. Devuelve cuántas quedan vivas."""
+    now = now if now is not None else time.time()
+    with _tabs_lock:
+        for t in [t for t, ts in _tabs.items() if now - ts > IDLE_TIMEOUT]:
+            del _tabs[t]
+        return len(_tabs)
+
+
+def idle_sweep(server):
+    """Hilo vigilante: apaga el servidor si hubo pestañas y ya no queda ninguna."""
+    while True:
+        time.sleep(5)
+        if not QUIT_WHEN_IDLE:
+            return
+        if _had_tabs and time.time() - _start_ts > 60 and prune_tabs() == 0:
+            print("[neverred] Sin pestañas: apagando.")
+            server.shutdown()
+            return
 
 
 def audit(action, user_id=None, detail=""):
@@ -271,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "NeverRed/1.0"
 
     def log_message(self, fmt, *args):  # noqa: A002 - firma de la stdlib
+        if args and "/api/ping" in str(args[0]):
+            return  # los latidos cada 10 s no ensucian el log
         print("[neverred] " + fmt % args)
 
     # -- utilidades --
@@ -560,6 +603,17 @@ class Handler(BaseHTTPRequestHandler):
         audit("sessions_rotate", user["id"], "cerradas=%d" % cur.rowcount)
         self._send_json(200, {"ok": True, "closed": cur.rowcount})
 
+    def _api_ping(self):
+        # Latido de pestaña: sin autenticación (también late el login) y sin
+        # rate-limit (laten cada 10 s). El CORS restringido ya impide el abuso
+        # desde sitios de terceros (petición JSON = preflight).
+        body = self._read_json() or {}
+        tab = str(body.get("tab") or "")[:64]
+        if not tab:
+            return self._send_json(400, {"error": "Falta el identificador de pestaña."})
+        tab_seen(tab)
+        self._send_json(200, {"ok": True})
+
     def _api_get_data(self):
         user = self._auth_user()
         if user is None:
@@ -624,6 +678,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_reset_confirm()
         if path == "/api/sessions/rotate":
             return self._api_sessions_rotate()
+        if path == "/api/ping":
+            return self._api_ping()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
@@ -690,6 +746,9 @@ def main():
         srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
         scheme = "https"
     print("NeverRed en {}://{}:{}  (BD: {})".format(scheme, args.host, args.port, DB_PATH))
+    if QUIT_WHEN_IDLE:
+        threading.Thread(target=idle_sweep, args=(srv,), daemon=True).start()
+        print("[neverred] Autoapagado activo: sin pestañas durante %ds." % IDLE_TIMEOUT)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

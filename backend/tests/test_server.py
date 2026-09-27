@@ -236,6 +236,14 @@ class ServerCase(unittest.TestCase):
         self.assertEqual(got["data"]["budgets"], {"a1": 200})
         self.assertEqual(len(got["data"]["recurring"]), 1)
 
+    def test_ping_y_poda(self):
+        st, _, _ = call(self.port, "/api/ping", "POST", {"tab": "abc"})
+        self.assertEqual(st, 200)
+        st, _, _ = call(self.port, "/api/ping", "POST", {})
+        self.assertEqual(st, 400)
+        self.assertGreaterEqual(server.prune_tabs(), 1)
+        self.assertEqual(server.prune_tabs(now=time.time() + 3600), 0)
+
     def test_logout(self):
         tok = mkuser(self.port, "salir")
         st, _, _ = call(self.port, "/api/logout", "POST", token=tok)
