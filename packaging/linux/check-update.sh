@@ -2,7 +2,8 @@
 # NeverRed — comprobación de actualizaciones en Linux.
 # Uso: check-update.sh <dir-app> <dir-datos>
 # Salida: 0 = seguir normal; 42 = actualización instalada (salir).
-# Diálogo con zenity si existe; si no, avisa por consola y sigue.
+# Diálogo con changelog desplazable (Tkinter); respaldo con zenity;
+# si no hay entorno gráfico, avisa por consola y sigue.
 set -u
 APP_DIR="$1"
 DATA="$2"
@@ -48,7 +49,17 @@ except Exception:
 [ "$NEWER" = "1" ] || exit 0
 
 CHOICE=""
-if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+# 1) Diálogo propio con changelog desplazable (Tkinter, incluido en Python)
+NOTES_FILE="$DATA/release-notes.txt"
+printf '%s' "$NOTES" > "$NOTES_FILE"
+TK="$(python3 "$(dirname "$0")/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+case "$TK" in
+  install) CHOICE='Instalar' ;;
+  skip) CHOICE='Omitir versión'; echo "$REMOTE" > "$DATA/skipped_version"; exit 0 ;;
+  later) exit 0 ;;
+esac
+# 2) Respaldo con zenity si existe entorno gráfico
+if [ -z "$CHOICE" ] && command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   CHOICE="$(zenity --question --title="Actualización de NeverRed" \
     --text="Hay una nueva versión ($REMOTE) disponible.\n\n$NOTES" \
     --ok-label="Instalar" --cancel-label="Más tarde" \
