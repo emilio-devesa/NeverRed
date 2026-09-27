@@ -1,5 +1,11 @@
 # NeverRed — Historial de cambios
 
+## v1.7.1 — Acceso y actualizaciones
+- Login estilo macOS: usuarios conocidos con avatar, solo-contraseña y Recuérdame
+- Demo siempre última en la lista, con entrada directa e idempotente
+- Diálogo de actualización unificado (macOS y Linux) con changelog desplazable
+- AppImage de Linux sin dependencias ni instalación
+
 ## v1.7.0 — Acceso renovado
 - Login primero estilo macOS: usuarios conocidos con avatar y solo-contraseña
 - Casilla Recuérdame (sesión corta o 30 días) y botón Probar sin registrarse
