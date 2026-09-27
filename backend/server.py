@@ -34,7 +34,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
 SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 PBKDF2_ITERATIONS = 200_000
-VERSION = os.environ.get("NEVERRED_VERSION", "1.0.0")
+VERSION = os.environ.get("NEVERRED_VERSION", "1.3.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
