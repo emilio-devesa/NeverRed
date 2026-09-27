@@ -25,7 +25,8 @@ quedan en tu Mac (`~/Library/Application Support/NeverRed`).
    `chmod +x NeverRed-*.AppImage`) y haz doble clic.
 
 Tus datos quedan en `~/.local/share/NeverRed`. Para detenerlo del todo:
-`./NeverRed-*.AppImage --stop`.
+`./NeverRed-*.AppImage --stop`. Al abrir comprueba actualizaciones
+(diálogo con zenity si lo hay; si no, avisa por consola y sigue).
 
 La app comprueba actualizaciones al abrirse: si hay versión nueva muestra
 un diálogo con los cambios y opciones de **Instalar** (descarga, sustituye
@@ -54,8 +55,8 @@ de sesión (con casilla **Recuérdame** y lista de usuarios de ese
 navegador: un clic y solo pide la contraseña, al estilo macOS).
 Opciones del servidor: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
 
-Para verla con datos de ejemplo (6 meses de movimientos), pulsa
-**Probar sin registrarse** en el acceso —o por terminal—:
+Para verla con datos de ejemplo, entra como **Demo** (último en la lista
+de acceso) —o por terminal—:
 
 ```bash
 python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
@@ -84,7 +85,8 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se limpia el estado en memoria y nadie hereda los datos de otro usuario.
 - **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
-- **Probar sin registrarse**: entra a la demo con 6 meses de datos (se restablece sola en cada uso).
+- **Demo**: siempre la última en la lista de acceso; entrar crea o restablece
+  sus 6 meses de datos sin pedir contraseña ni tocar a otros usuarios.
 
 > Sin el servidor en marcha (p. ej. abriendo `index.html` directamente), la pantalla de acceso avisará de que no hay conexión.
 
