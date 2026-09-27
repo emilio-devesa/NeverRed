@@ -4,6 +4,8 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 > Cada euro tiene dos caras: de dónde viene y a dónde va. Si **debe = haber**, nunca estarás en rojo sin saberlo.
 
+- [Descargar para macOS](#descargar-para-macos-sin-instalar-nada) · [Puesta en marcha](#puesta-en-marcha-con-usuarios-y-base-de-datos) · [Qué incluye](#qué-incluye) · [Capturas](#capturas) · [Reglas contables](#reglas-contables-aplicadas) · [Estructura](#estructura) · [API](#api) · [Despliegue](#despliegue) · [Releases](#releases-automáticas-con-github-actions)
+
 ## Descargar para macOS (sin instalar nada)
 
 1. Descarga el `.dmg` de tu Mac (Intel o Apple Silicon) desde
@@ -14,6 +16,9 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 No pide instalar Python ni nada más (usa lo que ya trae macOS). Tus datos
 quedan en tu Mac (`~/Library/Application Support/NeverRed`).
 
+> La app no está firmada con certificado Apple: la primera vez, ábrela con
+> clic derecho → **Abrir** y confirma.
+
 ## Puesta en marcha (con usuarios y base de datos)
 
 La app requiere registrarse con correo y contraseña antes de usarla. Los usuarios y sus datos contables se guardan en una base de datos SQLite a través del servidor incluido (solo biblioteca estándar de Python, sin dependencias):
@@ -23,6 +28,12 @@ python3 backend/server.py
 ```
 
 Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
+
+Para verla con datos de ejemplo (6 meses de movimientos):
+
+```bash
+python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
+```
 
 > ⚠️ Importante: abre la app desde **http://127.0.0.1:8000**, no con doble clic en `index.html`.
 > El archivo abierto directamente (`file://`) no puede guardar en la base de datos; la propia app
@@ -41,7 +52,7 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - **Auditoría**: `audit_log` registra accesos, cambios de clave, resets y borrados.
 - **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
 - **CORS restringido** al mismo origen y al modo archivo local.
-- **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, usa TLS (directo o tras Caddy/Nginx).
+- **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, sírvelo siempre por HTTPS (directo o tras Caddy; ver `Caddyfile`).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se limpia el estado en memoria y nadie hereda los datos de otro usuario.
 - **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
@@ -60,7 +71,8 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 - **Recurrentes**: plantillas mensuales (nómina, alquiler) con generación sin duplicados.
 - **Importar CSV** del banco (`fecha;descripción;importe`) como asientos cuadrados.
 - **PWA**: instalable y carcasa offline (la API necesita red).
-- **Datos locales**: todo se guarda en `localStorage`. Exporta/importa JSON para copia de seguridad.
+- **Tus datos**: viven en la base de datos del servidor y se sincronizan con
+  una caché local por usuario. Exporta/importa JSON para copia o traslado.
 
 ## Capturas
 
@@ -78,15 +90,21 @@ Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 bac
 ## Estructura
 
 ```
-index.html  — vistas: inicio, diario, mayor, cuentas, informes + modales y acceso
-styles.css  — tema oscuro/claro, responsive
-app.js      — estado, lógica contable, render, sincronización con la API (sin librerías)
-icon.svg    — icono pixelado estilo panel de bolsa
-backend/server.py — API (registro/login/sesiones/datos) + SQLite + servidor estático
-backend/seed_demo.py — genera el usuario demo con 6 meses de movimientos
-backend/neverred.db — base de datos (se crea al arrancar; no versionar con datos reales)
-Dockerfile, compose.yaml, .dockerignore — empaquetado Docker
-.github/workflows/release.yml — release automática al publicar tags v*
+index.html                — vistas + modales + acceso + registro del SW
+styles.css                — tema oscuro/claro, responsive
+app.js                    — estado, render y sincronización (sin librerías)
+lib/contabilidad.js       — lógica contable pura (navegador y tests node)
+icon.svg                  — icono pixelado estilo panel de bolsa
+manifest.webmanifest, sw.js — PWA instalable con carcasa offline
+backend/server.py         — API + SQLite + estáticos (solo stdlib)
+backend/backup.py         — copias de la BD con retención
+backend/seed_demo.py      — usuario demo con 6 meses de movimientos
+backend/tests/            — suite unittest del backend
+backend/neverred.db       — base de datos (se crea al arrancar; no se versiona)
+packaging/macos/          — Launcher.sh + build.sh (.app + .dmg sin dependencias)
+Dockerfile, compose.yaml, Caddyfile — despliegue
+.github/workflows/       — ci.yml (push/PR), release.yml + packaging-macos.yml (tags v*)
+docs/                     — capturas para este README
 ```
 
 ## API
@@ -101,7 +119,10 @@ Dockerfile, compose.yaml, .dockerignore — empaquetado Docker
 | POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
 | DELETE | `/api/account` | Elimina el usuario y todos sus datos |
 | GET | `/api/me` | Usuario de la sesión actual |
+| GET | `/api/sessions` | Sesiones propias (sin exponer tokens) |
+| POST | `/api/sessions/rotate` | Cierra todas las sesiones salvo la actual |
 | GET | `/api/data` | Datos contables del usuario |
+| PUT | `/api/data` | Guarda `{accounts, entries, seq, currency, budgets, recurring}` (validado) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
 
 ## Despliegue
@@ -142,23 +163,20 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 12 tests (solo stdlib)
+python3 backend/tests/test_server.py   # backend: 14 tests (solo stdlib)
 node --test frontend/tests/            # frontal: lógica contable (sin dependencias)
 ```
 
 ## Releases (automáticas con GitHub Actions)
 
-Publicar un tag `v*` dispara el workflow `Release`, que verifica el backend
-(health + registro + guardado de datos), construye la imagen Docker, la sube a
-`ghcr.io/emilio-devesa/neverred` (tags `X.Y.Z`, `X.Y` y `latest`) y crea la
-Release con notas y comandos de despliegue:
+Publicar un tag `v*` dispara los workflows, que verifican todo (suite Python +
+tests node), construyen la imagen Docker (→ `ghcr.io/emilio-devesa/neverred`
+con tags `X.Y.Z`, `X.Y` y `latest`), generan los `.dmg` de macOS (Intel y ARM)
+y crean la Release con notas y comandos de despliegue:
 
 ```bash
-git tag -a v1.1.0 -m "NeverRed v1.1.0" && git push origin v1.1.0
+git tag -a v1.3.0 -m "NeverRed v1.3.0" && git push origin v1.3.0
 ```
 
 Antes del tag: deja el árbol limpio (`git status`) y actualiza este README si
-hay cambios visibles. Para regenerar el usuario de demostración:
-```bash
-python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
-```
+hay cambios visibles.
