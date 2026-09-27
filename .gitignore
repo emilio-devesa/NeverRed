@@ -1,5 +1,7 @@
 # Datos de ejecución local (se regeneran solos)
 *.db
+*-shm
+*-wal
 backend/backups/
 dist/
 __pycache__/

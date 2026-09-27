@@ -156,6 +156,24 @@ def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
 
 
+_log = None
+
+
+def setup_logging():
+    """Log a fichero con rotación si NEVERRED_LOG_FILE está definido."""
+    global _log
+    path = os.environ.get("NEVERRED_LOG_FILE")
+    if not path:
+        return
+    import logging
+    from logging.handlers import RotatingFileHandler
+    logger = logging.getLogger("neverred")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(RotatingFileHandler(path, maxBytes=1_000_000, backupCount=5,
+                                          encoding="utf-8"))
+    _log = logger
+
+
 def etag_of(data):
     return hashlib.sha256(
         json.dumps(data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:32]
@@ -323,12 +341,23 @@ def validate_data(body):
 
 # ---------------- Servidor HTTP ----------------
 class Handler(BaseHTTPRequestHandler):
-    server_version = "NeverRed/1.0"
+    server_version = "NeverRed/" + VERSION
 
     def log_message(self, fmt, *args):  # noqa: A002 - firma de la stdlib
         if args and "/api/ping" in str(args[0]):
             return  # los latidos cada 10 s no ensucian el log
-        print("[neverred] " + fmt % args)
+        line = "[neverred] " + fmt % args
+        if _log:
+            _log.info(line)
+        else:
+            print(line)
+
+    def client_ip(self):
+        if os.environ.get("NEVERRED_TRUST_PROXY") == "1":
+            fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            if fwd:
+                return fwd
+        return self.client_address[0]
 
     # -- utilidades --
     def _cors_headers(self):
@@ -357,6 +386,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
         self._cors_headers()
         for k, v in (getattr(self, "_extra", None) or {}).items():
             self.send_header(k, v)
@@ -433,7 +463,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- API --
     def _api_register(self):
-        if rate_limited(self.client_address[0]):
+        if rate_limited(self.client_ip()):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
@@ -469,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(201, {"token": token, "user": public_user(user)})
 
     def _api_login(self):
-        if rate_limited(self.client_address[0]):
+        if rate_limited(self.client_ip()):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
@@ -483,7 +513,7 @@ class Handler(BaseHTTPRequestHandler):
             audit("login_fail", None, email)
             return self._send_json(401, {"error": "Correo o contrasena incorrectos."})
         audit("login", user["id"])
-        rate_reset(self.client_address[0])
+        rate_reset(self.client_ip())
         token = self._new_session(user["id"])
         self._set_session_cookie(token)
         self._send_json(200, {"token": token, "user": public_user(user)})
@@ -532,7 +562,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"user": public_user(user)})
 
     def _api_reset_request(self):
-        if rate_limited(self.client_address[0]):
+        if rate_limited(self.client_ip()):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json() or {}
         email = str(body.get("email") or "").strip().lower()
@@ -757,6 +787,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        if ext == ".html":
+            self.send_header("Content-Security-Policy",
+                             "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
         # La BD y el estado de sesion nunca deben cachearse
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -771,6 +806,7 @@ def main():
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     args = parser.parse_args()
     init_db()
+    setup_logging()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     cert, key = os.environ.get("NEVERRED_TLS_CERT"), os.environ.get("NEVERRED_TLS_KEY")
     scheme = "http"
