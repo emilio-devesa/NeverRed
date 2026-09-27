@@ -1,5 +1,6 @@
-# Al publicar un tag v*: construye el .dmg de macOS (Intel y Apple Silicon)
-# y lo adjunta a la Release. Sin dependencias extra: solo herramientas de serie.
+# Al publicar un tag v*: construye el .dmg universal de macOS (vale para
+# Intel y Apple Silicon: solo lleva scripts + Python del sistema) y lo
+# adjunta a la Release. Sin dependencias extra: herramientas de serie.
 name: macOS DMG
 
 on:
@@ -12,19 +13,12 @@ permissions:
 
 jobs:
   dmg:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-14
-            suffix: -arm64
-          - runner: macos-13
-            suffix: -intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: ./packaging/macos/build.sh "${GITHUB_REF_NAME#v}" "${{ matrix.suffix }}"
+      - run: ./packaging/macos/build.sh "${GITHUB_REF_NAME#v}"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}

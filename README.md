@@ -10,8 +10,8 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 ## Descargar para macOS (sin instalar nada)
 
-1. Descarga el `.dmg` de tu Mac (Intel o Apple Silicon) desde
-   **Releases** en GitHub.
+1. Descarga el `.dmg` desde **Releases** en GitHub (vale para Intel
+   y Apple Silicon: no lleva binarios, solo scripts y el Python de macOS).
 2. Ábrelo y arrastra **NeverRed** a **Aplicaciones**.
 3. Doble clic en NeverRed: se abre en tu navegador. Listo.
 
