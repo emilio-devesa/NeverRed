@@ -1,5 +1,10 @@
 # NeverRed — Historial de cambios
 
+## v1.7.0 — Acceso renovado
+- Login primero estilo macOS: usuarios conocidos con avatar y solo-contraseña
+- Casilla Recuérdame (sesión corta o 30 días) y botón Probar sin registrarse
+- Salir de la app detiene el servidor; autoapagado al cerrar la última pestaña
+
 ## v1.6.0 — Actualización automática
 - La app macOS comprueba versiones al abrir: diálogo nativo con changelog
   e Instalar (descarga, sustituye y reabre) / Omitir / Más tarde

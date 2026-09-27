@@ -40,7 +40,10 @@ La app requiere registrarse con correo y contraseña antes de usarla. Los usuari
 python3 backend/server.py
 ```
 
-Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
+Abre entonces **http://127.0.0.1:8000** y entra: lo primero es el inicio
+de sesión (con casilla **Recuérdame** y lista de usuarios de ese
+navegador: un clic y solo pide la contraseña, al estilo macOS).
+Opciones del servidor: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
 
 Para verla con datos de ejemplo (6 meses de movimientos), pulsa
 **Probar sin registrarse** en el acceso —o por terminal—:
@@ -72,6 +75,7 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se limpia el estado en memoria y nadie hereda los datos de otro usuario.
 - **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
+- **Probar sin registrarse**: entra a la demo con 6 meses de datos (se restablece sola en cada uso).
 
 > Sin el servidor en marcha (p. ej. abriendo `index.html` directamente), la pantalla de acceso avisará de que no hay conexión.
 
