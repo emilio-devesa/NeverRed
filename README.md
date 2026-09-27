@@ -108,9 +108,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 ## Capturas
 
-![Vista general de la contabilidad](docs/neverred.jpeg)
-![Libro diario](docs/diario.jpeg)
-![Libro mayor](docs/mayor.jpeg)
+![Acceso](docs/NeverRed-Login.jpeg)
+![Libro diario](docs/NeverRed-Diario.jpeg)
+![Libro mayor](docs/NeverRed-Mayor.jpeg)
+![Informes](docs/NeverRed-Informes.jpeg)
 
 ## Reglas contables aplicadas
 
