@@ -18,6 +18,15 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 No pide instalar Python ni nada más (usa lo que ya trae macOS). Tus datos
 quedan en tu Mac (`~/Library/Application Support/NeverRed`).
 
+## Descargar para Linux (sin instalar nada)
+
+1. Descarga el `.AppImage` desde **Releases** en GitHub.
+2. Dale permiso de ejecución (clic derecho → Propiedades → Permisos, o
+   `chmod +x NeverRed-*.AppImage`) y haz doble clic.
+
+Tus datos quedan en `~/.local/share/NeverRed`. Para detenerlo del todo:
+`./NeverRed-*.AppImage --stop`.
+
 La app comprueba actualizaciones al abrirse: si hay versión nueva muestra
 un diálogo con los cambios y opciones de **Instalar** (descarga, sustituye
 y reabre sola), **Omitir versión** o **Más tarde**.

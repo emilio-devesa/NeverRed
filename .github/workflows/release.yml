@@ -64,6 +64,8 @@ jobs:
             - **macOS (sin instalar nada)**: baja el `.dmg` en *Assets*
               (vale para Intel y Apple Silicon), arrástralo a Aplicaciones
               y haz doble clic.
+            - **Linux (sin instalar nada)**: baja el `.AppImage`, dale
+              permiso de ejecución y haz doble clic.
             - **Docker** 🐳:
             ```bash
             docker run -d --name neverred -p 8000:8000 \

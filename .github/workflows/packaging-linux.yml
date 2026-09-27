@@ -1,0 +1,24 @@
+# Al publicar un tag v*: construye el AppImage x86_64 de Linux y lo
+# adjunta a la Release. Sin dependencias extra en el resultado.
+name: Linux AppImage
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: ./packaging/linux/build.sh "${GITHUB_REF_NAME#v}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*.AppImage

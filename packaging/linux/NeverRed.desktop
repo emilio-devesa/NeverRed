@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=NeverRed
+Comment=Contabilidad personal por partida doble
+Exec=AppRun
+Icon=neverred
+Type=Application
+Categories=Office;Finance;
+Terminal=false
+StartupWMClass=NeverRed
