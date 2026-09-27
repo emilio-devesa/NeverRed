@@ -395,9 +395,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _set_session_cookie(self, token):
-        parts = ["%s=%s" % (SESSION_COOKIE, token), "Path=/", "HttpOnly",
-                 "SameSite=Lax", "Max-Age=%d" % (SESSION_DAYS * 86400)]
+    def _set_session_cookie(self, token, days):
+        parts = ["%s=%s" % (SESSION_COOKIE, token), "Path=/", "HttpOnly", "SameSite=Lax"]
+        if days:
+            parts.append("Max-Age=%d" % (days * 86400))
         if COOKIE_SECURE:
             parts.append("Secure")
         self._cookie = "; ".join(parts)
@@ -442,13 +443,14 @@ class Handler(BaseHTTPRequestHandler):
         con.close()
         return row
 
-    def _new_session(self, user_id):
+    def _new_session(self, user_id, days=None):
         token = secrets.token_urlsafe(32)
         now = int(time.time())
+        days = days or SESSION_DAYS
         con = db()
         con.execute(
             "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-            (token, user_id, now, now + SESSION_DAYS * 86400),
+            (token, user_id, now, now + days * 86400),
         )
         # Limpieza oportunista de sesiones caducadas
         con.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
@@ -494,8 +496,9 @@ class Handler(BaseHTTPRequestHandler):
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
         audit("register", user_id, email)
-        token = self._new_session(user_id)
-        self._set_session_cookie(token)
+        remember = body.get("remember", True) is not False
+        token = self._new_session(user_id, SESSION_DAYS if remember else 1)
+        self._set_session_cookie(token, SESSION_DAYS if remember else 0)
         self._send_json(201, {"token": token, "user": public_user(user)})
 
     def _api_login(self):
@@ -514,8 +517,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "Correo o contraseña incorrectos."})
         audit("login", user["id"])
         rate_reset(self.client_ip())
-        token = self._new_session(user["id"])
-        self._set_session_cookie(token)
+        remember = body.get("remember", True) is not False
+        token = self._new_session(user["id"], SESSION_DAYS if remember else 1)
+        self._set_session_cookie(token, SESSION_DAYS if remember else 0)
         self._send_json(200, {"token": token, "user": public_user(user)})
 
     def _api_password(self):

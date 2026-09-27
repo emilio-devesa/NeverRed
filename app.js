@@ -767,6 +767,77 @@ function setAuthTab(which) {
 document.getElementById('tabRegister').addEventListener('click', () => setAuthTab('register'));
 document.getElementById('tabLogin').addEventListener('click', () => setAuthTab('login'));
 
+// ---------- Usuarios conocidos (estilo login de macOS) ----------
+const KNOWN_KEY = 'neverred_known_users';
+function knownUsers() { try { return JSON.parse(localStorage.getItem(KNOWN_KEY) || '[]'); } catch { return []; } }
+function rememberKnown(user) {
+  try {
+    const list = knownUsers().filter(u => u.email !== user.email);
+    list.unshift({ id: user.id, name: user.name, email: user.email });
+    localStorage.setItem(KNOWN_KEY, JSON.stringify(list.slice(0, 8)));
+  } catch {}
+}
+function avatarColor(email) {
+  let h = 0;
+  for (const c of String(email)) h = (h * 31 + c.codePointAt(0)) % 360;
+  return `hsl(${h}, 55%, 45%)`;
+}
+let quickUser = null;
+function renderKnown() {
+  const list = knownUsers();
+  document.getElementById('knownBox').hidden = !list.length || !!quickUser;
+  document.getElementById('knownList').innerHTML = list.map(u => `
+    <div class="acc-row">
+      <span class="avatar" style="background:${avatarColor(u.email)}">${esc((u.name || u.email)[0].toUpperCase())}</span>
+      <button class="btn ghost known-row" data-known="${esc(u.email)}" type="button">
+        <span class="who">${esc(u.name)}<small>${esc(u.email)}</small></span>
+      </button>
+      <button class="btn ghost small known-forget" data-forget="${esc(u.email)}" type="button" title="Olvidar en este navegador">✕</button>
+    </div>`).join('');
+}
+document.getElementById('knownList').addEventListener('click', ev => {
+  const f = ev.target.closest('[data-forget]');
+  if (f) {
+    try { localStorage.setItem(KNOWN_KEY, JSON.stringify(knownUsers().filter(u => u.email !== f.dataset.forget))); } catch {}
+    renderKnown();
+    return;
+  }
+  const k = ev.target.closest('[data-known]');
+  if (k) {
+    const u = knownUsers().find(x => x.email === k.dataset.known);
+    if (u) openQuick(u);
+  }
+});
+function openQuick(u) {
+  quickUser = u;
+  document.getElementById('knownBox').hidden = true;
+  document.getElementById('authTabsWrap').hidden = true;
+  document.getElementById('quickLogin').hidden = false;
+  document.getElementById('quickAvatar').textContent = (u.name || u.email)[0].toUpperCase();
+  document.getElementById('quickAvatar').style.background = avatarColor(u.email);
+  document.getElementById('quickName').textContent = u.name;
+  document.getElementById('quickEmail').textContent = u.email;
+  document.getElementById('quickPassword').value = '';
+  document.getElementById('quickError').textContent = '';
+  document.getElementById('quickPassword').focus();
+}
+function closeQuick() {
+  quickUser = null;
+  document.getElementById('quickLogin').hidden = true;
+  document.getElementById('authTabsWrap').hidden = false;
+  renderKnown();
+}
+document.getElementById('linkOther').addEventListener('click', ev => { ev.preventDefault(); closeQuick(); });
+document.getElementById('formQuick').addEventListener('submit', ev => {
+  ev.preventDefault();
+  if (!quickUser) return;
+  handleAuth('/api/login', {
+    email: quickUser.email,
+    password: document.getElementById('quickPassword').value,
+    remember: document.getElementById('quickRemember').checked,
+  }, document.getElementById('quickError'));
+});
+
 async function handleAuth(endpoint, payload, errEl) {
   errEl.textContent = '';
   let res;
@@ -800,6 +871,7 @@ document.getElementById('formLogin').addEventListener('submit', ev => {
   handleAuth('/api/login', {
     email: document.getElementById('loginEmail').value.trim(),
     password: document.getElementById('loginPassword').value,
+    remember: document.getElementById('loginRemember').checked,
   }, document.getElementById('loginError'));
 });
 document.getElementById('btnLogout').addEventListener('click', async () => {
@@ -814,6 +886,7 @@ function startSession(token, user) {
   // en modo archivo se conserva el Bearer en localStorage.
   sessionToken = FROM_FILE ? token : null;
   currentUser = user;
+  rememberKnown(user);
   try {
     if (FROM_FILE) localStorage.setItem('neverred_session', token);
     else localStorage.removeItem('neverred_session');
@@ -836,6 +909,11 @@ function endSession() {
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior
   try { localStorage.removeItem('neverred_session'); } catch {}
+  quickUser = null;
+  document.getElementById('quickLogin').hidden = true;
+  document.getElementById('authTabsWrap').hidden = false;
+  setAuthTab('login');
+  renderKnown();
   authOverlay.hidden = false;
 }
 /** Descarga los datos del usuario desde la BD (o migra la copia local antigua). */
@@ -1038,6 +1116,8 @@ async function pingBackend() {
 }
 async function boot() {
   authOverlay.hidden = false;
+  setAuthTab('login');
+  renderKnown();
   document.getElementById('btnRetryBackend').hidden = true;
   const fileWarn = document.getElementById('authFileWarn');
   fileWarn.hidden = !FROM_FILE;

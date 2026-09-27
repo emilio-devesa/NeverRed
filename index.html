@@ -19,26 +19,46 @@
         <img src="icon.svg" class="logo" alt="" />
         <div><h1>NeverRed</h1><p>Nunca en rojo · doble partida</p></div>
       </div>
-      <h2 id="authTitle">Crea tu cuenta para empezar</h2>
+      <h2 id="authTitle">Bienvenido a NeverRed</h2>
       <p class="muted small">Tus datos se guardan en la base de datos de NeverRed, asociados a tu usuario.</p>
-      <div class="auth-tabs">
-        <button class="tab active" id="tabRegister" type="button">Registrarse</button>
-        <button class="tab" id="tabLogin" type="button">Iniciar sesión</button>
+      <div id="knownBox" hidden>
+        <p class="muted small">¿Quién eres?</p>
+        <div id="knownList" class="list"></div>
       </div>
-      <form id="formRegister" class="auth-form">
+      <div id="quickLogin" hidden>
+        <div class="quick-user">
+          <span class="avatar big" id="quickAvatar">?</span>
+          <div><strong id="quickName">—</strong><br /><span class="muted small" id="quickEmail">—</span></div>
+        </div>
+        <form id="formQuick" class="auth-form">
+          <label>Contraseña<input type="password" id="quickPassword" placeholder="••••••••" required autocomplete="current-password" /></label>
+          <label class="check"><input type="checkbox" id="quickRemember" checked /> Recuérdame la próxima vez</label>
+          <p class="error" id="quickError" role="alert"></p>
+          <button class="btn primary" type="submit">Entrar</button>
+          <p class="small muted"><a href="#" id="linkOther">Usar otra cuenta</a></p>
+        </form>
+      </div>
+      <div id="authTabsWrap">
+      <div class="auth-tabs">
+        <button class="tab active" id="tabLogin" type="button">Iniciar sesión</button>
+        <button class="tab" id="tabRegister" type="button">Registrarse</button>
+      </div>
+      <form id="formRegister" class="auth-form" hidden>
         <label>Nombre<input type="text" id="regName" placeholder="Ej. Emilio" maxlength="40" autocomplete="name" /></label>
         <label>Correo electrónico<input type="email" id="regEmail" placeholder="tu@correo.com" required autocomplete="email" /></label>
         <label>Contraseña (mín. 8 caracteres)<input type="password" id="regPassword" placeholder="••••••••" required minlength="8" autocomplete="new-password" /></label>
         <p class="error" id="regError" role="alert"></p>
         <button class="btn primary" type="submit" id="btnRegister">Crear cuenta y entrar</button>
       </form>
-      <form id="formLogin" class="auth-form" hidden>
+      <form id="formLogin" class="auth-form">
         <label>Correo electrónico<input type="email" id="loginEmail" placeholder="tu@correo.com" required autocomplete="email" /></label>
         <label>Contraseña<input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" /></label>
+        <label class="check"><input type="checkbox" id="loginRemember" checked /> Recuérdame la próxima vez</label>
         <p class="error" id="loginError" role="alert"></p>
         <button class="btn primary" type="submit" id="btnLogin">Entrar</button>
         <p class="small muted"><a href="#" id="linkReset">¿Olvidaste tu contraseña?</a></p>
       </form>
+      </div>
       <p class="muted small" id="authBackendNote">Conectando con la base de datos…</p>
       <div id="authFileWarn" class="file-warn" hidden>
         ⚠️ Has abierto <code>index.html</code> directamente como archivo. La forma correcta es abrir

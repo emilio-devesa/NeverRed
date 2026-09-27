@@ -156,6 +156,16 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .auth-form { display: flex; flex-direction: column; gap: 10px; }
 .auth-form[hidden] { display: none; }
 .auth-form .btn { margin-top: 4px; }
+label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
+label.check input { width: auto; accent-color: var(--green); }
+.known-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.known-row .who { flex: 1; min-width: 0; }
+.known-row .who small { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; }
+.known-forget { font-size: 12px; padding: 4px 8px; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; flex-shrink: 0; }
+.avatar.big { width: 46px; height: 46px; font-size: 20px; }
+.quick-user { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+#quickLogin[hidden], #knownBox[hidden] { display: none; }
 .budget-row { display: grid; grid-template-columns: 1fr 1fr 110px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .budget-row input { width: 100%; }
 .rec-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }

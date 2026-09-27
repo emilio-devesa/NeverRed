@@ -274,6 +274,17 @@ class ServerCase(unittest.TestCase):
         st, _, got = call(self.port, "/api/sessions", token=toks[-1])
         self.assertLessEqual(len(got["sessions"]), 10)
 
+    def test_remember_me(self):
+        st, h, _ = call(self.port, "/api/register", "POST",
+                        {"name": "rm", "email": "rm@t.local", "password": "secreta123",
+                         "remember": False})
+        self.assertEqual(st, 201)
+        self.assertNotIn("Max-Age", h.get("Set-Cookie", ""))  # cookie de sesión
+        st, h, _ = call(self.port, "/api/login", "POST",
+                        {"email": "rm@t.local", "password": "secreta123"})
+        self.assertEqual(st, 200)
+        self.assertIn("Max-Age=2592000", h.get("Set-Cookie", ""))  # 30 días
+
     def test_ping_y_poda(self):
         st, _, _ = call(self.port, "/api/ping", "POST", {"tab": "abc"})
         self.assertEqual(st, 200)
