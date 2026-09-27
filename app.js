@@ -158,6 +158,7 @@ function renderDashboard() {
   document.getElementById('recentList').innerHTML = rec.length ? rec.map(entryCard).join('')
     : '<p class="muted">Aún no hay asientos. Crea el primero con “+ Nuevo asiento”.</p>';
   drawChart();
+  renderBudgetAlerts();
 }
 function setKpi(id, v) {
   const el = document.getElementById(id);
@@ -201,7 +202,36 @@ function drawChart() {
   ctx.fillStyle = '#9aa5b4'; ctx.fillText('Ingresos', 22, 17);
   ctx.fillStyle = '#ef4444'; ctx.fillRect(95, 8, 10, 10);
   ctx.fillStyle = '#9aa5b4'; ctx.fillText('Gastos', 109, 17);
+  document.getElementById('chartFlowData').innerHTML =
+    `<table class="table"><thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Gastos</th></tr></thead><tbody>` +
+    data.map(d => `<tr><td>${d.m}</td><td class="num">${fmt(d.inc)}</td><td class="num">${fmt(d.exp)}</td></tr>`).join('') +
+    `</tbody></table>`;
 }
+
+function renderBudgetAlerts() {
+  const m = todayISO().slice(0, 7);
+  const spent = {};
+  for (const e of state.entries) {
+    if (!e.date.startsWith(m)) continue;
+    for (const l of e.lines) {
+      const a = accById(l.accountId);
+      if (a && a.type === 'Gasto') spent[a.id] = round2((spent[a.id] || 0) + (Number(l.debit) || 0) - (Number(l.credit) || 0));
+    }
+  }
+  const hits = state.accounts
+    .filter(a => a.type === 'Gasto' && !a.archived && Number(state.budgets[a.id]) > 0)
+    .map(a => ({ a, s: spent[a.id] || 0, b: Number(state.budgets[a.id]) }))
+    .filter(x => x.s / x.b >= 0.8);
+  const card = document.getElementById('budgetAlertsCard');
+  card.hidden = !hits.length;
+  document.getElementById('budgetAlerts').innerHTML = hits.map(x =>
+    `<div class="alert-row"><span>${x.s > x.b ? '🔴' : '🟡'}</span>
+     <span>${esc(x.a.name)}: ${fmt(x.s)} de ${fmt(x.b)}</span>
+     <button class="btn ghost small" data-goto="informes">Ver</button></div>`).join('');
+}
+document.getElementById('budgetAlerts').addEventListener('click', ev => {
+  if (ev.target.dataset.goto) switchTab(ev.target.dataset.goto);
+});
 
 // ---------- Importar CSV del banco ----------
 const csvModal = document.getElementById('csvModal');
@@ -243,6 +273,7 @@ document.getElementById('btnCsv').addEventListener('click', () => {
   document.getElementById('btnSaveCsv').disabled = true;
   csvRows = [];
   csvModal.hidden = false;
+  document.getElementById('csvBank').focus();
 });
 document.getElementById('btnCancelCsv').addEventListener('click', () => csvModal.hidden = true);
 document.getElementById('csvFileInput').addEventListener('change', ev => {
@@ -614,6 +645,7 @@ function openAccountModal(editId) {
   document.getElementById('accCode').value = a?.code || '';
   document.getElementById('accError').textContent = '';
   accountModal.hidden = false;
+  document.getElementById('accName').focus();
 }
 document.getElementById('btnNewAccount').addEventListener('click', () => openAccountModal());
 document.getElementById('btnCancelAcc').addEventListener('click', () => accountModal.hidden = true);
@@ -862,6 +894,7 @@ function enterApp() {
   if (!state.entries.length) {
     document.getElementById('wName').value = currentUser.name === 'contable' ? '' : currentUser.name;
     welcomeModal.hidden = false;
+    document.getElementById('wName').focus();
   }
 }
 
@@ -892,6 +925,7 @@ function openReset(stepNew) {
   document.getElementById('resetError').textContent = '';
   document.getElementById('resetError2').textContent = '';
   resetModal.hidden = false;
+  (document.getElementById(stepNew ? 'resetNew' : 'resetEmail') || {}).focus?.();
 }
 document.getElementById('linkReset').addEventListener('click', ev => { ev.preventDefault(); openReset(false); });
 document.getElementById('btnCancelReset').addEventListener('click', () => resetModal.hidden = true);
@@ -944,7 +978,7 @@ async function loadSessions() {
     }).join('') || '<p class="muted">Sin sesiones.</p>';
   } catch { box.innerHTML = '<p class="error">No se pudieron cargar.</p>'; }
 }
-document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); });
+document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); document.getElementById('btnCloseSessions').focus(); });
 document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);
 document.getElementById('btnRotateSessions').addEventListener('click', async () => {
   try {
@@ -960,6 +994,7 @@ document.getElementById('btnPassword').addEventListener('click', () => {
   document.getElementById('pwNew').value = '';
   document.getElementById('pwError').textContent = '';
   passwordModal.hidden = false;
+  document.getElementById('pwCurrent').focus();
 });
 document.getElementById('btnCancelPw').addEventListener('click', () => passwordModal.hidden = true);
 document.getElementById('btnSavePw').addEventListener('click', async () => {
@@ -984,6 +1019,18 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; } });
+// Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const open = [...document.querySelectorAll('.modal-backdrop')].find(m => !m.hidden);
+  if (!open) return;
+  const f = [...open.querySelectorAll('button, input, select, a[href]')]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+  else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+});
 
 async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo

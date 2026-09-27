@@ -109,9 +109,17 @@
       </div>
 
       <div class="grid-2">
+        <div class="card" id="budgetAlertsCard" hidden>
+          <h3>⚠️ Presupuestos al límite</h3>
+          <div id="budgetAlerts"></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
         <div class="card">
           <h3>Ingresos vs gastos · últimos 6 meses</h3>
           <canvas id="chartFlow" width="600" height="260"></canvas>
+          <details class="small muted"><summary>Ver datos en tabla</summary><div id="chartFlowData"></div></details>
         </div>
         <div class="card">
           <h3>Últimos asientos</h3>

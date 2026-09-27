@@ -284,11 +284,11 @@ def _validate_lines(lines, ids):
 def validate_data(body):
     """Valida la contabilidad antes de guardarla. None = válido, str = error."""
     if not isinstance(body, dict):
-        return "Cuerpo JSON invalido."
+        return "Cuerpo JSON inválido."
     accounts = body.get("accounts", [])
     entries = body.get("entries", [])
     if not isinstance(accounts, list) or not isinstance(entries, list):
-        return "Formato de datos invalido."
+        return "Formato de datos inválido."
     ids = set()
     for a in accounts:
         if not isinstance(a, dict):
@@ -467,20 +467,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
-            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         name = str(body.get("name") or "").strip()[:40] or "contable"
         email = str(body.get("email") or "").strip().lower()
         password = str(body.get("password") or "")
         if not EMAIL_RE.match(email):
-            return self._send_json(400, {"error": "Correo electronico no valido."})
+            return self._send_json(400, {"error": "Correo electrónico no válido."})
         if len(password) < MIN_PASSWORD_LEN:
             return self._send_json(
-                400, {"error": "La contrasena debe tener al menos 8 caracteres."}
+                400, {"error": "La contraseña debe tener al menos 8 caracteres."}
             )
         con = db()
         if con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
             con.close()
-            return self._send_json(409, {"error": "Ese correo ya esta registrado. Inicia sesion."})
+            return self._send_json(409, {"error": "Ese correo ya está registrado. Inicia sesión."})
         cur = con.execute(
             "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
             (name, email, hash_password(password), int(time.time())),
@@ -503,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
-            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         email = str(body.get("email") or "").strip().lower()
         password = str(body.get("password") or "")
         con = db()
@@ -511,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
         con.close()
         if user is None or not verify_password(password, user["password_hash"]):
             audit("login_fail", None, email)
-            return self._send_json(401, {"error": "Correo o contrasena incorrectos."})
+            return self._send_json(401, {"error": "Correo o contraseña incorrectos."})
         audit("login", user["id"])
         rate_reset(self.client_ip())
         token = self._new_session(user["id"])
@@ -521,17 +521,17 @@ class Handler(BaseHTTPRequestHandler):
     def _api_password(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         body = self._read_json()
         if not body:
-            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         current = str(body.get("current") or "")
         new = str(body.get("new") or "")
         if not verify_password(current, user["password_hash"]):
-            return self._send_json(403, {"error": "La contrasena actual no es correcta."})
+            return self._send_json(403, {"error": "La contraseña actual no es correcta."})
         if len(new) < MIN_PASSWORD_LEN:
             return self._send_json(
-                400, {"error": "La nueva contrasena debe tener al menos 8 caracteres."}
+                400, {"error": "La nueva contraseña debe tener al menos 8 caracteres."}
             )
         mine = self._current_token() or ""
         con = db()
@@ -558,7 +558,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_me(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         self._send_json(200, {"user": public_user(user)})
 
     def _api_reset_request(self):
@@ -590,12 +590,12 @@ class Handler(BaseHTTPRequestHandler):
     def _api_reset_confirm(self):
         body = self._read_json()
         if not body:
-            return self._send_json(400, {"error": "Cuerpo JSON invalido."})
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         token = str(body.get("token") or "")
         new = str(body.get("new") or "")
         if len(new) < MIN_PASSWORD_LEN:
             return self._send_json(
-                400, {"error": "La nueva contrasena debe tener al menos 8 caracteres."})
+                400, {"error": "La nueva contraseña debe tener al menos 8 caracteres."})
         th = hashlib.sha256(token.encode()).hexdigest()
         con = db()
         row = con.execute(
@@ -616,7 +616,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_delete_account(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         con = db()
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
@@ -629,7 +629,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_sessions(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         mine = self._current_token() or ""
         con = db()
         rows = con.execute(
@@ -644,7 +644,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_sessions_rotate(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         mine = self._current_token() or ""
         con = db()
         cur = con.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?",
@@ -668,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_get_data(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         con = db()
         row = con.execute(
             "SELECT data FROM user_data WHERE user_id = ?", (user["id"],)
@@ -684,7 +684,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_put_data(self):
         user = self._auth_user()
         if user is None:
-            return self._send_json(401, {"error": "Sesion no valida."})
+            return self._send_json(401, {"error": "Sesión no válida."})
         body = self._read_json()
         err = validate_data(body)
         if err:
