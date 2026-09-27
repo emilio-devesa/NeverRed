@@ -6,6 +6,13 @@ permalink: /guia/
 
 # Guía de uso
 
+## Entrar
+
+Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
+quién ha usado la app en ese navegador: un clic y solo te pide la contraseña.
+¿Nuevo? Pestaña **Registrarse**. ¿Curioso? Botón **Probar sin registrarse**:
+entra a la demo con 6 meses de datos (se restablece sola).
+
 ## La idea en 30 segundos
 
 Cada movimiento se registra **dos veces** por el mismo importe: un **debe** y un **haber**. Ejemplo: cobras 1.500 € → `Debe: Banco 1.500` / `Haber: Sueldos 1.500`. Si algo no cuadra, NeverRed no te deja guardarlo.
