@@ -1,0 +1,11 @@
+title: NeverRed
+description: Contabilidad personal por partida doble. Nunca en rojo.
+theme: minima
+plugins: []
+header_pages:
+  - index.md
+  - guia.md
+  - despliegue.md
+  - api.md
+  - desarrollo.md
+show_excerpts: false
