@@ -19,10 +19,14 @@ fi
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=/usr/bin/python3; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
 "$PY" "$RES/backend/server.py" >"$DATA/server.log" 2>&1 &
-echo $! > "$PIDF"
+SRV=$!
+echo $SRV > "$PIDF"
+# Al salir de la app (Dock → Salir) se detiene el servidor: sin actividad oculta.
+trap 'kill $SRV 2>/dev/null; rm -f "$PIDF"; exit 0' TERM INT
 i=0
 while [ $i -lt 20 ]; do
   curl -sf -o /dev/null "$URL/api/health" 2>/dev/null && break
   sleep 0.5; i=$((i + 1))
 done
 /usr/bin/open "$URL"
+wait $SRV
