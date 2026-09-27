@@ -9,7 +9,8 @@ permalink: /guia/
 ## Entrar
 
 Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
-quién ha usado la app en ese navegador: un clic y solo pide la contraseña.
+quién ha usado la app en ese navegador, con avatar, nombre y correo
+enmascarado (`dem***@...`): un clic y solo pide la contraseña.
 ¿Nuevo? Pestaña **Registrarse**. ¿Curioso? **Demo**, siempre la última de la
 lista: entra directo con 6 meses de datos de prueba (se restablecen solos,
 sin pedir contraseña y sin tocar a otros usuarios).
