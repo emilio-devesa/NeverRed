@@ -13,6 +13,8 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 **En Mac, sin instalar nada:** descarga el `.dmg` ([Releases](https://github.com/emilio-devesa/NeverRed/releases), vale para Intel y Apple Silicon), arrástralo a Aplicaciones y haz doble clic. La app avisa sola cuando hay actualización. Al salir de la app o cerrar su última pestaña, todo se detiene solo.
 
+**En Linux, sin instalar nada:** descarga el `.AppImage` de Releases, dale permiso de ejecución y haz doble clic. Tus datos quedan en `~/.local/share/NeverRed`; `./NeverRed-*.AppImage --stop` lo detiene del todo.
+
 **Desde código:**
 
 ```bash

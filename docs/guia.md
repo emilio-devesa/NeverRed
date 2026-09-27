@@ -9,9 +9,10 @@ permalink: /guia/
 ## Entrar
 
 Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
-quién ha usado la app en ese navegador: un clic y solo te pide la contraseña.
-¿Nuevo? Pestaña **Registrarse**. ¿Curioso? Botón **Probar sin registrarse**:
-entra a la demo con 6 meses de datos (se restablece sola).
+quién ha usado la app en ese navegador: un clic y solo pide la contraseña.
+¿Nuevo? Pestaña **Registrarse**. ¿Curioso? **Demo**, siempre la última de la
+lista: entra directo con 6 meses de datos de prueba (se restablecen solos,
+sin pedir contraseña y sin tocar a otros usuarios).
 
 ## La idea en 30 segundos
 

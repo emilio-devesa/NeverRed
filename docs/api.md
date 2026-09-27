@@ -16,6 +16,7 @@ Sesión en cookie `HttpOnly` (`Bearer` solo para el modo archivo local). CORS re
 | POST | `/api/password` | `{current, new}` cambia la clave y cierra otras sesiones |
 | POST | `/api/reset-request` | `{email}` envía enlace de recuperación (1 h) |
 | POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
+| POST | `/api/demo` | Crea o restablece la demo y abre sesión (sin registro) |
 | DELETE | `/api/account` | Elimina el usuario y todos sus datos |
 | GET | `/api/me` | Usuario actual |
 | GET | `/api/sessions` | Sesiones propias |
