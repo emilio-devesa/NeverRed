@@ -631,7 +631,7 @@ document.getElementById('btnCsvTrial').addEventListener('click', () => {
 document.getElementById('btnWipe').addEventListener('click', () => {
   if (!confirm('¿Borrar TODOS los datos de NeverRed? Exporta antes si los quieres conservar.')) return;
   localStorage.removeItem(LS_KEY);
-  state = { user: { name: '', currency: 'EUR' }, accounts: BASE_ACCOUNTS.map(a => ({ id: uid(), ...a, archived: false })), entries: [], seq: 1 };
+  state = { user: { name: '', currency: 'EUR' }, accounts: BASE_ACCOUNTS.map(a => ({ id: uid(), ...a, archived: false })), entries: [], seq: 1, budgets: {}, recurring: [] };
   save(); renderAll();
 });
 
@@ -659,7 +659,12 @@ document.getElementById('btnStartWelcome').addEventListener('click', () => {
 
 // ---------- Autenticación (registro/login contra la BD) ----------
 // Si la página se abrió como archivo local (file://), la API vive en el servidor local.
-const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
+function apiBase() {
+  if (location.protocol !== 'file:') return '';
+  try { return localStorage.getItem('neverred_api') || 'http://127.0.0.1:8000'; }
+  catch { return 'http://127.0.0.1:8000'; }
+}
+const API_BASE = apiBase();
 const api = p => API_BASE + p;
 const FROM_FILE = location.protocol === 'file:';
 // Sesión por cookie HttpOnly; el token Bearer solo se usa en modo archivo local.
