@@ -11,7 +11,7 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 ## Empezar en 1 minuto
 
-**En Mac, sin instalar nada:** descarga el `.dmg` ([Releases](https://github.com/emilio-devesa/NeverRed/releases), vale para Intel y Apple Silicon), arrástralo a Aplicaciones y haz doble clic. Al salir de la app o cerrar su última pestaña, todo se detiene solo.
+**En Mac, sin instalar nada:** descarga el `.dmg` ([Releases](https://github.com/emilio-devesa/NeverRed/releases), vale para Intel y Apple Silicon), arrástralo a Aplicaciones y haz doble clic. La app avisa sola cuando hay actualización. Al salir de la app o cerrar su última pestaña, todo se detiene solo.
 
 **Desde código:**
 

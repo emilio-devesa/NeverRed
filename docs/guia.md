@@ -43,3 +43,7 @@ La insignia junto a tu correo indica el estado: ✓ sincronizado, ● subiendo, 
 ## Cerrar la app (macOS)
 
 NeverRed vive en el Dock mientras está abierta. Al salir de ella (cmd+Q o clic derecho → Salir) se detiene el servidor sin dejar actividad en segundo plano. Además, si cierras su **última pestaña** en el navegador, todo se apaga solo en unos 20 segundos. Tus otras pestañas no se ven afectadas.
+
+## Actualizaciones (macOS)
+
+Al abrir la app se comprueba si hay versión nueva: verás el diálogo del sistema con los cambios y tres opciones — **Instalar** (descarga, sustituye y reabre sola), **Omitir versión** o **Más tarde**.
