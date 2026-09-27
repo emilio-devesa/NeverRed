@@ -13,13 +13,20 @@ DIR="$ROOT/dist/linux/NeverRed.AppDir"
 rm -rf "$DIR"
 mkdir -p "$DIR/app/backend" "$DIR/app/lib"
 cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$DIR/app/"
+cp -R assets "$DIR/app/assets"
 cp lib/contabilidad.js "$DIR/app/lib/"
 cp backend/server.py "$DIR/app/backend/"
 cp packaging/linux/AppRun packaging/linux/check-update.sh "$DIR/"
 cp packaging/update-dialog.py "$DIR/"
 cp packaging/linux/NeverRed.desktop "$DIR/"
+# Icono PNG para el lanzador (rsvg-convert; si no está, el SVG como respaldo)
+if command -v rsvg-convert >/dev/null 2>&1; then
+  rsvg-convert -w 256 -h 256 icon.svg -o "$DIR/neverred.png"
+  cp "$DIR/neverred.png" "$DIR/.DirIcon"
+else
+  cp icon.svg "$DIR/.DirIcon"
+fi
 cp icon.svg "$DIR/neverred.svg"
-cp icon.svg "$DIR/.DirIcon"
 echo "$VERSION" > "$DIR/VERSION"
 chmod +x "$DIR/AppRun" "$DIR/check-update.sh"
 

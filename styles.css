@@ -143,13 +143,15 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .auth-overlay {
   position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
-  display: flex; overflow-y: auto; padding: 16px;
+  display: flex; overflow-y: auto; padding: 5vh 16px 24px;
+  align-items: flex-start; justify-content: center;
+  -webkit-overflow-scrolling: touch;
 }
 .auth-overlay[hidden] { display: none; }
 .auth-card {
   width: min(440px, 100%);
   background: var(--panel); border: 1px solid var(--line);
-  border-radius: 16px; padding: 24px; margin: auto;
+  border-radius: 16px; padding: 24px; margin: 0; flex-shrink: 0;
 }
 .auth-card h2 { margin: 14px 0 4px; }
 .auth-tabs { display: flex; gap: 6px; margin: 14px 0; }

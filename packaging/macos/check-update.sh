@@ -48,21 +48,28 @@ except Exception:
 
 # Diálogo: pregunta separada del changelog (campo con scroll); si falla,
 # se recurre al diálogo simple del sistema.
+TKPY=""
+for p in /usr/bin/python3 python3; do
+  if $p -c 'import tkinter' 2>/dev/null; then TKPY=$p; break; fi
+done
 NOTES_FILE="$DATA/release-notes.txt"
 printf '%s' "$NOTES" > "$NOTES_FILE"
-CHOICE="$(python3 "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+CHOICE=""
+if [ -n "$TKPY" ]; then
+  CHOICE="$($TKPY "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+fi
 case "$CHOICE" in
   install) CHOICE='Instalar' ;;
   skip) CHOICE='Omitir versión' ;;
   later) CHOICE='Más tarde' ;;
-  *)
-    CHOICE="$(NOTES="$NOTES" REMOTE="$REMOTE" osascript -e '
+esac
+if [ -z "$CHOICE" ]; then
+  CHOICE="$(NOTES="$NOTES" REMOTE="$REMOTE" osascript -e '
 set notes to system attribute "NOTES"
 set ver to system attribute "REMOTE"
 display dialog "Hay una nueva versión de NeverRed (" & ver & ") disponible." & return & return & notes buttons {"Omitir versión", "Más tarde", "Instalar"} default button "Instalar" cancel button "Más tarde" with title "Actualización de NeverRed" giving up after 120
 ' 2>/dev/null | sed -n 's/.*button returned:\(.*\)/\1/p')" || exit 0
-    ;;
-esac
+fi
 
 case "$CHOICE" in
   *Omitir*) echo "$REMOTE" > "$DATA/skipped_version"; exit 0 ;;

@@ -25,8 +25,10 @@ abrir() {
 
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null \
    && curl -sf -o /dev/null "$URL/api/health" 2>/dev/null; then
-  abrir  # ya estaba en marcha: solo abre el navegador
-  exit 0
+  : # reutilización más abajo, tras comprobar actualizaciones
+  REUSE=1
+else
+  REUSE=0
 fi
 
 # Actualizaciones: si instala una nueva, la abre y salimos
@@ -34,6 +36,11 @@ if [ -x "$HERE/check-update.sh" ]; then
   UPD=0
   "$HERE/check-update.sh" "$HERE" "$DATA" || UPD=$?
   if [ "$UPD" -eq 42 ]; then exit 0; fi
+fi
+
+if [ "$REUSE" = "1" ]; then
+  abrir  # ya estaba en marcha: solo abre el navegador
+  exit 0
 fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else echo "Falta python3 en el sistema."; exit 1; fi

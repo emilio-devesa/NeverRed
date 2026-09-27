@@ -49,10 +49,18 @@ except Exception:
 [ "$NEWER" = "1" ] || exit 0
 
 CHOICE=""
-# 1) Diálogo propio con changelog desplazable (Tkinter, incluido en Python)
-NOTES_FILE="$DATA/release-notes.txt"
-printf '%s' "$NOTES" > "$NOTES_FILE"
-TK="$(python3 "$(dirname "$0")/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+# 1) Diálogo propio con changelog desplazable (un Python con Tkinter)
+TKPY=""
+for p in /usr/bin/python3 python3; do
+  if $p -c 'import tkinter' 2>/dev/null; then TKPY=$p; break; fi
+done
+if [ -n "$TKPY" ]; then
+  NOTES_FILE="$DATA/release-notes.txt"
+  printf '%s' "$NOTES" > "$NOTES_FILE"
+  TK="$($TKPY "$(dirname "$0")/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+else
+  TK=""
+fi
 case "$TK" in
   install) CHOICE='Instalar' ;;
   skip) CHOICE='Omitir versión'; echo "$REMOTE" > "$DATA/skipped_version"; exit 0 ;;

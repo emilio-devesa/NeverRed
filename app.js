@@ -1154,6 +1154,11 @@ async function boot() {
   authOverlay.hidden = false;
   setAuthTab('login');
   renderKnown();
+  try {
+    const r = await fetch(api('/api/health'));
+    const h = await r.json().catch(() => ({}));
+    if (h.version) document.getElementById('appVersion').textContent = 'v' + h.version;
+  } catch {}
   document.getElementById('btnRetryBackend').hidden = true;
   const fileWarn = document.getElementById('authFileWarn');
   fileWarn.hidden = !FROM_FILE;

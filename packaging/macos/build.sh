@@ -20,6 +20,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$RES/backend" "$RES/li
 
 # Ficheros de la app (solo lo necesario para correr)
 cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$RES/"
+cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
 cp backend/server.py "$RES/backend/"
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
