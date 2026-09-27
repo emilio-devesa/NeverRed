@@ -2,6 +2,9 @@
 'use strict';
 
 const LS_KEY = 'neverred_v1';
+// Versión de esta carcasa: debe subir con cada release (ver checklist).
+// Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
+const NEVERRED_BUILD = '1.7.4';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -1151,6 +1154,38 @@ async function pingBackend() {
   try { await fetch(api('/api/me')); return true; } // cualquier respuesta = servidor vivo
   catch { return false; }
 }
+// Guardián anti-carcasa-obsoleta: si el frontal cargado no coincide con el
+// servidor (p. ej. SW atascado o paquete a medias), limpia SW+cachés y recarga.
+async function ensureFreshShell() {
+  try {
+    if ('serviceWorker' in navigator && !FROM_FILE) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) reg.update();
+    }
+    const res = await fetch(api('/api/health'));
+    const h = await res.json().catch(() => ({}));
+    if (!h.version) return;
+    if (h.version === NEVERRED_BUILD) {
+      try { sessionStorage.removeItem('nr_fresh'); } catch {}
+      return;
+    }
+    let tried = false;
+    try { tried = sessionStorage.getItem('nr_fresh') === '1'; } catch {}
+    if (!tried) {
+      try { sessionStorage.setItem('nr_fresh', '1'); } catch {}
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      location.reload();
+      await new Promise(() => {}); // no seguir con la carcasa vieja
+    }
+  } catch {}
+}
 async function boot() {
   authOverlay.hidden = false;
   setAuthTab('login');
@@ -1177,6 +1212,7 @@ async function boot() {
     endSessionKeepOverlay();
     return;
   }
+  await ensureFreshShell();
   if (resetToken) { openReset(true); return; } // viene del enlace del correo
   if (!sessionToken) {
     authNote.textContent = FROM_FILE

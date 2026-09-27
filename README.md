@@ -216,4 +216,6 @@ git tag -a v1.3.0 -m "NeverRed v1.3.0" && git push origin v1.3.0
 ```
 
 Antes del tag: deja el árbol limpio (`git status`) y actualiza este README si
-hay cambios visibles.
+hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
+`VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
+coinciden, el frontal se autorrefresca en bucle).

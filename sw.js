@@ -1,8 +1,13 @@
 /* NeverRed service worker: la carcasa funciona sin conexión; la API siempre va a red.
  * HTML/JS en red-primero para recibir actualizaciones; el resto, caché-primero. */
-const CACHE = 'neverred-v2';
+const CACHE = 'neverred-v3';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'lib/contabilidad.js', 'icon.svg', 'manifest.webmanifest'];
 const NET_FIRST = /(\.html|\.js|\.webmanifest|\/)$/;
+function stash(cache, req, res) {
+  if (!res || !res.ok) return; // jamás cachear errores (404s pegajosos)
+  const copy = res.clone();
+  caches.open(cache).then(c => c.put(req, copy));
+}
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -20,8 +25,7 @@ self.addEventListener('fetch', e => {
   if (NET_FIRST.test(u.pathname)) {
     e.respondWith(
       fetch(e.request).then(r => {
-        const copy = r.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy));
+        stash(CACHE, e.request, r);
         return r;
       }).catch(() => caches.match(e.request).then(hit => hit || caches.match('index.html')))
     );
@@ -29,8 +33,7 @@ self.addEventListener('fetch', e => {
   }
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
-      const copy = r.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy));
+      stash(CACHE, e.request, r);
       return r;
     }).catch(() => caches.match('index.html')))
   );
