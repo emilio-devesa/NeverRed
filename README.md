@@ -155,6 +155,10 @@ docker compose up -d --build
 - La BD vive en el volumen (`/data/neverred.db` vía `NEVERRED_DB`) y sobrevive a rebuilds.
 - Variables: `HOST` (por defecto `0.0.0.0` en Docker), `PORT`, `NEVERRED_DB`.
 - La imagen usa `python:3.12-slim`, usuario no-root y healthcheck contra `/api/health`.
+- Backup externo del contenedor (cron del host):
+  ```bash
+  0 3 * * * docker exec neverred python3 backend/backup.py --db /data/neverred.db --dest /data/backups
+  ```
 
 ### Opción B — Servidor/VPS clásico
 
