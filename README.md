@@ -42,7 +42,8 @@ python3 backend/server.py
 
 Abre entonces **http://127.0.0.1:8000** y crea tu cuenta. Opciones: `python3 backend/server.py --port 8001 --host 0.0.0.0`.
 
-Para verla con datos de ejemplo (6 meses de movimientos):
+Para verla con datos de ejemplo (6 meses de movimientos), pulsa
+**Probar sin registrarse** en el acceso —o por terminal—:
 
 ```bash
 python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026

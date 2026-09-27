@@ -156,6 +156,9 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color:
 .auth-form { display: flex; flex-direction: column; gap: 10px; }
 .auth-form[hidden] { display: none; }
 .auth-form .btn { margin-top: 4px; }
+.demo-row { display: flex; gap: 10px; align-items: center; margin: 12px 0 8px; }
+.demo-row span { flex: 1; border-top: 1px solid var(--line); }
+#btnDemo { width: 100%; }
 label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
 label.check input { width: auto; accent-color: var(--green); }
 .known-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }

@@ -156,6 +156,90 @@ def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
 
 
+# Usuario de demostración (credenciales públicas y documentadas)
+DEMO_EMAIL = "demo@neverred.local"
+DEMO_PASSWORD = "DemoNeverRed2026"
+DEMO_NAME = "Demo"
+
+
+def demo_data():
+    """Genera 6 meses de contabilidad de muestra (dinámico, siempre actual)."""
+    import calendar
+    import datetime
+    import random
+    random.seed(7)
+    today = datetime.date.today()
+    months = []
+    y, m = today.year, today.month
+    for _ in range(6):
+        months.insert(0, (y, m, (y, m) == (today.year, today.month)))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    acc = [
+        ('a570', '570', 'Caja · Efectivo', 'Activo'),
+        ('a572', '572', 'Banco cuenta principal', 'Activo'),
+        ('a573', '573', 'Ahorros', 'Activo'),
+        ('a520', '520', 'Tarjeta de crédito', 'Pasivo'),
+        ('a101', '101', 'Capital inicial', 'Patrimonio'),
+        ('a700', '700', 'Sueldos y salarios', 'Ingreso'),
+        ('a701', '701', 'Ingresos extra', 'Ingreso'),
+        ('a600', '600', 'Alquiler / Vivienda', 'Gasto'),
+        ('a601', '601', 'Comida y supermercado', 'Gasto'),
+        ('a602', '602', 'Transporte', 'Gasto'),
+        ('a603', '603', 'Ocio y suscripciones', 'Gasto'),
+        ('a604', '604', 'Salud', 'Gasto'),
+        ('a605', '605', 'Suministros (luz, agua, internet)', 'Gasto'),
+    ]
+    accounts = [{'id': i, 'code': c, 'name': n, 'type': t, 'archived': False}
+                for i, c, n, t in acc]
+    entries, seq = [], [1]
+
+    def add(date, desc, pairs):
+        entries.append({'id': 'e%03d' % seq[0], 'n': seq[0], 'date': date, 'desc': desc,
+                        'lines': [{'accountId': a, 'debit': db, 'credit': cr}
+                                  for a, db, cr in pairs]})
+        seq[0] += 1
+
+    y0, m0, _ = months[0]
+    add('%04d-%02d-01' % (y0, m0), 'Asiento de apertura',
+        [('a570', 800, 0), ('a572', 3500, 0), ('a101', 0, 4300)])
+    supers = ['Mercadona semanal', 'Compra grande Carrefour', 'Frutería del barrio']
+    ocios = [('Netflix + Spotify', 15.99), ('Cena con amigos', 42.5), ('Cine', 19.0),
+             ('Concierto', 55.0), ('Escapada fin de semana', 120.0)]
+    for idx, (y, m, current) in enumerate(months):
+        last = calendar.monthrange(y, m)[1]
+        top = min(last, today.day) if current else last
+        P = lambda d: '%04d-%02d-%02d' % (y, m, min(d, top))
+        mk = '%04d-%02d' % (y, m)
+        add(P(1), 'Nómina del mes', [('a572', 2450, 0), ('a700', 0, 2450)])
+        add(P(5), 'Alquiler piso', [('a600', 850, 0), ('a572', 0, 850)])
+        add(P(3), 'Abono transporte', [('a602', 40, 0), ('a572', 0, 40)])
+        s = round(random.uniform(82, 112), 2)
+        add(P(12), 'Suministros (luz, agua, internet)', [('a605', s, 0), ('a572', 0, s)])
+        for _ in range(3):
+            g = round(random.uniform(45, 130), 2)
+            add(P(random.randint(4, top)), random.choice(supers),
+                [('a601', g, 0), ('a520', 0, g)])
+        desc, imp = random.choice(ocios)
+        add(P(random.randint(6, top)), desc, [('a603', imp, 0), ('a572', 0, imp)])
+        add(P(20), 'Transferencia a ahorros', [('a573', 200, 0), ('a572', 0, 200)])
+        deuda = round(sum(l['credit'] - l['debit'] for e in entries
+                          for l in e['lines'] if l['accountId'] == 'a520'
+                          and e['date'].startswith(mk)), 2)
+        if deuda > 0 and not current:
+            add(P(last), 'Pago tarjeta de crédito', [('a520', deuda, 0), ('a572', 0, deuda)])
+    entries.sort(key=lambda e: (e['date'], e['n']))
+    data = {'accounts': accounts, 'entries': entries, 'seq': seq[0], 'currency': 'EUR',
+            'budgets': {'a601': 350, 'a603': 120},
+            'recurring': [{'id': 'r001', 'desc': 'Alquiler piso', 'day': 5,
+                           'lastRun': '%04d-%02d' % (today.year, today.month),
+                           'lines': [{'accountId': 'a600', 'debit': 850, 'credit': 0},
+                                     {'accountId': 'a572', 'debit': 0, 'credit': 850}]}]}
+    assert validate_data({**data}) is None
+    return data
+
+
 _log = None
 
 
@@ -669,6 +753,35 @@ class Handler(BaseHTTPRequestHandler):
         tab_seen(tab)
         self._send_json(200, {"ok": True})
 
+    def _api_demo(self):
+        # Entrar a probar sin registrarse: crea o restablece el usuario demo
+        # (credenciales públicas) con datos de muestra e inicia sesión.
+        if rate_limited(self.client_address[0]):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
+        data = demo_data()
+        con = db()
+        user = con.execute("SELECT * FROM users WHERE email = ?", (DEMO_EMAIL,)).fetchone()
+        if user is None:
+            cur = con.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
+                (DEMO_NAME, DEMO_EMAIL, hash_password(DEMO_PASSWORD), int(time.time())))
+            user_id = cur.lastrowid
+        else:
+            user_id = user["id"]
+            con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                        (hash_password(DEMO_PASSWORD), user_id))
+        con.execute(
+            "INSERT INTO user_data (user_id, data, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
+            (user_id, json.dumps(data, ensure_ascii=False), int(time.time())))
+        con.commit()
+        user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        con.close()
+        audit("demo", user_id)
+        token = self._new_session(user_id)
+        self._set_session_cookie(token, SESSION_DAYS)
+        self._send_json(200, {"token": token, "user": public_user(user)})
+
     def _api_get_data(self):
         user = self._auth_user()
         if user is None:
@@ -751,6 +864,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_sessions_rotate()
         if path == "/api/ping":
             return self._api_ping()
+        if path == "/api/demo":
+            return self._api_demo()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib

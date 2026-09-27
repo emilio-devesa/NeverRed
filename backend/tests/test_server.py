@@ -274,6 +274,20 @@ class ServerCase(unittest.TestCase):
         st, _, got = call(self.port, "/api/sessions", token=toks[-1])
         self.assertLessEqual(len(got["sessions"]), 10)
 
+    def test_demo_sin_registro(self):
+        st, _, d1 = call(self.port, "/api/demo", "POST")
+        self.assertEqual(st, 200)
+        self.assertEqual(d1["user"]["email"], "demo@neverred.local")
+        st, _, got = call(self.port, "/api/data", token=d1["token"])
+        self.assertGreater(len(got["data"]["entries"]), 20)
+        # idempotente: segunda llamada restablece y sigue entrando
+        st, _, d2 = call(self.port, "/api/demo", "POST")
+        self.assertEqual(st, 200)
+        self.assertEqual(d2["user"]["id"], d1["user"]["id"])
+        st, _, _ = call(self.port, "/api/login", "POST",
+                        {"email": "demo@neverred.local", "password": "DemoNeverRed2026"})
+        self.assertEqual(st, 200)
+
     def test_remember_me(self):
         st, h, _ = call(self.port, "/api/register", "POST",
                         {"name": "rm", "email": "rm@t.local", "password": "secreta123",

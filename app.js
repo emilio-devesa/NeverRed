@@ -767,6 +767,34 @@ function setAuthTab(which) {
 document.getElementById('tabRegister').addEventListener('click', () => setAuthTab('register'));
 document.getElementById('tabLogin').addEventListener('click', () => setAuthTab('login'));
 
+// ---------- Probar sin registrarse (usuario demo) ----------
+document.getElementById('btnDemo').addEventListener('click', async () => {
+  const err = document.getElementById('demoError');
+  const btn = document.getElementById('btnDemo');
+  err.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Preparando demo…';
+  try {
+    const res = await fetch(api('/api/demo'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) {
+      err.textContent = data.error || 'No se pudo preparar la demo.';
+      return;
+    }
+    startSession(data.token, data.user);
+  } catch {
+    err.textContent = FROM_FILE
+      ? 'No se pudo contactar con la API en http://127.0.0.1:8000.'
+      : 'No hay conexión con el servidor. Ejecuta: python3 backend/server.py';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Probar sin registrarse';
+  }
+});
+
 // ---------- Usuarios conocidos (estilo login de macOS) ----------
 const KNOWN_KEY = 'neverred_known_users';
 function knownUsers() { try { return JSON.parse(localStorage.getItem(KNOWN_KEY) || '[]'); } catch { return []; } }
