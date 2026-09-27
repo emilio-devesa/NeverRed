@@ -236,6 +236,44 @@ class ServerCase(unittest.TestCase):
         self.assertEqual(got["data"]["budgets"], {"a1": 200})
         self.assertEqual(len(got["data"]["recurring"]), 1)
 
+    def test_etag_y_conflicto(self):
+        tok = mkuser(self.port, "etag")
+        st, h, _ = call(self.port, "/api/data", token=tok)
+        etag = h.get("ETag")
+        self.assertTrue(etag)
+        # PUT sin If-Match funciona y rota el etag
+        st, h2, _ = call(self.port, "/api/data", "PUT", VALID_DATA, token=tok)
+        self.assertEqual(st, 200)
+        self.assertNotEqual(h2.get("ETag"), etag)
+        # PUT con etag viejo = 409 con los datos del servidor
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/api/data" % self.port, method="PUT",
+            data=json.dumps(VALID_DATA).encode(),
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer " + tok, "If-Match": etag})
+        try:
+            urllib.request.urlopen(req)
+            self.fail("debió dar 409")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 409)
+            body = json.loads(e.read().decode())
+            self.assertIn("entries", body["server"])
+        # con el etag nuevo sí entra
+        req.add_header("If-Match", h2["ETag"])
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.status, 200)
+
+    def test_tope_sesiones(self):
+        mkuser(self.port, "tope")
+        toks = []
+        for _ in range(12):
+            server._rate.clear()  # el rate-limit no es lo que se prueba aquí
+            st, _, d = call(self.port, "/api/login", "POST",
+                            {"email": "tope@t.local", "password": "secreta123"})
+            toks.append(d["token"])
+        st, _, got = call(self.port, "/api/sessions", token=toks[-1])
+        self.assertLessEqual(len(got["sessions"]), 10)
+
     def test_ping_y_poda(self):
         st, _, _ = call(self.port, "/api/ping", "POST", {"tab": "abc"})
         self.assertEqual(st, 200)

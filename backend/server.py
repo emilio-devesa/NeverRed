@@ -80,13 +80,15 @@ MIME = {
 
 # ---------------- Base de datos ----------------
 def db():
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA busy_timeout=5000")
     return con
 
 
 def init_db():
     con = db()
+    con.execute("PRAGMA journal_mode=WAL")
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -120,6 +122,10 @@ def init_db():
             action TEXT NOT NULL,
             detail TEXT NOT NULL DEFAULT ''
         );
+        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
         """
     )
     con.commit()
@@ -148,6 +154,14 @@ def verify_password(password, stored):
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+def etag_of(data):
+    return hashlib.sha256(
+        json.dumps(data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:32]
+
+
+MAX_SESSIONS = 10
 
 
 def tab_seen(tab):
@@ -344,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self._cors_headers()
+        for k, v in (getattr(self, "_extra", None) or {}).items():
+            self.send_header(k, v)
         if getattr(self, "_cookie", None):
             self.send_header("Set-Cookie", self._cookie)
         self.end_headers()
@@ -406,6 +422,11 @@ class Handler(BaseHTTPRequestHandler):
         )
         # Limpieza oportunista de sesiones caducadas
         con.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+        # Tope de sesiones por usuario: expulsa las más antiguas (rowid = orden real)
+        con.execute(
+            "DELETE FROM sessions WHERE user_id = ? AND token NOT IN "
+            "(SELECT token FROM sessions WHERE user_id = ? ORDER BY rowid DESC LIMIT ?)",
+            (user_id, user_id, MAX_SESSIONS))
         con.commit()
         con.close()
         return token
@@ -627,6 +648,7 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(row["data"]) if row else {}
         except Exception:
             data = {}
+        self._extra = {"ETag": etag_of(data)}
         self._send_json(200, {"data": data})
 
     def _api_put_data(self):
@@ -638,6 +660,20 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self._send_json(400, {"error": err})
         con = db()
+        row = con.execute(
+            "SELECT data FROM user_data WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+        try:
+            current = json.loads(row["data"]) if row else {}
+        except Exception:
+            current = {}
+        want = self.headers.get("If-Match")
+        if want and want != etag_of(current):
+            con.close()
+            self._extra = {"ETag": etag_of(current)}
+            return self._send_json(409, {
+                "error": "Tus datos cambiaron en otro lugar. Recarga o confirma sobrescribir.",
+                "server": current, "etag": etag_of(current)})
         con.execute(
             "INSERT INTO user_data (user_id, data, updated_at) VALUES (?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
@@ -645,7 +681,8 @@ class Handler(BaseHTTPRequestHandler):
         )
         con.commit()
         con.close()
-        self._send_json(200, {"ok": True})
+        self._extra = {"ETag": etag_of(body)}
+        self._send_json(200, {"ok": True, "etag": etag_of(body)})
 
     # -- enrutado --
     def do_GET(self):  # noqa: N802 - firma de la stdlib

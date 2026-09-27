@@ -33,6 +33,16 @@ if (!state.accounts.length && !state.entries.length && !localStorage.getItem(LS_
 let editingEntryId = null;
 let editingAccountId = null;
 let saveTimer = null;
+let serverEtag = null;
+let conflictData = null;
+function setSync(s) {
+  const b = document.getElementById('syncBadge');
+  if (!b) return;
+  b.className = 'badge ' + (s === 'ok' ? 'ok' : 'bad');
+  b.textContent = s === 'ok' ? '✓ sincronizado' : (s === 'dirty' ? '● guardando…' : '⚠ revisa sincronización');
+  b.title = s === 'ok' ? 'Datos sincronizados con la base de datos'
+    : (s === 'dirty' ? 'Subiendo cambios…' : 'Sin conexión o conflicto: tus cambios están a salvo en este navegador');
+}
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
 function load() { try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } }
@@ -45,21 +55,55 @@ function save() {
 /** Sube los datos a la base de datos (con anti-rebote para no saturar la API). */
 function queueSync() {
   if (!sessionToken && !currentUser) return;
+  setSync('dirty');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(syncToServer, 800);
 }
-async function syncToServer() {
+async function syncToServer(force) {
   if (!sessionToken && !currentUser) return null;
   try {
+    const headers = authHeaders();
+    if (serverEtag && !force) headers['If-Match'] = serverEtag;
     const res = await fetch(api('/api/data'), {
-      method: 'PUT',
-      headers: authHeaders(),
+      method: 'PUT', headers,
       body: JSON.stringify({ accounts: state.accounts, entries: state.entries, seq: state.seq, currency: state.user.currency, budgets: state.budgets || {}, recurring: state.recurring || [] }),
     });
     if (res.status === 401) { endSession(); return false; }
-    return res.ok;
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.server) {
+      conflictData = data;
+      document.getElementById('conflictBar').hidden = false;
+      setSync('conflict');
+      return false;
+    }
+    if (res.ok) {
+      serverEtag = res.headers.get('ETag') || data.etag || serverEtag;
+      setSync('ok');
+      return true;
+    }
+    setSync('conflict');
+    return false;
   } catch { return null; /* sin conexión: queda la copia local y se reintenta luego */ }
 }
+document.getElementById('btnConflictReload').addEventListener('click', () => {
+  if (!conflictData) return;
+  const s = conflictData.server;
+  state.accounts = s.accounts || [];
+  state.entries = s.entries || [];
+  state.seq = s.seq || state.entries.length + 1;
+  state.budgets = s.budgets || {};
+  state.recurring = s.recurring || [];
+  serverEtag = conflictData.etag || null;
+  conflictData = null;
+  document.getElementById('conflictBar').hidden = true;
+  save(); renderAll();
+});
+document.getElementById('btnConflictKeep').addEventListener('click', async () => {
+  conflictData = null;
+  document.getElementById('conflictBar').hidden = true;
+  await syncToServer(true); // sobrescribe con lo mío
+  renderAll();
+});
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmt(n) {
@@ -223,8 +267,13 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
   const exp = document.getElementById('csvExpense').value;
   const err = document.getElementById('csvError');
   if (!bank || !csvRows.length) { err.textContent = 'Falta la cuenta del banco o no hay filas.'; return; }
-  let n = 0;
+  const seen = new Set(state.entries.map(e => {
+    const t = entryTotal({ lines: e.lines });
+    return `${e.date}|${e.desc}|${t.d.toFixed(2)}`;
+  }));
+  let n = 0, dup = 0;
   for (const x of csvRows) {
+    if (seen.has(`${x.date}|${x.desc}|${Math.abs(x.amount).toFixed(2)}`)) { dup++; continue; }
     const a = Math.abs(x.amount);
     const lines = x.amount > 0
       ? (inc ? [{ accountId: bank, debit: a, credit: 0 }, { accountId: inc, debit: 0, credit: a }] : null)
@@ -235,7 +284,7 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
   }
   csvModal.hidden = true;
   save(); renderAll();
-  alert(`Importados ${n} movimientos como asientos cuadrados.`);
+  alert(`Importados ${n} movimientos como asientos cuadrados${dup ? ` (${dup} ya existían).` : '.'}`);
 });
 
 // ---------- Recurrentes ----------
@@ -763,6 +812,7 @@ async function loadUserData() {
   try {
     const res = await fetch(api('/api/data'), { headers: authHeaders() });
     if (res.status === 401) { endSession(); return; }
+    serverEtag = res.headers.get('ETag');
     server = (await res.json()).data || {};
   } catch { server = null; }
   const hasServerData = server && ((server.accounts || []).length || (server.entries || []).length);
@@ -804,6 +854,9 @@ function enterApp() {
   authOverlay.hidden = true;
   document.getElementById('userEmail').textContent = currentUser.email;
   state.user.name = currentUser.name;
+  document.getElementById('conflictBar').hidden = true;
+  conflictData = null;
+  setSync('ok');
   switchTab('inicio'); // al entrar siempre se muestra la vista general
   renderAll();
   if (!state.entries.length) {

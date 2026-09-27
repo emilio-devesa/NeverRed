@@ -66,6 +66,7 @@
     </nav>
     <div class="top-actions">
       <span id="userEmail" class="muted small" title="Usuario actual"></span>
+      <span id="syncBadge" class="badge ok" title="Estado de sincronización">✓</span>
       <span id="balanceBadge" class="badge ok" title="Cuadre contable">✓ Cuadrado</span>
       <button id="btnExport" class="btn ghost" title="Exportar datos JSON">Exportar</button>
       <button id="btnImport" class="btn ghost" title="Importar datos JSON">Importar</button>
@@ -75,6 +76,11 @@
   </header>
 
   <main>
+    <div id="conflictBar" class="conflict-bar" hidden>
+      <span>⚠️ Tus datos cambiaron en otro dispositivo o pestaña.</span>
+      <button class="btn small" id="btnConflictReload">Recargar esos datos</button>
+      <button class="btn small primary" id="btnConflictKeep">Mantener los míos</button>
+    </div>
     <!-- INICIO / DASHBOARD -->
     <section id="view-inicio" class="view active">
       <div class="hero">
