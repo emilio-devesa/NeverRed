@@ -1,5 +1,9 @@
 # NeverRed — Historial de cambios
 
+## v1.7.5 — Carcasa siempre fresca
+- El SW ya no cachea errores y fuerza actualización en cada arranque
+- Guardián de versión frontal/servidor con autocorrección
+
 ## v1.7.4 — Caché bajo control
 - Al salir se anula el service worker y se borran cachés
 - Recarga automática ante versión nueva del frontal
