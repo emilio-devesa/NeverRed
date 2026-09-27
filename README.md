@@ -58,6 +58,8 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   Sin SMTP, el enlace sale por la consola (desarrollo).
 - **Sesiones**: listado propio y rotación (`GET /api/sessions`,
   `POST /api/sessions/rotate`); caducidad con `NEVERRED_SESSION_DAYS`.
+- **Autoapagado** (modo `.app`): `NEVERRED_QUIT_WHEN_IDLE=1` apaga el
+  servidor al cerrar la última pestaña (`NEVERRED_IDLE_TIMEOUT`, 20 s).
 - **Auditoría**: `audit_log` registra accesos, cambios de clave, resets y borrados.
 - **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
 - **CORS restringido** al mismo origen y al modo archivo local.
@@ -132,6 +134,7 @@ docs/                     — capturas para este README
 | POST | `/api/sessions/rotate` | Cierra todas las sesiones salvo la actual |
 | GET | `/api/data` | Datos contables del usuario |
 | PUT | `/api/data` | Guarda `{accounts, entries, seq, currency, budgets, recurring}` (validado) |
+| POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
 
 ## Despliegue
