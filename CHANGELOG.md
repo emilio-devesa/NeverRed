@@ -1,8 +1,13 @@
 # NeverRed — Historial de cambios
 
-## v1.7.5 — Carcasa siempre fresca
-- El SW ya no cachea errores y fuerza actualización en cada arranque
-- Guardián de versión frontal/servidor con autocorrección
+## v1.8.0 — Endurecimiento de seguridad
+- Backups consistentes en caliente (API SQLite) con permisos 600
+- Auto-update con firma Ed25519 obligatoria + sin inyección en el comparador
+- Datos en reposo solo-legibles (umask 077 + chmod)
+- El token de reset ya no se imprime en logs
+- Login con tiempo constante (anti-enumeración)
+- Borrar cuenta exige la contraseña actual
+- Estáticos: bloqueados `.pem/.key/.env`, ocultos y volcados WAL
 
 ## v1.7.4 — Caché bajo control
 - Al salir se anula el service worker y se borran cachés

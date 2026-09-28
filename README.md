@@ -220,3 +220,16 @@ Antes del tag: deja el árbol limpio (`git status`) y actualiza este README si
 hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
 `VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
 coinciden, el frontal se autorrefresca en bucle).
+
+### Firmar los assets (obligatorio para el auto-update)
+
+La app solo instala actualizaciones con firma Ed25519 válida. Tras publicar
+la release, firma cada `.dmg`/`.AppImage` y sube el `.sig` como asset:
+
+```bash
+ssh-keygen -Y sign -f packaging/release-key -n neverred-update NeverRed-1.8.0.dmg
+gh release upload v1.8.0 NeverRed-1.8.0.dmg.sig
+```
+
+La privada (`packaging/release-key`) no está en git: guárdala a buen recaudo.
+La pública vive en `packaging/release-key.pub` y embebida en los scripts.

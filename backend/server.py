@@ -35,7 +35,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
 SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 PBKDF2_ITERATIONS = 200_000
-VERSION = os.environ.get("NEVERRED_VERSION", "1.7.5")
+VERSION = os.environ.get("NEVERRED_VERSION", "1.8.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -150,6 +150,11 @@ def verify_password(password, stored):
         return hmac.compare_digest(dk.hex(), hash_hex)
     except Exception:
         return False
+
+
+# Hash ficticio para igualar tiempos en el login: si el correo no existe se
+# verifica igualmente contra esto, para no filtrar usuarios por temporización.
+_DUMMY_HASH = hash_password("neverred-usuario-inexistente")
 
 
 def public_user(row):
@@ -316,7 +321,13 @@ def _send_reset_email(to, link):
     """Envía el correo de recuperación (stdlib). Sin SMTP, lo muestra por consola (desarrollo)."""
     host = os.environ.get("NEVERRED_SMTP_HOST")
     if not host:
-        print("[neverred] SMTP sin configurar. Enlace de recuperación para %s: %s" % (to, link))
+        # Sin SMTP no se envía nada: el token NUNCA se imprime (acabaría en el
+        # log en claro). Solo en modo depuración explícito se muestra.
+        if os.environ.get("NEVERRED_DEBUG") == "1":
+            print("[neverred] (debug) Enlace de recuperación para %s: %s" % (to, link))
+        else:
+            print("[neverred] SMTP sin configurar: no se pudo enviar el correo a %s "
+                  "(define NEVERRED_SMTP_*; en desarrollo usa NEVERRED_DEBUG=1)." % to)
         return
     import smtplib
     from email.message import EmailMessage
@@ -596,7 +607,9 @@ class Handler(BaseHTTPRequestHandler):
         con = db()
         user = con.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         con.close()
-        if user is None or not verify_password(password, user["password_hash"]):
+        ok = verify_password(password, user["password_hash"]) if user is not None \
+            else verify_password(password, _DUMMY_HASH) and False
+        if not ok:
             audit("login_fail", None, email)
             return self._send_json(401, {"error": "Correo o contraseña incorrectos."})
         audit("login", user["id"])
@@ -705,6 +718,14 @@ class Handler(BaseHTTPRequestHandler):
         user = self._auth_user()
         if user is None:
             return self._send_json(401, {"error": "Sesión no válida."})
+        # Borrarlo todo es irreversible: exige la contraseña actual aunque la
+        # sesión sea válida (frena el daño si roban el token).
+        body = self._read_json()
+        if not body:
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        if not verify_password(str(body.get("current") or ""), user["password_hash"]):
+            audit("account_delete_denied", user["id"])
+            return self._send_json(403, {"error": "La contraseña no es correcta."})
         con = db()
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
@@ -885,11 +906,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     # -- estaticos --
+    # Extensiones que jamás se sirven (claves, secretos, volcados de BD…),
+    # aunque alguien las deje en el árbol servido al configurar TLS o backups.
+    BLOCKED_EXT = {".db", ".pem", ".key", ".env"}
+    BLOCKED_SUFFIX = ("-wal", "-shm", "-journal")
+
     def _serve_static(self, path):
         rel = "index.html" if path in ("/", "") else unquote(path).lstrip("/")
-        if ".." in rel or rel.startswith("backend/") or rel.startswith(".git/"):
-            return self._send_json(403, {"error": "Acceso denegado."})
-        if rel.endswith(".db"):
+        _, ext = os.path.splitext(rel)
+        if (".." in rel or rel.startswith("backend/") or rel.startswith(".git/")
+                or ext.lower() in self.BLOCKED_EXT
+                or rel.endswith(self.BLOCKED_SUFFIX)
+                or os.path.basename(rel).startswith(".")):
             return self._send_json(403, {"error": "Acceso denegado."})
         full = os.path.join(BASE_DIR, rel)
         if os.path.isdir(full):
@@ -924,8 +952,23 @@ def main():
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     args = parser.parse_args()
+    # Los datos contables son sensibles: todo lo que cree este proceso
+    # (BD, -wal, logs) nace solo-legible por el dueño.
+    os.umask(0o077)
     init_db()
+    for p in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
+        try:
+            if os.path.isfile(p):
+                os.chmod(p, 0o600)
+        except OSError:
+            pass
     setup_logging()
+    try:
+        if os.environ.get("NEVERRED_LOG_FILE") and os.path.isfile(
+                os.environ["NEVERRED_LOG_FILE"]):
+            os.chmod(os.environ["NEVERRED_LOG_FILE"], 0o600)
+    except OSError:
+        pass
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     cert, key = os.environ.get("NEVERRED_TLS_CERT"), os.environ.get("NEVERRED_TLS_KEY")
     scheme = "http"

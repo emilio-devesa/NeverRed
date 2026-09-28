@@ -12,7 +12,7 @@ Para automatizarla cada noche (cron):
 """
 import argparse
 import os
-import shutil
+import sqlite3
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,9 +31,23 @@ def main():
     os.makedirs(args.dest, exist_ok=True)
     name = "neverred-%s.db" % time.strftime("%Y%m%d-%H%M%S")
     out = os.path.join(args.dest, name)
-    # Copia atómica: primero a temporal y luego renombra
+    # Copia consistente aunque el servidor esté en marcha: la API de backup
+    # de SQLite vuelca una foto transaccional (un cp del .db con WAL activo
+    # quedaría incompleto/corrupto). Solo-legible por el dueño.
     tmp = out + ".tmp"
-    shutil.copy2(args.db, tmp)
+    src = sqlite3.connect("file:%s?mode=ro" % os.path.abspath(args.db), uri=True,
+                          timeout=30)
+    try:
+        dst = sqlite3.connect(tmp)
+        try:
+            src.backup(dst)
+            dst.execute("PRAGMA journal_mode=DELETE")
+            dst.commit()
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    os.chmod(tmp, 0o600)
     os.rename(tmp, out)
 
     snaps = sorted(f for f in os.listdir(args.dest)

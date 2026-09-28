@@ -151,7 +151,11 @@ class ServerCase(unittest.TestCase):
 
     def test_borrar_cuenta(self):
         tok = mkuser(self.port, "adios")
-        st, _, _ = call(self.port, "/api/account", "DELETE", token=tok)
+        st, _, _ = call(self.port, "/api/account", "DELETE",
+                        {"current": "incorrecta"}, token=tok)
+        self.assertEqual(st, 403)  # sin la contraseña no se borra
+        st, _, _ = call(self.port, "/api/account", "DELETE",
+                        {"current": "secreta123"}, token=tok)
         self.assertEqual(st, 200)
         st, _, _ = call(self.port, "/api/me", token=tok)
         self.assertEqual(st, 401)

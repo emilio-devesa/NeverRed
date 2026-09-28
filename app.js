@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '1.7.5';
+const NEVERRED_BUILD = '1.8.0';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -1020,12 +1020,16 @@ function enterApp() {
 document.getElementById('btnDeleteAccount').addEventListener('click', async () => {
   if (!confirm('¿Eliminar tu cuenta y TODA tu contabilidad? Esta acción no se puede deshacer.')) return;
   if (!confirm('Última confirmación: se borrarán tu usuario y todos tus datos del servidor.')) return;
+  const current = prompt('Escribe tu contraseña actual para confirmar el borrado:');
+  if (current === null) return;
   try {
-    await fetch(api('/api/account'), {
+    const res = await fetch(api('/api/account'), {
       method: 'DELETE',
       headers: authHeaders(),
+      body: JSON.stringify({ current }),
     });
-  } catch {}
+    if (!res.ok) { alert('No se pudo eliminar: la contraseña no es correcta.'); return; }
+  } catch { return; }
   try {
     localStorage.removeItem(userKey());
   } catch {}
