@@ -34,7 +34,10 @@ DB_PATH = os.environ.get(
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
 SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
-PBKDF2_ITERATIONS = 200_000
+# Caducidad por inactividad: el token muere si no se usa en este plazo,
+# aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
+SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
+PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
 VERSION = os.environ.get("NEVERRED_VERSION", "1.8.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
@@ -129,6 +132,12 @@ def init_db():
         """
     )
     con.commit()
+    # Migración: actividad de sesión para la caducidad por inactividad.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
+    if "last_seen" not in cols:
+        con.execute("ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0")
+        con.execute("UPDATE sessions SET last_seen = created_at WHERE last_seen = 0")
+        con.commit()
     con.close()
 
 
@@ -529,12 +538,18 @@ class Handler(BaseHTTPRequestHandler):
         token = self._current_token()
         if not token:
             return None
+        now = int(time.time())
         con = db()
         row = con.execute(
             "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id "
-            "WHERE s.token = ? AND s.expires_at > ?",
-            (token, int(time.time())),
+            "WHERE s.token = ? AND s.expires_at > ? AND s.last_seen > ?",
+            (token, now, now - SESSION_IDLE_DAYS * 86400),
         ).fetchone()
+        if row is not None:
+            con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?", (now, token))
+            con.execute("DELETE FROM sessions WHERE expires_at <= ? OR last_seen <= ?",
+                        (now, now - SESSION_IDLE_DAYS * 86400))
+            con.commit()
         con.close()
         return row
 
@@ -544,8 +559,9 @@ class Handler(BaseHTTPRequestHandler):
         days = days or SESSION_DAYS
         con = db()
         con.execute(
-            "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-            (token, user_id, now, now + days * 86400),
+            "INSERT INTO sessions (token, user_id, created_at, expires_at, last_seen)"
+            " VALUES (?,?,?,?,?)",
+            (token, user_id, now, now + days * 86400, now),
         )
         # Limpieza oportunista de sesiones caducadas
         con.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
@@ -612,6 +628,17 @@ class Handler(BaseHTTPRequestHandler):
         if not ok:
             audit("login_fail", None, email)
             return self._send_json(401, {"error": "Correo o contraseña incorrectos."})
+        try:
+            stored_iters = int(user["password_hash"].split("$")[1])
+        except Exception:
+            stored_iters = 0
+        if stored_iters != PBKDF2_ITERATIONS:
+            # Re-hash oportunista: endurece hashes creados con parámetros viejos.
+            con = db()
+            con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                        (hash_password(password), user["id"]))
+            con.commit()
+            con.close()
         audit("login", user["id"])
         rate_reset(self.client_ip())
         remember = body.get("remember", True) is not False
@@ -689,6 +716,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True})
 
     def _api_reset_confirm(self):
+        if rate_limited(self.client_ip()):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         body = self._read_json()
         if not body:
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})

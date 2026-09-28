@@ -944,6 +944,9 @@ function freshState(name) {
   };
 }
 function endSession() {
+  // La contabilidad cacheada es tan sensible como la sesión: al salir no queda
+  // rastro local (en modo archivo no hay sesión; ahí la caché local ES el dato).
+  if (currentUser) { try { localStorage.removeItem(userKey()); } catch {} }
   sessionToken = null; currentUser = null;
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior

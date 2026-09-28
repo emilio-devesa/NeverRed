@@ -81,10 +81,13 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   servidor al cerrar la última pestaña (`NEVERRED_IDLE_TIMEOUT`, 20 s).
 - **Auditoría**: `audit_log` registra accesos, cambios de clave, resets y borrados.
 - **Rate-limit**: máx. 10 intentos de login/registro por IP cada 10 min (`NEVERRED_RATE_MAX/WINDOW`).
+  Tras un proxy (Caddy, Docker) todos los clientes se ven como una sola IP:
+  activa `NEVERRED_TRUST_PROXY=1` **solo** si el proxy es de tu confianza
+  (Caddy ya envía `X-Forwarded-For`) para que el límite distinga clientes.
 - **CORS restringido** al mismo origen y al modo archivo local.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, sírvelo siempre por HTTPS (directo o tras Caddy; ver `Caddyfile`).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
-- **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se limpia el estado en memoria y nadie hereda los datos de otro usuario.
+- **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se borran el estado en memoria y su copia local, y nadie hereda los datos de otro usuario.
 - **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
 - **Demo**: siempre la última en la lista de acceso; entrar crea o restablece
   sus 6 meses de datos sin pedir contraseña ni tocar a otros usuarios.
@@ -191,7 +194,8 @@ python3 backend/server.py --host 0.0.0.0 --port 8000
 Para producción, sirve siempre por **HTTPS**: tras un proxy con TLS automático
 (Caddy, con ejemplo listo en `Caddyfile`) o TLS directo con
 `NEVERRED_TLS_CERT`/`NEVERRED_TLS_KEY`, y supervísalo
-con systemd o similar. Copias de seguridad:
+con systemd o similar. Tras Caddy, exporta `NEVERRED_TRUST_PROXY=1` para que
+el rate-limit vea la IP real de cada cliente. Copias de seguridad:
 
 ```bash
 python3 backend/backup.py              # backend/backups/, conserva las 14 últimas
