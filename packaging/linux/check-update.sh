@@ -14,6 +14,18 @@ RELEASE_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBXSqPW7x7HSHNj8akFRTv2dX7dU
 SIGN_ID="neverred-release"
 SIGN_NS="neverred-update"
 
+# Solo señaliza el PID si de verdad es nuestro server.py (un pidfile rancio
+# podría apuntar a otro proceso por reutilización de PIDs).
+stop_server() { # $1=pidfile
+  [ -f "$1" ] || return 1
+  PID="$(cat "$1" 2>/dev/null)"
+  case "$PID" in ''|*[!0-9]*) rm -f "$1"; return 1 ;; esac
+  if ps -p "$PID" -o command= 2>/dev/null | grep -q 'server\.py'; then
+    kill "$PID" 2>/dev/null
+  fi
+  rm -f "$1"
+}
+
 verify_sig() { # $1=fichero $2=url-de-su-.sig — 0=válido, 1=rechazado
   [ -n "${2:-}" ] || return 1
   command -v ssh-keygen >/dev/null 2>&1 || return 1
@@ -117,7 +129,7 @@ curl -fsSL -m 300 -o "$NEW" "$ASSET" 2>/dev/null || exit 0
 verify_sig "$NEW" "$ASSET_SIG" || { rm -f "$NEW"; exit 0; }
 chmod +x "$NEW"
 printf '%s\n' "$REMOTE" > "$DATA/skipped_version"
-if [ -f "$DATA/server.pid" ]; then kill "$(cat "$DATA/server.pid")" 2>/dev/null; rm -f "$DATA/server.pid"; fi
+if [ -f "$DATA/server.pid" ]; then stop_server "$DATA/server.pid"; fi
 sleep 1
 "$NEW" &
 exit 42

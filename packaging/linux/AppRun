@@ -11,8 +11,20 @@ URL="http://127.0.0.1:$PORT"
 PIDF="$DATA/server.pid"
 mkdir -p "$DATA"
 
+# Solo señaliza el PID si de verdad es nuestro server.py (un pidfile rancio
+# podría apuntar a otro proceso por reutilización de PIDs).
+stop_server() { # $1=pidfile
+  [ -f "$1" ] || return 1
+  PID="$(cat "$1" 2>/dev/null)"
+  case "$PID" in ''|*[!0-9]*) rm -f "$1"; return 1 ;; esac
+  if ps -p "$PID" -o command= 2>/dev/null | grep -q 'server\.py'; then
+    kill "$PID" 2>/dev/null
+  fi
+  rm -f "$1"
+}
+
 if [ "${1:-}" = "--stop" ]; then
-  if [ -f "$PIDF" ]; then kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"; echo "NeverRed detenido."; else echo "No estaba en marcha."; fi
+  if stop_server "$PIDF"; then echo "NeverRed detenido."; else echo "No estaba en marcha."; fi
   exit 0
 fi
 

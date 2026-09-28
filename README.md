@@ -237,3 +237,9 @@ gh release upload v1.8.0 NeverRed-1.8.0.dmg.sig
 
 La privada (`packaging/release-key`) no está en git: guárdala a buen recaudo.
 La pública vive en `packaging/release-key.pub` y embebida en los scripts.
+
+Guarda una copia **cifrada** de la privada fuera de este equipo (p. ej.
+`gpg -c packaging/release-key` en un USB). Si la pierdes, no podrás firmar
+más updates; si se filtra, rota la clave: genera un par nuevo, publica la
+`.pub`, y mantén ambas firmas aceptadas durante una versión de gracia antes
+de retirar la vieja (los scripts solo traen una clave embebida).

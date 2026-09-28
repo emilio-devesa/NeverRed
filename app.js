@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '1.8.0';
+const NEVERRED_BUILD = '1.8.1';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -797,7 +797,7 @@ function demoRow() {
     <div class="acc-row">
       <img class="avatar" src="${avatarSrc('Demo')}" alt="Avatar demo" />
       <button class="btn ghost known-row" data-demo="1" type="button">
-        <span class="who">Demo<small>${esc(maskEmail(DEMO_EMAIL))} · datos de prueba</small></span>
+        <span class="who">Demo<small>${esc(maskEmail(DEMO_EMAIL))} · datos públicos de prueba, se restablecen solos</small></span>
       </button>
     </div>`;
 }
@@ -1220,7 +1220,12 @@ async function boot() {
     return;
   }
   await ensureFreshShell();
-  if (resetToken) { openReset(true); return; } // viene del enlace del correo
+  if (resetToken) {
+    // El token ya está en memoria: sácalo de la URL para que no quede en el
+    // historial del navegador.
+    try { history.replaceState(null, '', location.pathname); } catch {}
+    openReset(true); return; // viene del enlace del correo
+  }
   if (!sessionToken) {
     authNote.textContent = FROM_FILE
       ? 'Conectado con la base de datos ✓ Regístrate (o mejor: abre http://127.0.0.1:8000).'

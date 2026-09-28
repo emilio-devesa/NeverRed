@@ -33,12 +33,14 @@ DB_PATH = os.environ.get(
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 MIN_PASSWORD_LEN = 8
+MAX_PASSWORD_LEN = 256
+AUDIT_DAYS = 90
 SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # Caducidad por inactividad: el token muere si no se usa en este plazo,
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "1.8.0")
+VERSION = os.environ.get("NEVERRED_VERSION", "1.8.1")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -168,6 +170,10 @@ _DUMMY_HASH = hash_password("neverred-usuario-inexistente")
 
 def public_user(row):
     return {"id": row["id"], "name": row["name"], "email": row["email"]}
+
+
+def password_ok(pw):
+    return isinstance(pw, str) and MIN_PASSWORD_LEN <= len(pw) <= MAX_PASSWORD_LEN
 
 
 # Usuario de demostración (credenciales públicas y documentadas)
@@ -549,6 +555,7 @@ class Handler(BaseHTTPRequestHandler):
             con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?", (now, token))
             con.execute("DELETE FROM sessions WHERE expires_at <= ? OR last_seen <= ?",
                         (now, now - SESSION_IDLE_DAYS * 86400))
+            con.execute("DELETE FROM audit_log WHERE ts <= ?", (now - AUDIT_DAYS * 86400,))
             con.commit()
         con.close()
         return row
@@ -586,9 +593,9 @@ class Handler(BaseHTTPRequestHandler):
         password = str(body.get("password") or "")
         if not EMAIL_RE.match(email):
             return self._send_json(400, {"error": "Correo electrónico no válido."})
-        if len(password) < MIN_PASSWORD_LEN:
+        if not password_ok(password):
             return self._send_json(
-                400, {"error": "La contraseña debe tener al menos 8 caracteres."}
+                400, {"error": "La contraseña debe tener entre 8 y 256 caracteres."}
             )
         con = db()
         if con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
@@ -657,9 +664,9 @@ class Handler(BaseHTTPRequestHandler):
         new = str(body.get("new") or "")
         if not verify_password(current, user["password_hash"]):
             return self._send_json(403, {"error": "La contraseña actual no es correcta."})
-        if len(new) < MIN_PASSWORD_LEN:
+        if not password_ok(new):
             return self._send_json(
-                400, {"error": "La nueva contraseña debe tener al menos 8 caracteres."}
+                400, {"error": "La nueva contraseña debe tener entre 8 y 256 caracteres."}
             )
         mine = self._current_token() or ""
         con = db()
@@ -723,9 +730,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         token = str(body.get("token") or "")
         new = str(body.get("new") or "")
-        if len(new) < MIN_PASSWORD_LEN:
+        if not password_ok(new):
             return self._send_json(
-                400, {"error": "La nueva contraseña debe tener al menos 8 caracteres."})
+                400, {"error": "La nueva contraseña debe tener entre 8 y 256 caracteres."})
         th = hashlib.sha256(token.encode()).hexdigest()
         con = db()
         row = con.execute(
@@ -967,7 +974,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         if ext == ".html":
             self.send_header("Content-Security-Policy",
-                             "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
+                             "default-src 'self'; script-src 'self'; style-src 'self' "
+                             "'unsafe-inline'; img-src 'self' data:; object-src 'none'; "
+                             "base-uri 'self'; frame-ancestors 'self'")
         # La BD y el estado de sesion nunca deben cachearse
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

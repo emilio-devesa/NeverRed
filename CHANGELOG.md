@@ -1,13 +1,11 @@
 # NeverRed — Historial de cambios
 
-## v1.8.0 — Endurecimiento de seguridad
-- Backups consistentes en caliente (API SQLite) con permisos 600
-- Auto-update con firma Ed25519 obligatoria + sin inyección en el comparador
-- Datos en reposo solo-legibles (umask 077 + chmod)
-- El token de reset ya no se imprime en logs
-- Login con tiempo constante (anti-enumeración)
-- Borrar cuenta exige la contraseña actual
-- Estáticos: bloqueados `.pem/.key/.env`, ocultos y volcados WAL
+## v1.8.1 — Segunda ronda de endurecimiento
+- Al salir no queda copia local de la contabilidad; PBKDF2 a 600k con re-hash
+- Sesiones con caducidad por inactividad (7 días); auditoría con purga (90 días)
+- Contraseñas de 8–256 caracteres; CSP estricta; `?reset=` fuera del historial
+- Lanzadores que no señalizan PIDs ajenos; aviso de demo pública
+- Supply-chain: Actions pinneados por SHA e imagen Docker por digest
 
 ## v1.7.4 — Caché bajo control
 - Al salir se anula el service worker y se borran cachés

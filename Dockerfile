@@ -1,5 +1,6 @@
 # NeverRed en Docker. Solo biblioteca estándar de Python, imagen mínima.
-FROM python:3.12-slim
+# Pinneada por digest (multi-arch): actualízala a propósito, no por sorpresa.
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 
 WORKDIR /app
 COPY . .
