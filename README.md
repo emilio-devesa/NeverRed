@@ -225,6 +225,18 @@ hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
 `VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
 coinciden, el frontal se autorrefresca en bucle).
 
+### Telemetría de uso (beta, solo store)
+
+Opt-in por usuario, apagada por defecto (pie → **Telemetría**). Cuando se
+activa, el frontal envía por lotes a `POST /api/telemetry` solo eventos de
+un catálogo cerrado (`TELEMETRY_EVENTS` en `backend/server.py`): vistas
+abiertas y conteos de acciones (`n_lineas`, `n_filas`). Nunca importes,
+textos, nombres ni identificadores — el servidor rechaza (400) cualquier
+evento o prop fuera del catálogo. Los datos viven en tu BD con purga a 90
+días, se ven en el propio panel, se borran al revocar el consentimiento y
+al eliminar la cuenta. **No hay forward**: nada sale de tu servidor en
+esta fase.
+
 ### Firmar los assets (obligatorio para el auto-update)
 
 La app solo instala actualizaciones con firma Ed25519 válida. Tras publicar

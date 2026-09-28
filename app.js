@@ -51,6 +51,40 @@ function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toS
 function load() { try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } }
 /** Clave de caché local por usuario (la fuente de verdad es la BD vía API). */
 function userKey() { return LS_KEY + ':' + (currentUser ? currentUser.id : 'local'); }
+// ---------- Telemetría (solo store; sin forward) ----------
+// Opt-in por usuario: apagado = track() no hace nada. La cola vive en memoria
+// y se envía por lotes a /api/telemetry (allowlist en el servidor).
+let telemetryOn = false;
+let telemetryQueue = [];
+function track(event, props) {
+  if (!telemetryOn || FROM_FILE) return;
+  telemetryQueue.push({ event, props: props || {} });
+  if (telemetryQueue.length > 500) telemetryQueue.splice(0, telemetryQueue.length - 500);
+}
+async function flushTelemetry() {
+  if (!telemetryOn || !telemetryQueue.length || !currentUser) return;
+  const batch = telemetryQueue.splice(0, 100);
+  try {
+    const res = await fetch(api('/api/telemetry'), {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ events: batch }),
+    });
+    // 403 = consentimiento revocado en otro dispositivo: no reintentar.
+    if (!res.ok && res.status !== 403) telemetryQueue.unshift(...batch);
+  } catch { telemetryQueue.unshift(...batch); }
+}
+setInterval(flushTelemetry, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushTelemetry();
+});
+async function loadTelemetryConsent() {
+  telemetryOn = false;
+  if (FROM_FILE || !currentUser) return;
+  try {
+    const res = await fetch(api('/api/telemetry-consent'), { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    telemetryOn = !!data.enabled;
+  } catch {}
+}
 function save() {
   try { localStorage.setItem(userKey(), JSON.stringify(state)); } catch {}
   queueSync();
@@ -75,6 +109,7 @@ async function syncToServer(force) {
     const data = await res.json().catch(() => ({}));
     if (res.status === 409 && data.server) {
       conflictData = data;
+      track('conflicto_409');
       document.getElementById('conflictBar').hidden = false;
       setSync('conflict');
       return false;
@@ -132,6 +167,7 @@ document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () =>
   b.classList.add('active');
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + b.dataset.view).classList.add('active');
+  if (b.dataset.view) track('vista_' + b.dataset.view);
 }));
 
 // ---------- Dashboard ----------
@@ -319,6 +355,7 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
   csvModal.hidden = true;
   save(); renderAll();
   alert(`Importados ${n} movimientos como asientos cuadrados${dup ? ` (${dup} ya existían).` : '.'}`);
+  track('csv_importado', { n_filas: n });
 });
 
 // ---------- Recurrentes ----------
@@ -364,6 +401,7 @@ document.getElementById('btnRunRecurring').addEventListener('click', () => {
   if (!n) { alert('Nada pendiente: las plantillas de este mes ya están generadas.'); return; }
   save(); renderAll();
   alert(`Generados ${n} asiento(s) del mes.`);
+  track('recurrentes_generados', { n });
 });
 
 // ---------- Diario ----------
@@ -410,6 +448,7 @@ document.getElementById('diarioList').addEventListener('click', ev => {
   if (mon) makeMonthly(mon);
   if (del && confirm('¿Eliminar este asiento?')) {
     state.entries = state.entries.filter(e => e.id !== del); save(); renderAll();
+    track('asiento_eliminado');
   }
 });
 document.getElementById('recentList').addEventListener('click', ev => {
@@ -635,6 +674,7 @@ document.getElementById('btnSaveEntry').addEventListener('click', () => {
     state.entries.push({ id: uid(), n: state.seq++, date, desc, lines });
   }
   save(); entryModal.hidden = true; renderAll();
+  track('asiento_creado', { n_lineas: lines.length });
 });
 
 // ---------- Modal cuenta ----------
@@ -675,6 +715,7 @@ document.getElementById('btnExport').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `neverred-${todayISO()}.json`; a.click();
   URL.revokeObjectURL(a.href);
+  track('export_json');
 });
 document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
 document.getElementById('fileImport').addEventListener('change', ev => {
@@ -698,6 +739,7 @@ document.getElementById('fileImport').addEventListener('change', ev => {
         alert('Archivo no válido: la base de datos lo ha rechazado. Se han restaurado tus datos.');
       } else {
         alert('Datos importados correctamente.');
+        track('import_json', { n_asientos: (data.entries || []).length });
       }
     } catch { alert('Archivo no válido.'); }
   };
@@ -947,6 +989,7 @@ function endSession() {
   // La contabilidad cacheada es tan sensible como la sesión: al salir no queda
   // rastro local (en modo archivo no hay sesión; ahí la caché local ES el dato).
   if (currentUser) { try { localStorage.removeItem(userKey()); } catch {} }
+  telemetryQueue = []; // los eventos sin enviar de esta sesión se descartan
   sessionToken = null; currentUser = null;
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior
@@ -1010,7 +1053,11 @@ function enterApp() {
   document.getElementById('conflictBar').hidden = true;
   conflictData = null;
   setSync('ok');
-  switchTab('inicio'); // al entrar siempre se muestra la vista general
+  loadTelemetryConsent().then(() => {
+    track('app_opened');
+    if (currentUser && currentUser.email === DEMO_EMAIL) track('demo_entrada');
+    switchTab('inicio'); // al entrar siempre se muestra la vista general (+vista_inicio)
+  });
   renderAll();
   if (!state.entries.length) {
     document.getElementById('wName').value = currentUser.name === 'contable' ? '' : currentUser.name;
@@ -1105,6 +1152,41 @@ async function loadSessions() {
 }
 document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); document.getElementById('btnCloseSessions').focus(); });
 document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);
+// ---------- Telemetría: opt-in y panel local ----------
+const telemetryModal = document.getElementById('telemetryModal');
+async function loadTelemetryPanel() {
+  const box = document.getElementById('telemetrySummary');
+  const stateP = document.getElementById('telemetryState');
+  box.innerHTML = '<p class="muted small">Cargando…</p>';
+  try {
+    const res = await fetch(api('/api/telemetry-summary'), { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error();
+    const rows = data.summary || [];
+    stateP.textContent = 'Estado: ' + (telemetryOn ? 'activada — registrando solo en tu servidor.' : 'desactivada.');
+    box.innerHTML = rows.length ? rows.map(r =>
+      `<div class="acc-row"><span class="code">${esc(r.event)}</span><span class="bal">${r.count}</span></div>`
+    ).join('') : '<p class="muted">Sin datos todavía.</p>';
+  } catch { box.innerHTML = '<p class="error">No se pudo cargar.</p>'; }
+}
+document.getElementById('btnTelemetry').addEventListener('click', () => {
+  document.getElementById('telemetryToggle').checked = telemetryOn;
+  telemetryModal.hidden = false; loadTelemetryPanel();
+  document.getElementById('btnCloseTelemetry').focus();
+});
+document.getElementById('btnCloseTelemetry').addEventListener('click', () => telemetryModal.hidden = true);
+document.getElementById('telemetryToggle').addEventListener('change', async ev => {
+  try {
+    const res = await fetch(api('/api/telemetry-consent'), {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ enabled: ev.target.checked }),
+    });
+    const data = await res.json().catch(() => ({}));
+    telemetryOn = !!data.enabled;
+    if (!telemetryOn) telemetryQueue = [];
+  } catch { ev.target.checked = telemetryOn; }
+  loadTelemetryPanel();
+});
 document.getElementById('btnRotateSessions').addEventListener('click', async () => {
   try {
     await fetch(api('/api/sessions/rotate'), { method: 'POST', headers: authHeaders() });
@@ -1143,7 +1225,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; } });
 // Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;

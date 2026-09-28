@@ -376,6 +376,51 @@ class ServerCase(unittest.TestCase):
         finally:
             server._send_reset_email = orig
 
+    def test_telemetria_optin_y_allowlist(self):
+        tok = mkuser(self.port, "tm")
+        st, _, d = call(self.port, "/api/telemetry-consent", token=tok)
+        self.assertEqual(st, 200)
+        self.assertEqual(d["enabled"], False)
+        good = {"events": [{"event": "vista_diario"},
+                           {"event": "asiento_creado", "props": {"n_lineas": 4}}]}
+        st, _, _ = call(self.port, "/api/telemetry", "POST", good, token=tok)
+        self.assertEqual(st, 403)  # sin opt-in no se guarda nada
+        st, _, d = call(self.port, "/api/telemetry-consent", "PUT",
+                        {"enabled": True}, token=tok)
+        self.assertEqual(st, 200)
+        self.assertEqual(d["enabled"], True)
+        st, _, d = call(self.port, "/api/telemetry", "POST", good, token=tok)
+        self.assertEqual(st, 200)
+        self.assertEqual(d["received"], 2)
+        # allowlist: evento desconocido, prop desconocida y prop con texto
+        for bad in ({"events": [{"event": "importe_euros"}]},
+                    {"events": [{"event": "vista_diario", "props": {"x": 1}}]},
+                    {"events": [{"event": "asiento_creado",
+                                 "props": {"n_lineas": "muchas"}}]},
+                    {"events": [{"event": "vista_diario"}] * 101}):
+            st, _, _ = call(self.port, "/api/telemetry", "POST", bad, token=tok)
+            self.assertEqual(st, 400)
+        st, _, d = call(self.port, "/api/telemetry-summary", token=tok)
+        self.assertEqual(st, 200)
+        got = {r["event"]: r["count"] for r in d["summary"]}
+        self.assertEqual(got, {"vista_diario": 1, "asiento_creado": 1})
+        # revocar borra lo acumulado
+        st, _, d = call(self.port, "/api/telemetry-consent", "PUT",
+                        {"enabled": False}, token=tok)
+        self.assertEqual(st, 200)
+        st, _, d = call(self.port, "/api/telemetry-summary", token=tok)
+        self.assertEqual(d["summary"], [])
+        # y borrar la cuenta no deja restos
+        st, _, _ = call(self.port, "/api/account", "DELETE",
+                        {"current": "secreta123"}, token=tok)
+        self.assertEqual(st, 200)
+        import sqlite3
+        con = sqlite3.connect(os.environ["NEVERRED_DB"])
+        n = con.execute("SELECT COUNT(*) FROM telemetry_events").fetchone()[0]
+        m = con.execute("SELECT COUNT(*) FROM telemetry_consent").fetchone()[0]
+        con.close()
+        self.assertEqual((n, m), (0, 0))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

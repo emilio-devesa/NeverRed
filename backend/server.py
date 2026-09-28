@@ -127,10 +127,23 @@ def init_db():
             action TEXT NOT NULL,
             detail TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS telemetry_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            event TEXT NOT NULL,
+            props TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE IF NOT EXISTS telemetry_consent (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            enabled INTEGER NOT NULL DEFAULT 0
+        );
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_telemetry_user ON telemetry_events(user_id);
+        CREATE INDEX IF NOT EXISTS idx_telemetry_event ON telemetry_events(event, ts);
         """
     )
     con.commit()
@@ -174,6 +187,50 @@ def public_user(row):
 
 def password_ok(pw):
     return isinstance(pw, str) and MIN_PASSWORD_LEN <= len(pw) <= MAX_PASSWORD_LEN
+
+
+# ---------------- Telemetría (solo store; sin forward) ----------------
+# Catálogo cerrado: solo estos eventos con solo estas props (conteos) se
+# aceptan. Nada de importes, textos, nombres ni identificadores: por
+# construcción es imposible que se cuele contenido contable.
+TELEMETRY_EVENTS = {
+    "app_opened": {},
+    "vista_inicio": {}, "vista_diario": {}, "vista_mayor": {},
+    "vista_cuentas": {}, "vista_informes": {},
+    "asiento_creado": {"n_lineas": int},
+    "asiento_eliminado": {},
+    "csv_importado": {"n_filas": int},
+    "import_json": {"n_asientos": int},
+    "recurrentes_generados": {"n": int},
+    "demo_entrada": {},
+    "export_json": {},
+    "conflicto_409": {},
+}
+TELEMETRY_DAYS = 90
+TELEMETRY_MAX_BATCH = 100
+
+
+def _validate_telemetry(events):
+    """None = lote válido; str = error. Normaliza props a enteros acotados."""
+    if not isinstance(events, list) or not events or len(events) > TELEMETRY_MAX_BATCH:
+        return "Lote de telemetría inválido."
+    for e in events:
+        if not isinstance(e, dict):
+            return "Evento de telemetría inválido."
+        name = e.get("event")
+        spec = TELEMETRY_EVENTS.get(name) if isinstance(name, str) else None
+        if spec is None:
+            return "Evento no catalogado: %r." % (name,)
+        props = e.get("props", {})
+        if not isinstance(props, dict):
+            return "Props de telemetría inválidas."
+        clean = {}
+        for k, v in props.items():
+            if k not in spec or not isinstance(v, int) or isinstance(v, bool):
+                return "Prop no permitida en %s: %r." % (name, k)
+            clean[k] = max(0, min(v, 1_000_000))
+        e["props"] = clean
+    return None
 
 
 # Usuario de demostración (credenciales públicas y documentadas)
@@ -765,6 +822,8 @@ class Handler(BaseHTTPRequestHandler):
         con = db()
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM telemetry_consent WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         con.commit()
         con.close()
@@ -799,8 +858,79 @@ class Handler(BaseHTTPRequestHandler):
         audit("sessions_rotate", user["id"], "cerradas=%d" % cur.rowcount)
         self._send_json(200, {"ok": True, "closed": cur.rowcount})
 
+    def _api_telemetry(self):
+        # Solo store: acepta el lote si el usuario dio consentimiento y todo
+        # el lote pasa el allowlist. No hay forward a ningún sitio.
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        row = con.execute("SELECT enabled FROM telemetry_consent WHERE user_id = ?",
+                          (user["id"],)).fetchone()
+        if not row or not row["enabled"]:
+            con.close()
+            return self._send_json(403, {"error": "Telemetría no activada."})
+        body = self._read_json()
+        events = body.get("events") if isinstance(body, dict) else None
+        err = _validate_telemetry(events)
+        if err:
+            con.close()
+            return self._send_json(400, {"error": err})
+        now = int(time.time())
+        con.executemany(
+            "INSERT INTO telemetry_events (ts, user_id, event, props) VALUES (?,?,?,?)",
+            [(now, user["id"], e["event"], json.dumps(e["props"], sort_keys=True))
+             for e in events])
+        con.execute("DELETE FROM telemetry_events WHERE ts <= ?", (now - TELEMETRY_DAYS * 86400,))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True, "received": len(events)})
+
+    def _api_telemetry_consent(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        row = con.execute("SELECT enabled FROM telemetry_consent WHERE user_id = ?",
+                          (user["id"],)).fetchone()
+        con.close()
+        self._send_json(200, {"enabled": bool(row and row["enabled"])})
+
+    def _api_telemetry_consent_put(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        body = self._read_json()
+        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        con = db()
+        con.execute(
+            "INSERT INTO telemetry_consent (user_id, enabled) VALUES (?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled",
+            (user["id"], 1 if body["enabled"] else 0))
+        if not body["enabled"]:
+            # Al revocar, se borra lo acumulado: sin consentimiento no hay datos.
+            con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
+        con.commit()
+        con.close()
+        audit("telemetry_consent", user["id"], "enabled=%s" % body["enabled"])
+        self._send_json(200, {"ok": True, "enabled": body["enabled"]})
+
+    def _api_telemetry_summary(self):
+        # Agregado local de los últimos 30 días: lo mismo que vería el usuario
+        # en su panel; base del futuro forward (que enviaría solo esto).
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        rows = con.execute(
+            "SELECT event, COUNT(*) FROM telemetry_events "
+            "WHERE user_id = ? AND ts > ? GROUP BY event ORDER BY 2 DESC",
+            (user["id"], int(time.time()) - 30 * 86400)).fetchall()
+        con.close()
+        self._send_json(200, {"summary": [{"event": e, "count": c} for e, c in rows]})
+
     def _api_ping(self):
-        # Latido de pestaña: sin autenticación (también late el login) y sin
         # rate-limit (laten cada 10 s). El CORS restringido ya impide el abuso
         # desde sitios de terceros (petición JSON = preflight).
         body = self._read_json() or {}
@@ -899,6 +1029,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_me()
         if path == "/api/data":
             return self._api_get_data()
+        if path == "/api/telemetry-consent":
+            return self._api_telemetry_consent()
+        if path == "/api/telemetry-summary":
+            return self._api_telemetry_summary()
         if path.startswith("/api/"):
             return self._send_json(404, {"error": "Ruta no encontrada."})
         return self._serve_static(path)
@@ -921,13 +1055,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_sessions_rotate()
         if path == "/api/ping":
             return self._api_ping()
+        if path == "/api/telemetry":
+            return self._api_telemetry()
         if path == "/api/demo":
             return self._api_demo()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
-        if urlparse(self.path).path == "/api/data":
+        path = urlparse(self.path).path
+        if path == "/api/data":
             return self._api_put_data()
+        if path == "/api/telemetry-consent":
+            return self._api_telemetry_consent_put()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_DELETE(self):  # noqa: N802 - firma de la stdlib
