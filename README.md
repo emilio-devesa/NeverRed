@@ -234,8 +234,31 @@ abiertas y conteos de acciones (`n_lineas`, `n_filas`). Nunca importes,
 textos, nombres ni identificadores — el servidor rechaza (400) cualquier
 evento o prop fuera del catálogo. Los datos viven en tu BD con purga a 90
 días, se ven en el propio panel, se borran al revocar el consentimiento y
-al eliminar la cuenta. **No hay forward**: nada sale de tu servidor en
-esta fase.
+al eliminar la cuenta. **Sin receptor configurado, nada sale de tu servidor**:
+el forward es optativo (ver debajo).
+
+### Forward hacia tu receptor (beta, store-and-forward)
+
+Si configuras `NEVERRED_TELEMETRY_SINK` (URL del receptor) y
+`NEVERRED_TELEMETRY_TOKEN` (secreto compartido), un hilo envía cada 15 min
+(`NEVERRED_FORWARD_EVERY`) solo agregados `(instalación, día, evento,
+conteo)` con la versión de la app. Sin receptor a la vista, reintenta con
+backoff (1, 2, 4… máx. 60 min); el receptor hace upsert idempotente por
+`(install_id, día, evento)`, así que los duplicados no cuentan doble. Cada
+instalación se identifica con un seudónimo aleatorio (`install.id` junto a
+la BD). Estado y disparo manual en el panel de Telemetría.
+
+Receptor mínimo (en tu Mac, dentro de la red Tailscale para la prueba):
+
+```bash
+NEVERRED_SINK_TOKEN=<secreto> python3 backend/telemetry_sink.py --host 0.0.0.0 --port 8140
+```
+
+Panel del coordinador en `http://localhost:8140/`. En cada beta:
+
+```bash
+NEVERRED_TELEMETRY_SINK=http://<tu-ip-tailscale>:8140 NEVERRED_TELEMETRY_TOKEN=<secreto>
+```
 
 ### Firmar los assets (obligatorio para el auto-update)
 

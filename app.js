@@ -1157,6 +1157,7 @@ const telemetryModal = document.getElementById('telemetryModal');
 async function loadTelemetryPanel() {
   const box = document.getElementById('telemetrySummary');
   const stateP = document.getElementById('telemetryState');
+  const fwdP = document.getElementById('forwardState');
   box.innerHTML = '<p class="muted small">Cargando…</p>';
   try {
     const res = await fetch(api('/api/telemetry-summary'), { headers: authHeaders() });
@@ -1168,7 +1169,27 @@ async function loadTelemetryPanel() {
       `<div class="acc-row"><span class="code">${esc(r.event)}</span><span class="bal">${r.count}</span></div>`
     ).join('') : '<p class="muted">Sin datos todavía.</p>';
   } catch { box.innerHTML = '<p class="error">No se pudo cargar.</p>'; }
+  try {
+    const res = await fetch(api('/api/telemetry-forward-status'), { headers: authHeaders() });
+    const f = await res.json().catch(() => ({}));
+    if (!f.configured) { fwdP.textContent = 'Sin receptor configurado en este equipo.'; return; }
+    const ago = f.last_ok ? 'último envío ' + new Date(f.last_ok * 1000).toLocaleString('es-ES') : 'aún sin envíos';
+    const wait = f.next_retry_in > 0 ? ` · reintento en ${Math.ceil(f.next_retry_in / 60)} min` : '';
+    fwdP.textContent = `${ago} · fallos seguidos: ${f.fails}${wait}.`;
+  } catch { fwdP.textContent = 'No se pudo consultar el estado de envío.'; }
 }
+document.getElementById('btnForwardNow').addEventListener('click', async () => {
+  const fwdP = document.getElementById('forwardState');
+  fwdP.textContent = 'Enviando…';
+  try {
+    const res = await fetch(api('/api/telemetry-forward'), { method: 'POST', headers: authHeaders() });
+    const f = await res.json().catch(() => ({}));
+    fwdP.textContent = f.configured
+      ? (f.pending === 0 ? 'Enviado ✓ (o nada pendiente).' : `Enviado: quedaban ${f.pending} grupos.`)
+      : 'Sin receptor configurado en este equipo.';
+  } catch { fwdP.textContent = 'Fallo de envío; se reintentará solo.'; }
+  loadTelemetryPanel();
+});
 document.getElementById('btnTelemetry').addEventListener('click', () => {
   document.getElementById('telemetryToggle').checked = telemetryOn;
   telemetryModal.hidden = false; loadTelemetryPanel();
