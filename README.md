@@ -239,22 +239,3 @@ importes, textos, nombres ni ningún dato personal o contable.
 donde puedes activar o desactivar el envío. Al desactivarlo, se borra el
 historial acumulado; también se borra al eliminar la cuenta. Los datos se
 guardan en tu propio servidor con purga automática a los 90 días.
-
-### Firmar los assets (obligatorio para el auto-update)
-
-La app solo instala actualizaciones con firma Ed25519 válida. Tras publicar
-la release, firma cada `.dmg`/`.AppImage` y sube el `.sig` como asset:
-
-```bash
-ssh-keygen -Y sign -f packaging/release-key -n neverred-update NeverRed-2.0.0.dmg
-gh release upload v2.0.0 NeverRed-2.0.0.dmg.sig
-```
-
-La privada (`packaging/release-key`) no está en git: guárdala a buen recaudo.
-La pública vive en `packaging/release-key.pub` y embebida en los scripts.
-
-Guarda una copia **cifrada** de la privada fuera de este equipo (p. ej.
-`gpg -c packaging/release-key` en un USB). Si la pierdes, no podrás firmar
-más updates; si se filtra, rota la clave: genera un par nuevo, publica la
-`.pub`, y mantén ambas firmas aceptadas durante una versión de gracia antes
-de retirar la vieja (los scripts solo traen una clave embebida).
