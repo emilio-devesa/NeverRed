@@ -1,6 +1,7 @@
 # NeverRed — Historial de cambios
 
-## v2.1.1 — Arranque 2.1.0
+## v2.1.2 — Arranque 2.1.1
+- Los lanzadores usan `${VAR:-}` (el `set -u` tumbaba la app sin variables)
 - Los instaladores incluyen los nuevos módulos de telemetría (la 2.1.0 no arrancaba)
 - Nuevo `telemetry_common.py`: contrato compartido (catálogo + validadores)
 - Nuevo `telemetry_forward.py`: forward y relay fuera de `server.py`
