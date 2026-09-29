@@ -398,15 +398,10 @@
   <div class="modal-backdrop" id="telemetryModal" hidden>
     <div class="modal" role="dialog" aria-modal="true">
       <h3>Telemetría de uso (beta)</h3>
-      <p class="muted small">Solo si la activas: la app guarda qué funciones usas (conteos, nunca importes ni textos) <strong>en tu propio servidor</strong>. Nada sale de aquí: no hay envío a ningún sitio en esta fase.</p>
+      <p class="muted small">Si la activas, la app registra qué funciones usas: solo conteos anónimos (p. ej. cuántas veces abres cada vista), guardados en tu propio servidor. Nunca importes, textos ni nombres. Puedes desactivarla cuando quieras; al hacerlo se borra lo registrado.</p>
       <label class="acc-row"><input type="checkbox" id="telemetryToggle" /> <span>Activar registro de uso</span></label>
       <p class="muted small" id="telemetryState">Estado: desactivada.</p>
-      <h4>Mis últimos 30 días</h4>
-      <div id="telemetrySummary" class="list"><p class="muted">Sin datos todavía.</p></div>
-      <h4>Envío al coordinador (beta)</h4>
-      <p class="muted small" id="forwardState">Sin receptor configurado en este equipo.</p>
       <div class="modal-actions">
-        <button class="btn ghost" id="btnForwardNow">Enviar ahora</button>
         <span class="spacer"></span>
         <button class="btn ghost" id="btnCloseTelemetry">Cerrar</button>
       </div>

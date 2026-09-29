@@ -1174,49 +1174,16 @@ async function loadSessions() {
 }
 document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); document.getElementById('btnCloseSessions').focus(); });
 document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);
-// ---------- Telemetría: opt-in y panel local ----------
+// ---------- Telemetría: opt-in con interruptor simple ----------
 const telemetryModal = document.getElementById('telemetryModal');
 const consentModal = document.getElementById('consentModal');
-async function loadTelemetryPanel() {
-  const box = document.getElementById('telemetrySummary');
-  const stateP = document.getElementById('telemetryState');
-  const fwdP = document.getElementById('forwardState');
-  box.innerHTML = '<p class="muted small">Cargando…</p>';
-  try {
-    const res = await fetch(api('/api/telemetry-summary'), { headers: authHeaders() });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error();
-    const rows = data.summary || [];
-    stateP.textContent = 'Estado: ' + (telemetryOn ? 'activada — registrando solo en tu servidor.' : 'desactivada.');
-    box.innerHTML = rows.length ? rows.map(r =>
-      `<div class="acc-row"><span class="code">${esc(r.event)}</span><span class="bal">${r.count}</span></div>`
-    ).join('') : '<p class="muted">Sin datos todavía.</p>';
-  } catch { box.innerHTML = '<p class="error">No se pudo cargar.</p>'; }
-  try {
-    const res = await fetch(api('/api/telemetry-forward-status'), { headers: authHeaders() });
-    const f = await res.json().catch(() => ({}));
-    if (!f.configured) { fwdP.textContent = 'Sin receptor configurado en este equipo.'; return; }
-    const ago = f.last_ok ? 'último envío ' + new Date(f.last_ok * 1000).toLocaleString('es-ES') : 'aún sin envíos';
-    const wait = f.next_retry_in > 0 ? ` · reintento en ${Math.ceil(f.next_retry_in / 60)} min` : '';
-    const mean = (f.total_sends > 0) ? ` · media de fallos por envío: ${f.mean_fails} (${f.total_fails}/${f.total_sends})` : '';
-    fwdP.textContent = `${ago} · fallos seguidos: ${f.fails}${wait}${mean}.`;
-  } catch { fwdP.textContent = 'No se pudo consultar el estado de envío.'; }
+function updateTelemetryState() {
+  document.getElementById('telemetryState').textContent =
+    'Estado: ' + (telemetryOn ? 'activada.' : 'desactivada.');
 }
-document.getElementById('btnForwardNow').addEventListener('click', async () => {
-  const fwdP = document.getElementById('forwardState');
-  fwdP.textContent = 'Enviando…';
-  try {
-    const res = await fetch(api('/api/telemetry-forward'), { method: 'POST', headers: authHeaders() });
-    const f = await res.json().catch(() => ({}));
-    fwdP.textContent = f.configured
-      ? (f.pending === 0 ? 'Enviado ✓ (o nada pendiente).' : `Enviado: quedaban ${f.pending} grupos.`)
-      : 'Sin receptor configurado en este equipo.';
-  } catch { fwdP.textContent = 'Fallo de envío; se reintentará solo.'; }
-  loadTelemetryPanel();
-});
 document.getElementById('btnTelemetry').addEventListener('click', () => {
   document.getElementById('telemetryToggle').checked = telemetryOn;
-  telemetryModal.hidden = false; loadTelemetryPanel();
+  telemetryModal.hidden = false; updateTelemetryState();
   document.getElementById('btnCloseTelemetry').focus();
 });
 document.getElementById('btnCloseTelemetry').addEventListener('click', () => telemetryModal.hidden = true);
@@ -1230,7 +1197,7 @@ document.getElementById('telemetryToggle').addEventListener('change', async ev =
     telemetryOn = !!data.enabled;
     if (!telemetryOn) telemetryQueue = [];
   } catch { ev.target.checked = telemetryOn; }
-  loadTelemetryPanel();
+  updateTelemetryState();
 });
 document.getElementById('btnRotateSessions').addEventListener('click', async () => {
   try {
