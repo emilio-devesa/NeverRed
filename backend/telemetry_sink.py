@@ -251,32 +251,72 @@ class Handler(BaseHTTPRequestHandler):
         sends = sum(r[0] for r in stats)
         fails = sum(r[1] for r in stats)
         mean = (fails / sends) if sends else 0
-        html = ("<!doctype html><html lang=es><head><meta charset=utf-8>"
-                "<title>NeverRed · Telemetría beta</title>"
-                "<style>body{font-family:system-ui;max-width:900px;margin:auto;padding:1em}"
-                ".cards{display:flex;gap:1em;flex-wrap:wrap}.card{border:1px solid #ccc;"
-                "border-radius:8px;padding:1em;min-width:160px}ul{list-style:none;padding:0}"
-                "h2{margin-top:2em}</style></head><body>"
-                "<h1>Telemetría beta (solo agregados)</h1>"
-                "<div class=cards>"
-                "<div class=card><h3>%d</h3><p>instalaciones totales</p></div>"
-                "<div class=card><h3>%d</h3><p>pico en un día%s</p></div>"
-                "<div class=card><h3>%d</h3><p>pico en una hora%s</p></div>"
-                "<div class=card><h3>%.2f</h3><p>fallos medios por envío (%d envíos, %d fallos)</p></div>"
-                "</div>"
-                "<h2>Funciones más empleadas</h2>%s"
-                "<h2>Versiones</h2>%s"
-                "<h2>Plataformas</h2>%s"
-                "</body></html>" % (
-                    users,
-                    peak_day[1] if peak_day else 0,
-                    " (%s)" % peak_day[0] if peak_day else "",
-                    peak_hour[2] if peak_hour else 0,
-                    " (%s %sh)" % (peak_hour[0], peak_hour[1]) if peak_hour else "",
-                    mean, sends, fails,
-                    pie_svg([(r[0], r[1]) for r in by_event]) if by_event else "<p>Sin datos.</p>",
-                    pie_svg([(r[0] or "?", r[1]) for r in by_version]) if by_version else "<p>Sin datos.</p>",
-                    pie_svg([(r[0], r[1]) for r in by_platform]) if by_platform else "<p>Sin datos.</p>"))
+        now_s = time.strftime("%d/%m/%Y %H:%M")
+
+        def section(title, pairs):
+            if not pairs:
+                return "<section><h2>%s</h2><p class=muted>Sin datos todavía.</p></section>" % title
+            top = pairs[0][1] or 1
+            rows = "".join(
+                "<div class=row><span class=name>%s</span>"
+                "<span class=bar><i style='width:%.1f%%;background:%s'></i></span>"
+                "<span class=num>%d</span><span class=pct muted>%.1f%%</span></div>"
+                % (lab, 100 * v / top, PALETTE[i % len(PALETTE)], v,
+                   100 * v / (sum(v for _, v in pairs) or 1))
+                for i, (lab, v) in enumerate(pairs))
+            return ("<section><h2>%s</h2><div class=cols><div>%s</div>"
+                    "<div class=ranking>%s</div></div></section>"
+                    % (title, pie_svg(pairs, 200), rows))
+
+        html = ("""<!doctype html><html lang=es><head><meta charset=utf-8>
+<meta name=viewport content='width=device-width,initial-scale=1'>
+<title>NeverRed · Telemetría beta</title>
+<style>
+:root{--bg:#0e1116;--panel:#171c24;--panel2:#1f2631;--text:#eef2f7;
+--muted:#9aa5b4;--line:#2a3340;--green:#22c55e;--red:#ef4444;--accent:#38bdf8;--radius:14px}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--text);
+font-family:system-ui,-apple-system,sans-serif;max-width:960px;margin:auto;padding:1.5em}
+header{display:flex;align-items:baseline;gap:1em;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:1em;margin-bottom:1.5em}
+header h1{margin:0;font-size:1.4em}header p{margin:0}
+.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1em}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:1em}
+.card h3{margin:0 0 .2em;font-size:1.8em;color:var(--accent)}
+.card.warn h3{color:var(--red)}.card.ok h3{color:var(--green)}
+.card p{margin:0;color:var(--muted);font-size:.85em}
+section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:1.2em;margin-top:1.2em}
+section h2{margin:0 0 1em;font-size:1.05em}
+.cols{display:flex;gap:2em;flex-wrap:wrap;align-items:flex-start}
+.cols ul{list-style:none;padding:0;margin:.6em 0;font-size:.85em}
+.cols li{margin:.25em 0;color:var(--muted)}.cols li strong{color:var(--text)}
+.ranking{flex:1;min-width:260px}
+.row{display:grid;grid-template-columns:170px 1fr 52px 56px;gap:.6em;align-items:center;padding:.28em 0;font-size:.88em}
+.row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .num{text-align:right;font-variant-numeric:tabular-nums}
+.row .pct{text-align:right;color:var(--muted)}
+.bar{display:block;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%%;border-radius:4px}
+footer{margin-top:2em;color:var(--muted);font-size:.8em}
+</style></head><body>
+<header><h1>📊 Telemetría beta</h1>
+<p class=muted>Solo agregados · actualizado %s</p></header>
+<div class=cards>
+<div class=card><h3>%d</h3><p>instalaciones totales</p></div>
+<div class=card><h3>%d</h3><p>pico en un día%s</p></div>
+<div class=card><h3>%d</h3><p>pico en una hora%s</p></div>
+<div class=card><h3>%.2f</h3><p>fallos medios por envío · %d envíos, %d fallos</p></div>
+</div>
+%s%s%s
+<footer>NeverRed · la telemetría beta solo contiene conteos por (instalación, día, hora, evento). Sin importes, textos ni identificadores.</footer>
+</body></html>""" % (
+            now_s, users,
+            peak_day[1] if peak_day else 0,
+            " · %s" % peak_day[0] if peak_day else "",
+            peak_hour[2] if peak_hour else 0,
+            " · %s %sh" % (peak_hour[0], peak_hour[1]) if peak_hour else "",
+            mean, sends, fails,
+            section("Funciones más empleadas", [(r[0], r[1]) for r in by_event]),
+            section("Versiones", [(r[0] or "?", r[1]) for r in by_version]),
+            section("Plataformas", [(r[0], r[1]) for r in by_platform])))
         return html.encode("utf-8")
 
     def do_GET(self):
