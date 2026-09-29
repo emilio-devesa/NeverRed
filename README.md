@@ -225,55 +225,20 @@ hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
 `VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
 coinciden, el frontal se autorrefresca en bucle).
 
-### Telemetría de uso (beta)
+### Telemetría de uso (beta, opcional)
 
-Opt-in por usuario, apagada por defecto (pie → **Telemetría**). Cuando se
-activa, el frontal envía por lotes a `POST /api/telemetry` solo eventos de
-un catálogo cerrado (`TELEMETRY_EVENTS` en `backend/server.py`): vistas
-abiertas y conteos de acciones (`n_lineas`, `n_filas`). Nunca importes,
-textos, nombres ni identificadores — el servidor rechaza (400) cualquier
-evento o prop fuera del catálogo. Los datos viven en tu BD con purga a 90
-días, se ven en el propio panel, se borran al revocar el consentimiento y
-al eliminar la cuenta. **Sin receptor configurado, nada sale de tu servidor**:
-el forward es optativo (ver debajo).
+La app puede ayudar a mejorar registrando **qué funciones se usan**. Está
+**apagada por defecto**: en el primer arranque se pregunta una sola vez
+(Sí / Ahora no).
 
-En el primer arranque la app pregunta una sola vez (Sí / Ahora no); Esc
-aplaza la decisión. El estado vive en `telemetry_consent.asked`.
+**Qué se recopila:** solo conteos anónimos —qué vistas se abren y cuántas
+veces se usa cada acción (crear un asiento, importar un CSV…). Nunca
+importes, textos, nombres ni ningún dato personal o contable.
 
-### Forward hacia tu receptor (beta, store-and-forward)
-
-Si configuras `NEVERRED_TELEMETRY_SINK` (URL del receptor) y
-`NEVERRED_TELEMETRY_TOKEN` (secreto compartido), un hilo envía cada 15 min
-(`NEVERRED_FORWARD_EVERY`) solo agregados `(instalación, día, hora, evento,
-conteo)` más versión, plataforma (solo el SO) y contadores de intentos.
-Sin receptor a la vista, reintenta con backoff (1, 2, 4… máx. 60 min); el
-receptor hace upsert idempotente. El panel del coordinador
-(`telemetry_sink.py`, endpoint `/`) muestra instalaciones totales, picos por
-día y por hora, tartas de funciones/versiones/plataformas y fallos medios por
-envío — tu señal de si la infraestructura aguanta por uptime.
-
-Receptor mínimo (en tu Mac, dentro de la red Tailscale para la prueba):
-
-```bash
-NEVERRED_SINK_TOKEN=<secreto> python3 backend/telemetry_sink.py --host 0.0.0.0 --port 8140
-```
-
-Expón cada servicio por donde toque (solo cabe un funnel público por
-máquina): el funnel a la app (`tailscale funnel 8000 &`). El sink vive solo
-en localhost; las betas sin tailnet llegan a él por el relay
-`POST /api/telemetry-ingest` de la propia app (pública), que reenvía al sink
-local tras revalidar tamaño y rate-limit — el sink revalida bearer y
-allowlist. Con tailnet también vale el sink directo por `serve`.
-En cada beta (con o sin tailnet):
-
-```bash
-NEVERRED_TELEMETRY_SINK=https://<tu-maquina>.ts.net NEVERRED_TELEMETRY_TOKEN=<secreto>
-```
-
-Las builds beta ya traen receptor y token del programa por defecto
-(horneados en los lanzadores; el token es público por diseño y se rota por
-release). Para el programa beta actual, el receptor debe arrancar con ese
-mismo token:
+**Cómo cambiarlo:** en cualquier momento, pie de la app → **Telemetría**,
+donde puedes activar o desactivar el envío. Al desactivarlo, se borra el
+historial acumulado; también se borra al eliminar la cuenta. Los datos se
+guardan en tu propio servidor con purga automática a los 90 días.
 
 ### Firmar los assets (obligatorio para el auto-update)
 
