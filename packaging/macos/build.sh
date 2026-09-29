@@ -24,6 +24,14 @@ cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
 cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
+# Destino de telemetría del build (vacío = local pura). El coordinador lo
+# rellena con NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN para builds beta.
+_telemetry_sub() {
+  _esc() { printf '%s' "$1" | sed 's/[&\\|]/\\&/g'; }
+  sed "s|__NEVERRED_BUILD_SINK__|$(_esc "${NEVERRED_BUILD_SINK:-}")|g; s|__NEVERRED_BUILD_TOKEN__|$(_esc "${NEVERRED_BUILD_TOKEN:-}")|g" \
+    "$1" > "$STAGE/launcher.tmp" && mv "$STAGE/launcher.tmp" "$1"
+}
+_telemetry_sub "$APP/Contents/MacOS/NeverRed"
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
 cp packaging/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
 chmod +x "$APP/Contents/MacOS/NeverRed" "$APP/Contents/MacOS/check-update.sh"

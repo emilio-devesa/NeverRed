@@ -17,6 +17,13 @@ cp -R assets "$DIR/app/assets"
 cp lib/contabilidad.js "$DIR/app/lib/"
 cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$DIR/app/backend/"
 cp packaging/linux/AppRun packaging/linux/check-update.sh "$DIR/"
+# Destino de telemetría del build (vacío = local pura; ver build.sh de macOS).
+_telemetry_sub() {
+  _esc() { printf '%s' "$1" | sed 's/[&\\|]/\\&/g'; }
+  sed "s|__NEVERRED_BUILD_SINK__|$(_esc "${NEVERRED_BUILD_SINK:-}")|g; s|__NEVERRED_BUILD_TOKEN__|$(_esc "${NEVERRED_BUILD_TOKEN:-}")|g" \
+    "$1" > "$DIR/apprun.tmp" && mv "$DIR/apprun.tmp" "$1"
+}
+_telemetry_sub "$DIR/AppRun"
 cp packaging/update-dialog.py "$DIR/"
 cp packaging/linux/NeverRed.desktop "$DIR/"
 # Icono PNG para el lanzador (rsvg-convert; si no está, el SVG como respaldo)

@@ -25,16 +25,25 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=/usr/bin/python3; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
-# Telemetría: la app es local pura salvo que exista telemetry.conf junto a
-# los datos (o las variables ya vengan definidas). Ese fichero lo pone el
-# coordinador en las máquinas que participan; nunca va horneado aquí.
-# Formato: NEVERRED_TELEMETRY_SINK=https://... / NEVERRED_TELEMETRY_TOKEN=...
-if [ -z "${NEVERRED_TELEMETRY_SINK:-}" ] && [ -f "$DATA/telemetry.conf" ]; then
-  NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
+# Telemetría: destino por defecto inyectado al construir el paquete (vacío en
+# releases públicas). Prioridad: entorno > telemetry.conf junto a los datos >
+# defecto del build. Sin destino: local pura, nada sale de este equipo.
+_SINK_DEF="__NEVERRED_BUILD_SINK__"
+_TOKEN_DEF="__NEVERRED_BUILD_TOKEN__"
+case "$_SINK_DEF" in __*) _SINK_DEF="";; esac
+case "$_TOKEN_DEF" in __*) _TOKEN_DEF="";; esac
+if [ -z "${NEVERRED_TELEMETRY_SINK:-}" ]; then
+  if [ -f "$DATA/telemetry.conf" ]; then
+    NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
+  fi
+  : "${NEVERRED_TELEMETRY_SINK:=$_SINK_DEF}"
   export NEVERRED_TELEMETRY_SINK
 fi
-if [ -z "${NEVERRED_TELEMETRY_TOKEN:-}" ] && [ -f "$DATA/telemetry.conf" ]; then
-  NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
+if [ -z "${NEVERRED_TELEMETRY_TOKEN:-}" ]; then
+  if [ -f "$DATA/telemetry.conf" ]; then
+    NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
+  fi
+  : "${NEVERRED_TELEMETRY_TOKEN:=$_TOKEN_DEF}"
   export NEVERRED_TELEMETRY_TOKEN
 fi
 export NEVERRED_QUIT_WHEN_IDLE=1 NEVERRED_IDLE_TIMEOUT=20

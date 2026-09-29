@@ -1,6 +1,8 @@
 # NeverRed — Historial de cambios
 
-## v2.1.2 — Arranque 2.1.1
+## v2.1.3 — Destino por defecto en build
+- El destino de telemetría se inyecta al construir el paquete
+  (prioridad: entorno > telemetry.conf > defecto del build)
 - Los lanzadores usan `${VAR:-}` (el `set -u` tumbaba la app sin variables)
 - Los instaladores incluyen los nuevos módulos de telemetría (la 2.1.0 no arrancaba)
 - Nuevo `telemetry_common.py`: contrato compartido (catálogo + validadores)
