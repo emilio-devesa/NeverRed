@@ -1,6 +1,8 @@
 # NeverRed — Historial de cambios
 
-## v2.0.0 — Telemetría beta
+## v2.0.1 — Documentación y panel simple
+- README y web: telemetría y firmado solo a nivel usuario (detalles de coordinador fuera)
+- Panel de telemetría simplificado a interruptor sí/no + "Enviar ahora" discreto
 - Registro de uso con opt-in (catálogo cerrado, solo conteos, purga 90 días)
 - Forward store-and-forward con backoff, relay público e idempotencia
 - Dashboard del coordinador: totales, picos, tartas y medias de reintentos
