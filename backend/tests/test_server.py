@@ -381,6 +381,7 @@ class ServerCase(unittest.TestCase):
         st, _, d = call(self.port, "/api/telemetry-consent", token=tok)
         self.assertEqual(st, 200)
         self.assertEqual(d["enabled"], False)
+        self.assertEqual(d["asked"], False)
         good = {"events": [{"event": "vista_diario"},
                            {"event": "asiento_creado", "props": {"n_lineas": 4}}]}
         st, _, _ = call(self.port, "/api/telemetry", "POST", good, token=tok)
@@ -389,6 +390,8 @@ class ServerCase(unittest.TestCase):
                         {"enabled": True}, token=tok)
         self.assertEqual(st, 200)
         self.assertEqual(d["enabled"], True)
+        st, _, d = call(self.port, "/api/telemetry-consent", token=tok)
+        self.assertEqual(d["asked"], True)
         st, _, d = call(self.port, "/api/telemetry", "POST", good, token=tok)
         self.assertEqual(st, 200)
         self.assertEqual(d["received"], 2)

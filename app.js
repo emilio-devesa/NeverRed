@@ -55,6 +55,7 @@ function userKey() { return LS_KEY + ':' + (currentUser ? currentUser.id : 'loca
 // Opt-in por usuario: apagado = track() no hace nada. La cola vive en memoria
 // y se envía por lotes a /api/telemetry (allowlist en el servidor).
 let telemetryOn = false;
+let telemetryAsked = true; // si el servidor no dice lo contrario, no preguntar
 let telemetryQueue = [];
 function track(event, props) {
   if (!telemetryOn || FROM_FILE) return;
@@ -78,13 +79,29 @@ document.addEventListener('visibilitychange', () => {
 });
 async function loadTelemetryConsent() {
   telemetryOn = false;
+  telemetryAsked = true;
   if (FROM_FILE || !currentUser) return;
   try {
     const res = await fetch(api('/api/telemetry-consent'), { headers: authHeaders() });
     const data = await res.json().catch(() => ({}));
     telemetryOn = !!data.enabled;
+    telemetryAsked = !!data.asked;
   } catch {}
 }
+async function answerTelemetry(enabled) {
+  try {
+    await fetch(api('/api/telemetry-consent'), {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ enabled }),
+    });
+  } catch {}
+  telemetryOn = enabled;
+  telemetryAsked = true;
+  if (!enabled) telemetryQueue = [];
+  consentModal.hidden = true;
+}
+document.getElementById('btnConsentYes').addEventListener('click', () => answerTelemetry(true));
+document.getElementById('btnConsentNo').addEventListener('click', () => answerTelemetry(false));
 function save() {
   try { localStorage.setItem(userKey(), JSON.stringify(state)); } catch {}
   queueSync();
@@ -1056,6 +1073,11 @@ function enterApp() {
   loadTelemetryConsent().then(() => {
     track('app_opened');
     if (currentUser && currentUser.email === DEMO_EMAIL) track('demo_entrada');
+    // Primer arranque: una sola pregunta, sin bloquear (Esc = decidir luego).
+    if (!telemetryAsked && !FROM_FILE) {
+      document.getElementById('consentModal').hidden = false;
+      document.getElementById('btnConsentYes').focus();
+    }
     switchTab('inicio'); // al entrar siempre se muestra la vista general (+vista_inicio)
   });
   renderAll();
@@ -1154,6 +1176,7 @@ document.getElementById('btnSessions').addEventListener('click', () => { session
 document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);
 // ---------- Telemetría: opt-in y panel local ----------
 const telemetryModal = document.getElementById('telemetryModal');
+const consentModal = document.getElementById('consentModal');
 async function loadTelemetryPanel() {
   const box = document.getElementById('telemetrySummary');
   const stateP = document.getElementById('telemetryState');
@@ -1246,7 +1269,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; consentModal.hidden = true; } });
 // Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;

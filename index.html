@@ -413,6 +413,19 @@
     </div>
   </div>
 
+  <!-- MODAL CONSENTIMIENTO TELEMETRÍA (primer arranque) -->
+  <div class="modal-backdrop" id="consentModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3>Ayúdanos a mejorar NeverRed</h3>
+      <p class="muted small">¿Registramos qué funciones usas? Solo conteos anónimos (p. ej. "diario: 12 veces"), guardados en tu servidor. Nunca importes, textos ni nombres. Puedes cambiarlo cuando quieras en el pie → Telemetría.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnConsentNo">Ahora no</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btnConsentYes">Sí, participar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL CSV -->
   <div class="modal-backdrop" id="csvModal" hidden>
     <div class="modal" role="dialog" aria-modal="true">

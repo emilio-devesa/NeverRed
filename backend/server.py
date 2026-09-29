@@ -160,6 +160,11 @@ def init_db():
         con.execute("ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0")
         con.execute("UPDATE sessions SET last_seen = created_at WHERE last_seen = 0")
         con.commit()
+    # Migración: saber si al usuario ya se le preguntó por la telemetría.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_consent)")]
+    if "asked" not in cols:
+        con.execute("ALTER TABLE telemetry_consent ADD COLUMN asked INTEGER NOT NULL DEFAULT 0")
+        con.commit()
     con.close()
 
 
@@ -1007,10 +1012,11 @@ class Handler(BaseHTTPRequestHandler):
         if user is None:
             return self._send_json(401, {"error": "Sesión no válida."})
         con = db()
-        row = con.execute("SELECT enabled FROM telemetry_consent WHERE user_id = ?",
+        row = con.execute("SELECT enabled, asked FROM telemetry_consent WHERE user_id = ?",
                           (user["id"],)).fetchone()
         con.close()
-        self._send_json(200, {"enabled": bool(row and row["enabled"])})
+        self._send_json(200, {"enabled": bool(row and row["enabled"]),
+                              "asked": bool(row and row["asked"])})
 
     def _api_telemetry_consent_put(self):
         user = self._auth_user()
@@ -1021,8 +1027,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         con = db()
         con.execute(
-            "INSERT INTO telemetry_consent (user_id, enabled) VALUES (?,?) "
-            "ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled",
+            "INSERT INTO telemetry_consent (user_id, enabled, asked) VALUES (?,?,1) "
+            "ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled, asked=1",
             (user["id"], 1 if body["enabled"] else 0))
         if not body["enabled"]:
             # Al revocar, se borra lo acumulado: sin consentimiento no hay datos.

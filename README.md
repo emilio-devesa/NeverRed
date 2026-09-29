@@ -237,6 +237,9 @@ días, se ven en el propio panel, se borran al revocar el consentimiento y
 al eliminar la cuenta. **Sin receptor configurado, nada sale de tu servidor**:
 el forward es optativo (ver debajo).
 
+En el primer arranque la app pregunta una sola vez (Sí / Ahora no); Esc
+aplaza la decisión. El estado vive en `telemetry_consent.asked`.
+
 ### Forward hacia tu receptor (beta, store-and-forward)
 
 Si configuras `NEVERRED_TELEMETRY_SINK` (URL del receptor) y
@@ -259,6 +262,11 @@ Panel del coordinador en `http://localhost:8140/`. En cada beta:
 ```bash
 NEVERRED_TELEMETRY_SINK=http://<tu-ip-tailscale>:8140 NEVERRED_TELEMETRY_TOKEN=<secreto>
 ```
+
+Las builds beta ya traen receptor y token del programa por defecto
+(horneados en los lanzadores; el token es público por diseño y se rota por
+release). Para el programa beta actual, el receptor debe arrancar con ese
+mismo token:
 
 ### Firmar los assets (obligatorio para el auto-update)
 
