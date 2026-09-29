@@ -9,3 +9,5 @@ __pycache__/
 .DS_Store
 packaging/release-key
 backend/install.id
+# Informe privado para inversores (no subir nunca)
+REPORT.MD
