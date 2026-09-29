@@ -1193,7 +1193,9 @@ document.getElementById('btnForwardNow').addEventListener('click', async () => {
   try {
     const res = await fetch(api('/api/telemetry-forward'), { method: 'POST', headers: authHeaders() });
     const f = await res.json().catch(() => ({}));
-    fwdP.textContent = f.configured ? 'Enviado ✓ (o nada pendiente).' : 'Sin receptor configurado.';
+    fwdP.textContent = !f.configured ? 'Sin receptor configurado.'
+      : f.sent ? 'Enviado ✓ (o nada pendiente).'
+      : 'No se pudo enviar; se reintentará solo.';
   } catch { fwdP.textContent = 'Fallo de envío; se reintentará solo.'; }
 });
 document.getElementById('telemetryToggle').addEventListener('change', async ev => {

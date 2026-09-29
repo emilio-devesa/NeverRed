@@ -442,7 +442,7 @@ def forward_once(force=False):
     """Intenta un envío al receptor. Devuelve dict de estado (siempre)."""
     st = forward_state()
     now = int(time.time())
-    status = {"configured": bool(TELEMETRY_SINK), "pending": 0,
+    status = {"configured": bool(TELEMETRY_SINK), "pending": 0, "sent": False,
               "last_ok": st["last_ok"], "fails": st["fails"],
               "next_retry_in": max(0, st["next_retry"] - now)}
     if not TELEMETRY_SINK or not TELEMETRY_TOKEN:
@@ -452,6 +452,7 @@ def forward_once(force=False):
     aggs = build_aggregates(st["watermark"])
     status["pending"] = len(aggs)
     if not aggs:
+        status["sent"] = True
         return status
     # El intento cuenta antes de enviar: lo que viaja ya incluye este envío.
     con = db()
@@ -479,7 +480,7 @@ def forward_once(force=False):
         con.execute("UPDATE telemetry_forward SET watermark = ?, last_ok = ?, "
                     "fails = 0, next_retry = ? WHERE id = 1",
                     (now, now, now + FORWARD_EVERY))
-        status.update(pending=0, last_ok=now, fails=0,
+        status.update(pending=0, sent=True, last_ok=now, fails=0,
                       next_retry_in=FORWARD_EVERY)
     else:
         fails = st["fails"] + 1
