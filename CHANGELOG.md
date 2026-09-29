@@ -1,11 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v1.8.1 — Segunda ronda de endurecimiento
-- Al salir no queda copia local de la contabilidad; PBKDF2 a 600k con re-hash
-- Sesiones con caducidad por inactividad (7 días); auditoría con purga (90 días)
-- Contraseñas de 8–256 caracteres; CSP estricta; `?reset=` fuera del historial
-- Lanzadores que no señalizan PIDs ajenos; aviso de demo pública
-- Supply-chain: Actions pinneados por SHA e imagen Docker por digest
+## v2.0.0 — Telemetría beta
+- Registro de uso con opt-in (catálogo cerrado, solo conteos, purga 90 días)
+- Forward store-and-forward con backoff, relay público e idempotencia
+- Dashboard del coordinador: totales, picos, tartas y medias de reintentos
+- Diálogo de primer arranque; receptor y token beta por defecto en lanzadores
 
 ## v1.7.4 — Caché bajo control
 - Al salir se anula el service worker y se borran cachés
