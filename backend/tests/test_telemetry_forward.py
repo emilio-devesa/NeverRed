@@ -126,5 +126,62 @@ class ForwardCase(unittest.TestCase):
             pass
 
 
+class RelayCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        server.init_db()
+        sink.init_db()
+        os.environ["NEVERRED_SINK_LOCAL"] = "http://127.0.0.1:8152"
+        from http.server import ThreadingHTTPServer
+        cls.sink_srv = ThreadingHTTPServer(("127.0.0.1", 8152), sink.Handler)
+        threading.Thread(target=cls.sink_srv.serve_forever, daemon=True).start()
+        cls.app_srv = ThreadingHTTPServer(("127.0.0.1", 8153), server.Handler)
+        threading.Thread(target=cls.app_srv.serve_forever, daemon=True).start()
+        time.sleep(0.3)
+
+    def _relay(self, payload, token="tok-secreto-test"):
+        req = urllib.request.Request(
+            "http://127.0.0.1:8153/api/telemetry-ingest",
+            data=json.dumps(payload).encode(), method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": "Bearer " + token})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            try:
+                body = json.loads(e.read().decode() or "{}")
+            except Exception:
+                body = {}
+            return e.code, body
+
+    def test_relay_ok_y_auth(self):
+        st, body = self._relay({"install_id": "r" * 16, "version": "t",
+                                "aggregates": [{"event": "vista_diario",
+                                                "date": "2026-09-29", "count": 2}]})
+        self.assertEqual(st, 200)
+        self.assertEqual(body.get("stored"), 1)
+        st, _ = self._relay({"install_id": "r" * 16, "version": "t",
+                             "aggregates": [{"event": "vista_diario",
+                                             "date": "2026-09-29", "count": 2}]},
+                            token="malo")
+        self.assertEqual(st, 401)  # el sink manda; el relay no abre nada
+        st, _ = self._relay({"install_id": "r" * 16, "version": "t",
+                             "aggregates": [{"event": "euros",
+                                             "date": "2026-09-29", "count": 1}]})
+        self.assertEqual(st, 400)
+
+    def test_relay_sink_caido(self):
+        os.environ["NEVERRED_SINK_LOCAL"] = "http://127.0.0.1:8199"
+        try:
+            st, body = self._relay({"install_id": "r" * 16, "version": "t",
+                                    "aggregates": [{"event": "vista_diario",
+                                                    "date": "2026-09-29",
+                                                    "count": 1}]})
+            self.assertEqual(st, 502)  # la beta reintentará con backoff
+        finally:
+            os.environ["NEVERRED_SINK_LOCAL"] = "http://127.0.0.1:8152"
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

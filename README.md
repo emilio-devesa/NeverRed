@@ -258,12 +258,15 @@ NEVERRED_SINK_TOKEN=<secreto> python3 backend/telemetry_sink.py --host 0.0.0.0 -
 ```
 
 Expón cada servicio por donde toque (solo cabe un funnel público por
-máquina): el funnel a la app (`tailscale funnel 8000 &`) y `serve` de
-tailnet al sink (`tailscale serve --bg --https=8443 http://127.0.0.1:8140`).
-En cada beta (dentro de tu tailnet):
+máquina): el funnel a la app (`tailscale funnel 8000 &`). El sink vive solo
+en localhost; las betas sin tailnet llegan a él por el relay
+`POST /api/telemetry-ingest` de la propia app (pública), que reenvía al sink
+local tras revalidar tamaño y rate-limit — el sink revalida bearer y
+allowlist. Con tailnet también vale el sink directo por `serve`.
+En cada beta (con o sin tailnet):
 
 ```bash
-NEVERRED_TELEMETRY_SINK=https://<tu-maquina>.ts.net:8443 NEVERRED_TELEMETRY_TOKEN=<secreto>
+NEVERRED_TELEMETRY_SINK=https://<tu-maquina>.ts.net NEVERRED_TELEMETRY_TOKEN=<secreto>
 ```
 
 Las builds beta ya traen receptor y token del programa por defecto

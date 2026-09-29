@@ -1062,6 +1062,45 @@ class Handler(BaseHTTPRequestHandler):
                               "last_ok": st["last_ok"], "fails": st["fails"],
                               "next_retry_in": max(0, st["next_retry"] - now)})
 
+    def _api_ingest_relay(self):
+        # Las betas sin tailnet envían aquí (URL pública); se reenvía tal cual
+        # al sink local, que revalida bearer + allowlist. Destino fijo a
+        # localhost: sin SSRF posible. Con rate-limit anti-spam.
+        if rate_limited(self.client_ip()):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 1_000_000:
+            return self._send_json(400, {"error": "Cuerpo inválido."})
+        try:
+            raw = self.rfile.read(length)
+            json.loads(raw.decode("utf-8"))
+        except Exception:
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        import urllib.request
+        import urllib.error
+        dest = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140")
+        req = urllib.request.Request(
+            dest + "/api/telemetry-ingest", data=raw, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": self.headers.get("Authorization") or ""})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                code, resp = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            code, resp = e.code, e.read()
+        except Exception:
+            return self._send_json(502, {"error": "Receptor no disponible; se reintentará."})
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(resp)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(resp)
+
     def _api_forward_now(self):
         user = self._auth_user()
         if user is None:
@@ -1201,6 +1240,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_ping()
         if path == "/api/telemetry":
             return self._api_telemetry()
+        if path == "/api/telemetry-ingest":
+            return self._api_ingest_relay()
         if path == "/api/telemetry-forward":
             return self._api_forward_now()
         if path == "/api/demo":
