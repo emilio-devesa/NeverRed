@@ -257,10 +257,13 @@ Receptor mínimo (en tu Mac, dentro de la red Tailscale para la prueba):
 NEVERRED_SINK_TOKEN=<secreto> python3 backend/telemetry_sink.py --host 0.0.0.0 --port 8140
 ```
 
-Panel del coordinador en `http://localhost:8140/`. En cada beta:
+Expón cada servicio por donde toque (solo cabe un funnel público por
+máquina): el funnel a la app (`tailscale funnel 8000 &`) y `serve` de
+tailnet al sink (`tailscale serve --bg --https=8443 http://127.0.0.1:8140`).
+En cada beta (dentro de tu tailnet):
 
 ```bash
-NEVERRED_TELEMETRY_SINK=http://<tu-ip-tailscale>:8140 NEVERRED_TELEMETRY_TOKEN=<secreto>
+NEVERRED_TELEMETRY_SINK=https://<tu-maquina>.ts.net:8443 NEVERRED_TELEMETRY_TOKEN=<secreto>
 ```
 
 Las builds beta ya traen receptor y token del programa por defecto
