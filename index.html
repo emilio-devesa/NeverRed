@@ -255,6 +255,7 @@
     <span><span class="muted small" id="appVersion" title="Versión de la aplicación"></span>
     <button class="btn ghost small" id="btnPassword">Cambiar contraseña</button>
     <button class="btn ghost small" id="btnSessions">Sesiones</button>
+    <button class="btn ghost small" id="btnTelemetry">Telemetría</button>
     <button class="btn ghost small" id="btnDeleteAccount">Eliminar mi cuenta</button>
     <button class="btn ghost small" id="btnWipe">Borrar todo</button></span>
   </footer>
@@ -389,6 +390,38 @@
         <button class="btn ghost" id="btnCloseSessions">Cerrar</button>
         <span class="spacer"></span>
         <button class="btn primary" id="btnRotateSessions">Cerrar las demás</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL TELEMETRÍA -->
+  <div class="modal-backdrop" id="telemetryModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3>Telemetría de uso (beta)</h3>
+      <p class="muted small">Solo si la activas: la app guarda qué funciones usas (conteos, nunca importes ni textos) <strong>en tu propio servidor</strong>. Nada sale de aquí: no hay envío a ningún sitio en esta fase.</p>
+      <label class="acc-row"><input type="checkbox" id="telemetryToggle" /> <span>Activar registro de uso</span></label>
+      <p class="muted small" id="telemetryState">Estado: desactivada.</p>
+      <h4>Mis últimos 30 días</h4>
+      <div id="telemetrySummary" class="list"><p class="muted">Sin datos todavía.</p></div>
+      <h4>Envío al coordinador (beta)</h4>
+      <p class="muted small" id="forwardState">Sin receptor configurado en este equipo.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnForwardNow">Enviar ahora</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnCloseTelemetry">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONSENTIMIENTO TELEMETRÍA (primer arranque) -->
+  <div class="modal-backdrop" id="consentModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h3>Ayúdanos a mejorar NeverRed</h3>
+      <p class="muted small">¿Registramos qué funciones usas? Solo conteos anónimos (p. ej. "diario: 12 veces"), guardados en tu servidor. Nunca importes, textos ni nombres. Puedes cambiarlo cuando quieras en el pie → Telemetría.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnConsentNo">Ahora no</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btnConsentYes">Sí, participar</button>
       </div>
     </div>
   </div>

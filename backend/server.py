@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 from datetime import date as _date
@@ -40,7 +41,7 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "1.8.1")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.0.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -127,10 +128,32 @@ def init_db():
             action TEXT NOT NULL,
             detail TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS telemetry_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            event TEXT NOT NULL,
+            props TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE TABLE IF NOT EXISTS telemetry_consent (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            enabled INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS telemetry_forward (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            watermark INTEGER NOT NULL DEFAULT 0,
+            last_ok INTEGER NOT NULL DEFAULT 0,
+            fails INTEGER NOT NULL DEFAULT 0,
+            next_retry INTEGER NOT NULL DEFAULT 0,
+            total_sends INTEGER NOT NULL DEFAULT 0,
+            total_fails INTEGER NOT NULL DEFAULT 0
+        );
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_telemetry_user ON telemetry_events(user_id);
+        CREATE INDEX IF NOT EXISTS idx_telemetry_event ON telemetry_events(event, ts);
         """
     )
     con.commit()
@@ -140,6 +163,17 @@ def init_db():
         con.execute("ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0")
         con.execute("UPDATE sessions SET last_seen = created_at WHERE last_seen = 0")
         con.commit()
+    # Migración: saber si al usuario ya se le preguntó por la telemetría.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_consent)")]
+    if "asked" not in cols:
+        con.execute("ALTER TABLE telemetry_consent ADD COLUMN asked INTEGER NOT NULL DEFAULT 0")
+        con.commit()
+    # Migración: contadores acumulados de envíos para la media de reintentos.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_forward)")]
+    for col in ("total_sends", "total_fails"):
+        if col not in cols:
+            con.execute("ALTER TABLE telemetry_forward ADD COLUMN %s INTEGER NOT NULL DEFAULT 0" % col)
+            con.commit()
     con.close()
 
 
@@ -174,6 +208,60 @@ def public_user(row):
 
 def password_ok(pw):
     return isinstance(pw, str) and MIN_PASSWORD_LEN <= len(pw) <= MAX_PASSWORD_LEN
+
+
+# ---------------- Telemetría (solo store; sin forward) ----------------
+# Catálogo cerrado: solo estos eventos con solo estas props (conteos) se
+# aceptan. Nada de importes, textos, nombres ni identificadores: por
+# construcción es imposible que se cuele contenido contable.
+TELEMETRY_EVENTS = {
+    "app_opened": {},
+    "vista_inicio": {}, "vista_diario": {}, "vista_mayor": {},
+    "vista_cuentas": {}, "vista_informes": {},
+    "asiento_creado": {"n_lineas": int},
+    "asiento_eliminado": {},
+    "csv_importado": {"n_filas": int},
+    "import_json": {"n_asientos": int},
+    "recurrentes_generados": {"n": int},
+    "demo_entrada": {},
+    "export_json": {},
+    "conflicto_409": {},
+}
+TELEMETRY_DAYS = 90
+TELEMETRY_MAX_BATCH = 100
+# Forward (store-and-forward): si hay receptor configurado, un hilo envía
+# agregados por (instalación, día, evento). Reintentos con backoff; el
+# receptor hace upsert idempotente, así que duplicar es seguro.
+TELEMETRY_SINK = os.environ.get("NEVERRED_TELEMETRY_SINK", "").rstrip("/")
+TELEMETRY_TOKEN = os.environ.get("NEVERRED_TELEMETRY_TOKEN", "")
+FORWARD_EVERY = int(os.environ.get("NEVERRED_FORWARD_EVERY", "900"))
+FORWARD_MAX_DELAY = 3600
+# Plataforma de ESTA instalación (solo SO, nada identificable).
+TELEMETRY_PLATFORM = {"darwin": "macOS", "linux": "Linux",
+                      "win32": "Windows"}.get(sys.platform, sys.platform)
+
+
+def _validate_telemetry(events):
+    """None = lote válido; str = error. Normaliza props a enteros acotados."""
+    if not isinstance(events, list) or not events or len(events) > TELEMETRY_MAX_BATCH:
+        return "Lote de telemetría inválido."
+    for e in events:
+        if not isinstance(e, dict):
+            return "Evento de telemetría inválido."
+        name = e.get("event")
+        spec = TELEMETRY_EVENTS.get(name) if isinstance(name, str) else None
+        if spec is None:
+            return "Evento no catalogado: %r." % (name,)
+        props = e.get("props", {})
+        if not isinstance(props, dict):
+            return "Props de telemetría inválidas."
+        clean = {}
+        for k, v in props.items():
+            if k not in spec or not isinstance(v, int) or isinstance(v, bool):
+                return "Prop no permitida en %s: %r." % (name, k)
+            clean[k] = max(0, min(v, 1_000_000))
+        e["props"] = clean
+    return None
 
 
 # Usuario de demostración (credenciales públicas y documentadas)
@@ -301,6 +389,119 @@ def prune_tabs(now=None):
         for t in [t for t, ts in _tabs.items() if now - ts > IDLE_TIMEOUT]:
             del _tabs[t]
         return len(_tabs)
+
+
+def get_install_id():
+    """ID seudónimo de esta instalación (contar betas + idempotencia).
+    Se genera una vez junto a la BD; no identifica a ninguna persona."""
+    path = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "install.id")
+    try:
+        with open(path) as f:
+            iid = f.read().strip()
+        if iid:
+            return iid
+    except OSError:
+        pass
+    iid = secrets.token_hex(16)
+    try:
+        with open(path, "w") as f:
+            f.write(iid)
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return iid
+
+
+def backoff_delay(fails):
+    return min(FORWARD_MAX_DELAY, 60 * (2 ** max(0, fails)))
+
+
+def build_aggregates(since_ts):
+    """Agregados pendientes: [{event, date, hour, count}]. Solo conteos."""
+    con = db()
+    rows = con.execute(
+        "SELECT event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch'), COUNT(*)"
+        " FROM telemetry_events WHERE ts > ?"
+        " GROUP BY event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch')"
+        " ORDER BY 2, 3, 1",
+        (since_ts,)).fetchall()
+    con.close()
+    return [{"event": e, "date": d, "hour": h, "count": c} for e, d, h, c in rows]
+
+
+def forward_state():
+    con = db()
+    con.execute("INSERT OR IGNORE INTO telemetry_forward (id) VALUES (1)")
+    row = con.execute("SELECT * FROM telemetry_forward WHERE id = 1").fetchone()
+    con.commit()
+    con.close()
+    return row
+
+
+def forward_once(force=False):
+    """Intenta un envío al receptor. Devuelve dict de estado (siempre)."""
+    st = forward_state()
+    now = int(time.time())
+    status = {"configured": bool(TELEMETRY_SINK), "pending": 0,
+              "last_ok": st["last_ok"], "fails": st["fails"],
+              "next_retry_in": max(0, st["next_retry"] - now)}
+    if not TELEMETRY_SINK or not TELEMETRY_TOKEN:
+        return status
+    if not force and now < st["next_retry"]:
+        return status
+    aggs = build_aggregates(st["watermark"])
+    status["pending"] = len(aggs)
+    if not aggs:
+        return status
+    # El intento cuenta antes de enviar: lo que viaja ya incluye este envío.
+    con = db()
+    con.execute("UPDATE telemetry_forward SET total_sends = total_sends + 1 WHERE id = 1")
+    con.commit()
+    con.close()
+    import urllib.request
+    body = json.dumps({"install_id": get_install_id(), "version": VERSION,
+                       "platform": TELEMETRY_PLATFORM,
+                       "client_stats": {"total_sends": st["total_sends"] + 1,
+                                        "total_fails": st["total_fails"]},
+                       "aggregates": aggs}).encode()
+    req = urllib.request.Request(
+        TELEMETRY_SINK + "/api/telemetry-ingest", data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": "Bearer " + TELEMETRY_TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            ok = r.status == 200
+    except Exception as e:
+        print("[neverred] forward fallido (%s); reintento con backoff." % e)
+        ok = False
+    con = db()
+    if ok:
+        con.execute("UPDATE telemetry_forward SET watermark = ?, last_ok = ?, "
+                    "fails = 0, next_retry = ? WHERE id = 1",
+                    (now, now, now + FORWARD_EVERY))
+        status.update(pending=0, last_ok=now, fails=0,
+                      next_retry_in=FORWARD_EVERY)
+    else:
+        fails = st["fails"] + 1
+        delay = backoff_delay(fails)
+        con.execute("UPDATE telemetry_forward SET fails = ?, next_retry = ?, "
+                    "total_fails = total_fails + 1 WHERE id = 1",
+                    (fails, now + delay))
+        status.update(fails=fails, next_retry_in=delay)
+    con.commit()
+    con.close()
+    return status
+
+
+def forward_loop():
+    """Hilo: envía agregados cada FORWARD_EVERY s; ante fallo, backoff."""
+    while True:
+        time.sleep(60)
+        try:
+            if TELEMETRY_SINK:
+                forward_once()
+        except Exception:
+            pass
 
 
 def idle_sweep(server):
@@ -765,6 +966,8 @@ class Handler(BaseHTTPRequestHandler):
         con = db()
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM telemetry_consent WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         con.commit()
         con.close()
@@ -799,8 +1002,142 @@ class Handler(BaseHTTPRequestHandler):
         audit("sessions_rotate", user["id"], "cerradas=%d" % cur.rowcount)
         self._send_json(200, {"ok": True, "closed": cur.rowcount})
 
+    def _api_telemetry(self):
+        # Solo store: acepta el lote si el usuario dio consentimiento y todo
+        # el lote pasa el allowlist. No hay forward a ningún sitio.
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        row = con.execute("SELECT enabled FROM telemetry_consent WHERE user_id = ?",
+                          (user["id"],)).fetchone()
+        if not row or not row["enabled"]:
+            con.close()
+            return self._send_json(403, {"error": "Telemetría no activada."})
+        body = self._read_json()
+        events = body.get("events") if isinstance(body, dict) else None
+        err = _validate_telemetry(events)
+        if err:
+            con.close()
+            return self._send_json(400, {"error": err})
+        now = int(time.time())
+        con.executemany(
+            "INSERT INTO telemetry_events (ts, user_id, event, props) VALUES (?,?,?,?)",
+            [(now, user["id"], e["event"], json.dumps(e["props"], sort_keys=True))
+             for e in events])
+        con.execute("DELETE FROM telemetry_events WHERE ts <= ?", (now - TELEMETRY_DAYS * 86400,))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True, "received": len(events)})
+
+    def _api_telemetry_consent(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        row = con.execute("SELECT enabled, asked FROM telemetry_consent WHERE user_id = ?",
+                          (user["id"],)).fetchone()
+        con.close()
+        self._send_json(200, {"enabled": bool(row and row["enabled"]),
+                              "asked": bool(row and row["asked"])})
+
+    def _api_telemetry_consent_put(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        body = self._read_json()
+        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        con = db()
+        con.execute(
+            "INSERT INTO telemetry_consent (user_id, enabled, asked) VALUES (?,?,1) "
+            "ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled, asked=1",
+            (user["id"], 1 if body["enabled"] else 0))
+        if not body["enabled"]:
+            # Al revocar, se borra lo acumulado: sin consentimiento no hay datos.
+            con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
+        con.commit()
+        con.close()
+        audit("telemetry_consent", user["id"], "enabled=%s" % body["enabled"])
+        self._send_json(200, {"ok": True, "enabled": body["enabled"]})
+
+    def _api_telemetry_summary(self):
+        # Agregado local de los últimos 30 días: lo mismo que vería el usuario
+        # en su panel; base del futuro forward (que enviaría solo esto).
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        rows = con.execute(
+            "SELECT event, COUNT(*) FROM telemetry_events "
+            "WHERE user_id = ? AND ts > ? GROUP BY event ORDER BY 2 DESC",
+            (user["id"], int(time.time()) - 30 * 86400)).fetchall()
+        con.close()
+        self._send_json(200, {"summary": [{"event": e, "count": c} for e, c in rows]})
+
+    def _api_forward_status(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        st = forward_state()
+        now = int(time.time())
+        sends, fails = st["total_sends"], st["total_fails"]
+        self._send_json(200, {"configured": bool(TELEMETRY_SINK),
+                              "last_ok": st["last_ok"], "fails": st["fails"],
+                              "next_retry_in": max(0, st["next_retry"] - now),
+                              "total_sends": sends, "total_fails": fails,
+                              "mean_fails": round(fails / sends, 2) if sends else 0})
+
+    def _api_ingest_relay(self):
+        # Las betas sin tailnet envían aquí (URL pública); se reenvía tal cual
+        # al sink local, que revalida bearer + allowlist. Destino fijo a
+        # localhost: sin SSRF posible. Con rate-limit anti-spam.
+        if rate_limited(self.client_ip()):
+            return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 1_000_000:
+            return self._send_json(400, {"error": "Cuerpo inválido."})
+        try:
+            raw = self.rfile.read(length)
+            json.loads(raw.decode("utf-8"))
+        except Exception:
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        import urllib.request
+        import urllib.error
+        dest = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140")
+        req = urllib.request.Request(
+            dest + "/api/telemetry-ingest", data=raw, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": self.headers.get("Authorization") or ""})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                code, resp = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            code, resp = e.code, e.read()
+        except Exception:
+            return self._send_json(502, {"error": "Receptor no disponible; se reintentará."})
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(resp)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(resp)
+
+    def _api_forward_now(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        try:
+            status = forward_once(force=True)
+        except Exception:
+            status = {"configured": bool(TELEMETRY_SINK), "pending": -1}
+        self._send_json(200, status)
+
     def _api_ping(self):
-        # Latido de pestaña: sin autenticación (también late el login) y sin
         # rate-limit (laten cada 10 s). El CORS restringido ya impide el abuso
         # desde sitios de terceros (petición JSON = preflight).
         body = self._read_json() or {}
@@ -899,6 +1236,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_me()
         if path == "/api/data":
             return self._api_get_data()
+        if path == "/api/telemetry-consent":
+            return self._api_telemetry_consent()
+        if path == "/api/telemetry-summary":
+            return self._api_telemetry_summary()
+        if path == "/api/telemetry-forward-status":
+            return self._api_forward_status()
         if path.startswith("/api/"):
             return self._send_json(404, {"error": "Ruta no encontrada."})
         return self._serve_static(path)
@@ -921,13 +1264,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_sessions_rotate()
         if path == "/api/ping":
             return self._api_ping()
+        if path == "/api/telemetry":
+            return self._api_telemetry()
+        if path == "/api/telemetry-ingest":
+            return self._api_ingest_relay()
+        if path == "/api/telemetry-forward":
+            return self._api_forward_now()
         if path == "/api/demo":
             return self._api_demo()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
-        if urlparse(self.path).path == "/api/data":
+        path = urlparse(self.path).path
+        if path == "/api/data":
             return self._api_put_data()
+        if path == "/api/telemetry-consent":
+            return self._api_telemetry_consent_put()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_DELETE(self):  # noqa: N802 - firma de la stdlib
@@ -1022,6 +1374,9 @@ def main():
     if QUIT_WHEN_IDLE:
         threading.Thread(target=idle_sweep, args=(srv,), daemon=True).start()
         print("[neverred] Autoapagado activo: sin pestañas durante %ds." % IDLE_TIMEOUT)
+    if TELEMETRY_SINK:
+        threading.Thread(target=forward_loop, daemon=True).start()
+        print("[neverred] Forward de telemetría activo hacia %s." % TELEMETRY_SINK)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

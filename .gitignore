@@ -8,3 +8,4 @@ __pycache__/
 # Basura de macOS
 .DS_Store
 packaging/release-key
+backend/install.id
