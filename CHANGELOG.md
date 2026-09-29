@@ -1,6 +1,11 @@
 # NeverRed — Historial de cambios
 
-## v2.0.1 — Documentación y panel simple
+## v2.1.0 — Separación App / Monitor
+- Nuevo `telemetry_common.py`: contrato compartido (catálogo + validadores)
+- Nuevo `telemetry_forward.py`: forward y relay fuera de `server.py`
+- El monitor se despliega con dos ficheros (ya no importa la app)
+- Nuevo `telemetry.conf`: destino de telemetría externo, sin nada horneado
+- El botón "Enviar ahora" informa el éxito real del envío
 - README y web: telemetría y firmado solo a nivel usuario (detalles de coordinador fuera)
 - Panel de telemetría simplificado a interruptor sí/no + "Enviar ahora" discreto
 - Registro de uso con opt-in (catálogo cerrado, solo conteos, purga 90 días)
