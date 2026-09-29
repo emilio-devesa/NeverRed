@@ -210,58 +210,28 @@ def password_ok(pw):
     return isinstance(pw, str) and MIN_PASSWORD_LEN <= len(pw) <= MAX_PASSWORD_LEN
 
 
-# ---------------- Telemetría (solo store; sin forward) ----------------
-# Catálogo cerrado: solo estos eventos con solo estas props (conteos) se
-# aceptan. Nada de importes, textos, nombres ni identificadores: por
-# construcción es imposible que se cuele contenido contable.
-TELEMETRY_EVENTS = {
-    "app_opened": {},
-    "vista_inicio": {}, "vista_diario": {}, "vista_mayor": {},
-    "vista_cuentas": {}, "vista_informes": {},
-    "asiento_creado": {"n_lineas": int},
-    "asiento_eliminado": {},
-    "csv_importado": {"n_filas": int},
-    "import_json": {"n_asientos": int},
-    "recurrentes_generados": {"n": int},
-    "demo_entrada": {},
-    "export_json": {},
-    "conflicto_409": {},
-}
-TELEMETRY_DAYS = 90
-TELEMETRY_MAX_BATCH = 100
-# Forward (store-and-forward): si hay receptor configurado, un hilo envía
-# agregados por (instalación, día, evento). Reintentos con backoff; el
-# receptor hace upsert idempotente, así que duplicar es seguro.
-TELEMETRY_SINK = os.environ.get("NEVERRED_TELEMETRY_SINK", "").rstrip("/")
-TELEMETRY_TOKEN = os.environ.get("NEVERRED_TELEMETRY_TOKEN", "")
+# ---------------- Telemetría: store (App) ----------------
+# El catálogo y los validadores viven en telemetry_common (contrato con el
+# Monitor); el forward/relay en telemetry_forward (infraestructura). Aquí
+# solo queda el store: datos del usuario, con su consentimiento y borrado.
+from telemetry_common import (
+    TELEMETRY_EVENTS, TELEMETRY_DAYS, TELEMETRY_MAX_BATCH,
+    validate_telemetry, resolve_sink,
+)
+import telemetry_forward as _fwd
+
+_validate_telemetry = validate_telemetry  # compatibilidad histórica
+
+# Destino del forward: entorno primero, telemetry.conf junto a la BD después.
+# Sin ninguno: modo local puro, nada sale de este servidor.
+_CONF_PATH = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "telemetry.conf")
+TELEMETRY_SINK, TELEMETRY_TOKEN = resolve_sink(os.environ, _CONF_PATH)
 FORWARD_EVERY = int(os.environ.get("NEVERRED_FORWARD_EVERY", "900"))
 FORWARD_MAX_DELAY = 3600
+SINK_LOCAL = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140").rstrip("/")
 # Plataforma de ESTA instalación (solo SO, nada identificable).
 TELEMETRY_PLATFORM = {"darwin": "macOS", "linux": "Linux",
                       "win32": "Windows"}.get(sys.platform, sys.platform)
-
-
-def _validate_telemetry(events):
-    """None = lote válido; str = error. Normaliza props a enteros acotados."""
-    if not isinstance(events, list) or not events or len(events) > TELEMETRY_MAX_BATCH:
-        return "Lote de telemetría inválido."
-    for e in events:
-        if not isinstance(e, dict):
-            return "Evento de telemetría inválido."
-        name = e.get("event")
-        spec = TELEMETRY_EVENTS.get(name) if isinstance(name, str) else None
-        if spec is None:
-            return "Evento no catalogado: %r." % (name,)
-        props = e.get("props", {})
-        if not isinstance(props, dict):
-            return "Props de telemetría inválidas."
-        clean = {}
-        for k, v in props.items():
-            if k not in spec or not isinstance(v, int) or isinstance(v, bool):
-                return "Prop no permitida en %s: %r." % (name, k)
-            clean[k] = max(0, min(v, 1_000_000))
-        e["props"] = clean
-    return None
 
 
 # Usuario de demostración (credenciales públicas y documentadas)
@@ -412,97 +382,46 @@ def get_install_id():
     return iid
 
 
+def _forward_cfg():
+    """Config del forward con los valores efectivos de esta instalación."""
+    return _fwd.ForwardConfig(sink=TELEMETRY_SINK, token=TELEMETRY_TOKEN,
+                              platform=TELEMETRY_PLATFORM, every=FORWARD_EVERY,
+                              max_delay=FORWARD_MAX_DELAY, sink_local=SINK_LOCAL)
+
+
 def backoff_delay(fails):
-    return min(FORWARD_MAX_DELAY, 60 * (2 ** max(0, fails)))
+    return _fwd.backoff_delay(fails, FORWARD_MAX_DELAY)
 
 
 def build_aggregates(since_ts):
     """Agregados pendientes: [{event, date, hour, count}]. Solo conteos."""
     con = db()
-    rows = con.execute(
-        "SELECT event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch'), COUNT(*)"
-        " FROM telemetry_events WHERE ts > ?"
-        " GROUP BY event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch')"
-        " ORDER BY 2, 3, 1",
-        (since_ts,)).fetchall()
-    con.close()
-    return [{"event": e, "date": d, "hour": h, "count": c} for e, d, h, c in rows]
+    try:
+        return _fwd.build_aggregates(con, since_ts)
+    finally:
+        con.close()
 
 
 def forward_state():
     con = db()
-    con.execute("INSERT OR IGNORE INTO telemetry_forward (id) VALUES (1)")
-    row = con.execute("SELECT * FROM telemetry_forward WHERE id = 1").fetchone()
-    con.commit()
-    con.close()
-    return row
+    try:
+        return _fwd.forward_state(con)
+    finally:
+        con.close()
 
 
 def forward_once(force=False):
     """Intenta un envío al receptor. Devuelve dict de estado (siempre)."""
-    st = forward_state()
-    now = int(time.time())
-    status = {"configured": bool(TELEMETRY_SINK), "pending": 0, "sent": False,
-              "last_ok": st["last_ok"], "fails": st["fails"],
-              "next_retry_in": max(0, st["next_retry"] - now)}
-    if not TELEMETRY_SINK or not TELEMETRY_TOKEN:
-        return status
-    if not force and now < st["next_retry"]:
-        return status
-    aggs = build_aggregates(st["watermark"])
-    status["pending"] = len(aggs)
-    if not aggs:
-        status["sent"] = True
-        return status
-    # El intento cuenta antes de enviar: lo que viaja ya incluye este envío.
     con = db()
-    con.execute("UPDATE telemetry_forward SET total_sends = total_sends + 1 WHERE id = 1")
-    con.commit()
-    con.close()
-    import urllib.request
-    body = json.dumps({"install_id": get_install_id(), "version": VERSION,
-                       "platform": TELEMETRY_PLATFORM,
-                       "client_stats": {"total_sends": st["total_sends"] + 1,
-                                        "total_fails": st["total_fails"]},
-                       "aggregates": aggs}).encode()
-    req = urllib.request.Request(
-        TELEMETRY_SINK + "/api/telemetry-ingest", data=body, method="POST",
-        headers={"Content-Type": "application/json",
-                 "Authorization": "Bearer " + TELEMETRY_TOKEN})
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            ok = r.status == 200
-    except Exception as e:
-        print("[neverred] forward fallido (%s); reintento con backoff." % e)
-        ok = False
-    con = db()
-    if ok:
-        con.execute("UPDATE telemetry_forward SET watermark = ?, last_ok = ?, "
-                    "fails = 0, next_retry = ? WHERE id = 1",
-                    (now, now, now + FORWARD_EVERY))
-        status.update(pending=0, sent=True, last_ok=now, fails=0,
-                      next_retry_in=FORWARD_EVERY)
-    else:
-        fails = st["fails"] + 1
-        delay = backoff_delay(fails)
-        con.execute("UPDATE telemetry_forward SET fails = ?, next_retry = ?, "
-                    "total_fails = total_fails + 1 WHERE id = 1",
-                    (fails, now + delay))
-        status.update(fails=fails, next_retry_in=delay)
-    con.commit()
-    con.close()
-    return status
+        return _fwd.forward_once(con, get_install_id(), VERSION, _forward_cfg(), force)
+    finally:
+        con.close()
 
 
 def forward_loop():
     """Hilo: envía agregados cada FORWARD_EVERY s; ante fallo, backoff."""
-    while True:
-        time.sleep(60)
-        try:
-            if TELEMETRY_SINK:
-                forward_once()
-        except Exception:
-            pass
+    _fwd.forward_loop(db, get_install_id, VERSION, _forward_cfg)
 
 
 def idle_sweep(server):
@@ -1106,19 +1025,10 @@ class Handler(BaseHTTPRequestHandler):
             json.loads(raw.decode("utf-8"))
         except Exception:
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
-        import urllib.request
-        import urllib.error
-        dest = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140")
-        req = urllib.request.Request(
-            dest + "/api/telemetry-ingest", data=raw, method="POST",
-            headers={"Content-Type": "application/json",
-                     "Authorization": self.headers.get("Authorization") or ""})
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                code, resp = r.status, r.read()
-        except urllib.error.HTTPError as e:
-            code, resp = e.code, e.read()
-        except Exception:
+        code, resp = _fwd.relay_ingest(
+            raw, self.headers.get("Authorization") or "",
+            os.environ.get("NEVERRED_SINK_LOCAL", "").rstrip("/") or SINK_LOCAL)
+        if code == 502:
             return self._send_json(502, {"error": "Receptor no disponible; se reintentará."})
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1135,7 +1045,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             status = forward_once(force=True)
         except Exception:
-            status = {"configured": bool(TELEMETRY_SINK), "pending": -1}
+            status = {"configured": bool(TELEMETRY_SINK), "pending": -1, "sent": False}
         self._send_json(200, status)
 
     def _api_ping(self):

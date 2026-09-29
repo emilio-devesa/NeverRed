@@ -27,7 +27,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from server import TELEMETRY_EVENTS  # noqa: E402 — mismo allowlist que el store
+import telemetry_common as _tc  # noqa: E402 — contrato App/Monitor
+TELEMETRY_EVENTS = _tc.TELEMETRY_EVENTS
 
 TOKEN = os.environ.get("NEVERRED_SINK_TOKEN", "")
 DB_PATH = os.environ.get("NEVERRED_SINK_DB",
@@ -95,40 +96,7 @@ def init_db():
     con.close()
 
 
-def valid_payload(body):
-    """None = válido; str = error."""
-    if not isinstance(body, dict):
-        return "Cuerpo JSON inválido."
-    iid = body.get("install_id")
-    if not isinstance(iid, str) or not 8 <= len(iid) <= 128:
-        return "install_id inválido."
-    aggs = body.get("aggregates")
-    if not isinstance(aggs, list) or not aggs or len(aggs) > 500:
-        return "Lote inválido."
-    for a in aggs:
-        if not isinstance(a, dict):
-            return "Agregado inválido."
-        if a.get("event") not in TELEMETRY_EVENTS:
-            return "Evento no catalogado: %r." % (a.get("event"),)
-        if not isinstance(a.get("date"), str) or \
-                not re.match(r"^\d{4}-\d{2}-\d{2}$", a["date"]):
-            return "Fecha inválida."
-        # Tolerancia con emisores de la primera beta (sin hora): hora 00.
-        a["hour"] = a.get("hour") or "00"
-        if not isinstance(a["hour"], str) or \
-                not re.match(r"^([01]\d|2[0-3])$", a["hour"]):
-            return "Hora inválida."
-        if not isinstance(a.get("count"), int) or isinstance(a.get("count"), bool) \
-                or not 0 <= a["count"] <= 1_000_000:
-            return "Conteo inválido."
-    stats = body.get("client_stats", {})
-    if not isinstance(stats, dict):
-        return "Stats inválidas."
-    for k in ("total_sends", "total_fails"):
-        v = stats.get(k, 0)
-        if not isinstance(v, int) or isinstance(v, bool) or v < 0:
-            return "Stat inválida: %s." % k
-    return None
+# valid_payload vive en telemetry_common (contrato App/Monitor).
 
 
 PALETTE = ["#4f9cf9", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa", "#14b8a6",
@@ -201,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode("utf-8"))
         except Exception:
             return self._json(400, {"error": "Cuerpo JSON inválido."})
-        err = valid_payload(body)
+        err = _tc.validate_payload(body)
         if err:
             return self._json(400, {"error": err})
         now = int(time.time())

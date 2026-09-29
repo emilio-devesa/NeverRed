@@ -25,11 +25,18 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=/usr/bin/python3; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
-# Telemetría beta: receptor y token del programa por defecto (el usuario puede
-# redefinirlos). El token horneado es público por diseño: el receptor solo
-# admite agregados del allowlist y cada instalación se distingue por su ID.
-export NEVERRED_TELEMETRY_SINK="${NEVERRED_TELEMETRY_SINK:-https://neverred-dev.tail2f2ed4.ts.net}"
-export NEVERRED_TELEMETRY_TOKEN="${NEVERRED_TELEMETRY_TOKEN:-JU_D135s5vVbPZWdqkkETQSLkizfKT46Hqc8nUgUxoI}"
+# Telemetría: la app es local pura salvo que exista telemetry.conf junto a
+# los datos (o las variables ya vengan definidas). Ese fichero lo pone el
+# coordinador en las máquinas que participan; nunca va horneado aquí.
+# Formato: NEVERRED_TELEMETRY_SINK=https://... / NEVERRED_TELEMETRY_TOKEN=...
+if [ -z "$NEVERRED_TELEMETRY_SINK" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
+  export NEVERRED_TELEMETRY_SINK
+fi
+if [ -z "$NEVERRED_TELEMETRY_TOKEN" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
+  export NEVERRED_TELEMETRY_TOKEN
+fi
 export NEVERRED_QUIT_WHEN_IDLE=1 NEVERRED_IDLE_TIMEOUT=20
 "$PY" "$RES/backend/server.py" >"$DATA/server.log" 2>&1 &
 SRV=$!

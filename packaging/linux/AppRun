@@ -57,10 +57,15 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else echo "Falta python3 en el sistema."; exit 1; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
-# Telemetría beta: receptor y token del programa por defecto (redefinibles).
-# Token horneado público por diseño (ver Launcher.sh de macOS).
-export NEVERRED_TELEMETRY_SINK="${NEVERRED_TELEMETRY_SINK:-https://neverred-dev.tail2f2ed4.ts.net}"
-export NEVERRED_TELEMETRY_TOKEN="${NEVERRED_TELEMETRY_TOKEN:-JU_D135s5vVbPZWdqkkETQSLkizfKT46Hqc8nUgUxoI}"
+# Telemetría: local pura salvo telemetry.conf junto a los datos (ver Launcher.sh).
+if [ -z "$NEVERRED_TELEMETRY_SINK" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
+  export NEVERRED_TELEMETRY_SINK
+fi
+if [ -z "$NEVERRED_TELEMETRY_TOKEN" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
+  export NEVERRED_TELEMETRY_TOKEN
+fi
 export NEVERRED_QUIT_WHEN_IDLE=1 NEVERRED_IDLE_TIMEOUT=20
 "$PY" "$APP/backend/server.py" >"$DATA/server.log" 2>&1 &
 SRV=$!
