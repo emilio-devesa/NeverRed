@@ -35,3 +35,7 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 ![Informes](NeverRed-Informes.jpeg)
 
 Sigue en la [guía de uso](guia).
+
+## Novedades en v2.0.0
+
+**Telemetría beta opt-in**: la app puede registrar qué funciones usas (solo conteos, nunca importes ni textos), con un panel propio donde ver tus datos, revocar el consentimiento y enviar agregados al coordinador. Apagada por defecto; se pregunta una sola vez al entrar.
