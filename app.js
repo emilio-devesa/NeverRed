@@ -1187,6 +1187,15 @@ document.getElementById('btnTelemetry').addEventListener('click', () => {
   document.getElementById('btnCloseTelemetry').focus();
 });
 document.getElementById('btnCloseTelemetry').addEventListener('click', () => telemetryModal.hidden = true);
+document.getElementById('btnForwardNow').addEventListener('click', async () => {
+  const fwdP = document.getElementById('forwardState');
+  fwdP.hidden = false; fwdP.textContent = 'Enviando…';
+  try {
+    const res = await fetch(api('/api/telemetry-forward'), { method: 'POST', headers: authHeaders() });
+    const f = await res.json().catch(() => ({}));
+    fwdP.textContent = f.configured ? 'Enviado ✓ (o nada pendiente).' : 'Sin receptor configurado.';
+  } catch { fwdP.textContent = 'Fallo de envío; se reintentará solo.'; }
+});
 document.getElementById('telemetryToggle').addEventListener('change', async ev => {
   try {
     const res = await fetch(api('/api/telemetry-consent'), {
