@@ -6,6 +6,23 @@ permalink: /guia/
 
 # Guía de uso
 
+## Instalar en macOS (primera vez)
+
+1. Descarga el `.dmg` de [Releases](https://github.com/emilio-devesa/NeverRed/releases) (vale para Intel y Apple Silicon), ábrelo y arrastra **NeverRed** a **Aplicaciones**.
+2. Haz doble clic. Como la app no está firmada con certificado Apple, macOS la bloqueará con este aviso (es normal, no es un virus):
+
+![Alerta de Gatekeeper](NeverRed-MacOS-GateKeeper-Alerta.png)
+
+3. Pulsa **Aceptar** y abre **Ajustes → Privacidad y seguridad**. Baja hasta el apartado Seguridad: verás el aviso del bloqueo con el botón **Abrir igualmente**:
+
+![Ajustes, Privacidad y seguridad](NeverRed-MacOS-Ajustes-Privacidad-y-seguridad.png)
+
+4. Pulsa **Abrir igualmente** y confirma una última vez:
+
+![Confirmación de apertura](NeverRed-MacOS-GateKeeper-Confirmación.png)
+
+A partir de ahí la app abre con normalidad y no vuelve a preguntar.
+
 ## Entrar
 
 Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
