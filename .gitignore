@@ -8,3 +8,6 @@ __pycache__/
 # Basura de macOS
 .DS_Store
 backend/install.id
+REPORT.MD
+REPORT.DOCX
+TELEMETRY-OPS.MD
