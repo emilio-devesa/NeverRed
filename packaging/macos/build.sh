@@ -11,6 +11,9 @@ elif git describe --tags --abbrev=0 >/dev/null 2>&1; then VERSION="$(git describ
 else VERSION="1.2.0"; fi
 SUFFIX="${2:-}"
 DMG="NeverRed-macOS-$VERSION$SUFFIX.dmg"
+# Destino de telemetría por defecto en los paquetes. El token sigue siendo
+# solo vía entorno (pendiente de análisis); aquí solo va la dirección.
+: "${NEVERRED_BUILD_SINK:=https://neverred-dev.tail2f2ed4.ts.net}"
 
 STAGE="$ROOT/dist/macos"
 APP="$STAGE/NeverRed.app"

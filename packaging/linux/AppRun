@@ -57,23 +57,27 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else echo "Falta python3 en el sistema."; exit 1; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"
-# Telemetría: destino por defecto inyectado al construir el paquete (vacío en
-# releases públicas). Prioridad: entorno > telemetry.conf > defecto del build.
+# Telemetría: destino por defecto inyectado al construir el paquete. En el
+# primer arranque se escribe telemetry.conf junto a los datos (ver Launcher.sh).
 _SINK_DEF="__NEVERRED_BUILD_SINK__"
 _TOKEN_DEF="__NEVERRED_BUILD_TOKEN__"
 case "$_SINK_DEF" in __*) _SINK_DEF="";; esac
 case "$_TOKEN_DEF" in __*) _TOKEN_DEF="";; esac
-if [ -z "${NEVERRED_TELEMETRY_SINK:-}" ]; then
-  if [ -f "$DATA/telemetry.conf" ]; then
-    NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
-  fi
+if [ ! -f "$DATA/telemetry.conf" ]; then
+  {
+    echo "# Destino de telemetría (opcional). Sin destino, nada sale de este equipo."
+    echo "# Prioridad: entorno > este fichero > defecto del build."
+    if [ -n "$_SINK_DEF" ]; then echo "NEVERRED_TELEMETRY_SINK=$_SINK_DEF"; else echo "#NEVERRED_TELEMETRY_SINK=https://..."; fi
+    if [ -n "$_TOKEN_DEF" ]; then echo "NEVERRED_TELEMETRY_TOKEN=$_TOKEN_DEF"; else echo "#NEVERRED_TELEMETRY_TOKEN=..."; fi
+  } > "$DATA/telemetry.conf"
+fi
+if [ -z "${NEVERRED_TELEMETRY_SINK:-}" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_SINK="$(sed -n 's/^NEVERRED_TELEMETRY_SINK=//p' "$DATA/telemetry.conf" | head -1)"
   : "${NEVERRED_TELEMETRY_SINK:=$_SINK_DEF}"
   export NEVERRED_TELEMETRY_SINK
 fi
-if [ -z "${NEVERRED_TELEMETRY_TOKEN:-}" ]; then
-  if [ -f "$DATA/telemetry.conf" ]; then
-    NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
-  fi
+if [ -z "${NEVERRED_TELEMETRY_TOKEN:-}" ] && [ -f "$DATA/telemetry.conf" ]; then
+  NEVERRED_TELEMETRY_TOKEN="$(sed -n 's/^NEVERRED_TELEMETRY_TOKEN=//p' "$DATA/telemetry.conf" | head -1)"
   : "${NEVERRED_TELEMETRY_TOKEN:=$_TOKEN_DEF}"
   export NEVERRED_TELEMETRY_TOKEN
 fi

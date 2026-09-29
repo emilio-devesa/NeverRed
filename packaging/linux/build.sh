@@ -8,6 +8,8 @@ cd "$ROOT"
 if [ "${1:-}" != "" ]; then VERSION="$1";
 elif git describe --tags --abbrev=0 >/dev/null 2>&1; then VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')";
 else VERSION="1.7.0"; fi
+# Destino de telemetría por defecto (ver build.sh de macOS).
+: "${NEVERRED_BUILD_SINK:=https://neverred-dev.tail2f2ed4.ts.net}"
 
 DIR="$ROOT/dist/linux/NeverRed.AppDir"
 rm -rf "$DIR"
