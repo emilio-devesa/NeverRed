@@ -22,7 +22,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$RES/backend" "$RES/li
 cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$RES/"
 cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
-cp backend/server.py "$RES/backend/"
+cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
 cp packaging/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
