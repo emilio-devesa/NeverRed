@@ -39,8 +39,11 @@ ya estaba en marcha. Y si cierras su última pestaña en el navegador,
 todo se apaga solo en unos 20 segundos (las demás pestañas no se
 ven afectadas).
 
-> La app no está firmada con certificado Apple: la primera vez, ábrela con
-> clic derecho → **Abrir** y confirma.
+> La app no está firmada con certificado Apple: la primera vez macOS la
+> bloquea ("No se ha abierto NeverRed.app"). Pulsa **Aceptar**, abre
+> **Ajustes → Privacidad y seguridad**, baja hasta el aviso y pulsa
+> **Abrir igualmente**, y confirma una vez más. Solo pasa la primera vez
+> ([paso a paso con capturas](https://emilio-devesa.github.io/NeverRed/guia#instalar-en-macos-primera-vez)).
 
 ## Puesta en marcha (con usuarios y base de datos)
 

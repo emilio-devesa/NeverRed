@@ -1,6 +1,11 @@
 # NeverRed — Historial de cambios
 
-## v2.1.3 — Destino por defecto en build
+## v2.2.0 — Emparejamiento asimétrico
+- La app genera un par Ed25519 en el primer arranque y se enrola sola
+- Ingesta firmada; el coordinador aprueba/veta desde el dashboard
+- Sin aprobar no se almacena nada (la app retiene todo sin pérdidas)
+- Releases con `telemetry.conf` por defecto hacia el receptor
+- Guía de primera apertura en macOS (Gatekeeper) con capturas
 - El destino de telemetría se inyecta al construir el paquete
   (prioridad: entorno > telemetry.conf > defecto del build)
 - Los lanzadores usan `${VAR:-}` (el `set -u` tumbaba la app sin variables)
