@@ -148,6 +148,11 @@ def init_db():
             total_sends INTEGER NOT NULL DEFAULT 0,
             total_fails INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS telemetry_identity (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            status TEXT NOT NULL DEFAULT 'none',
+            updated_at INTEGER NOT NULL DEFAULT 0
+        );
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
@@ -214,18 +219,20 @@ def password_ok(pw):
 # El catálogo y los validadores viven en telemetry_common (contrato con el
 # Monitor); el forward/relay en telemetry_forward (infraestructura). Aquí
 # solo queda el store: datos del usuario, con su consentimiento y borrado.
-from telemetry_common import (
-    TELEMETRY_EVENTS, TELEMETRY_DAYS, TELEMETRY_MAX_BATCH,
-    validate_telemetry, resolve_sink,
-)
+# (Import namespaced a propósito: `from ... import` en cascada pierde
+# nombres en el Python del sistema.)
+import telemetry_common as _tc
 import telemetry_forward as _fwd
 
-_validate_telemetry = validate_telemetry  # compatibilidad histórica
+TELEMETRY_EVENTS = _tc.TELEMETRY_EVENTS  # re-export histórico
+TELEMETRY_DAYS = _tc.TELEMETRY_DAYS
+TELEMETRY_MAX_BATCH = _tc.TELEMETRY_MAX_BATCH
+_validate_telemetry = _tc.validate_telemetry  # compatibilidad histórica
 
 # Destino del forward: entorno primero, telemetry.conf junto a la BD después.
 # Sin ninguno: modo local puro, nada sale de este servidor.
 _CONF_PATH = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "telemetry.conf")
-TELEMETRY_SINK, TELEMETRY_TOKEN = resolve_sink(os.environ, _CONF_PATH)
+TELEMETRY_SINK, TELEMETRY_TOKEN = _tc.resolve_sink(os.environ, _CONF_PATH)
 FORWARD_EVERY = int(os.environ.get("NEVERRED_FORWARD_EVERY", "900"))
 FORWARD_MAX_DELAY = 3600
 SINK_LOCAL = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140").rstrip("/")
@@ -410,11 +417,17 @@ def forward_state():
         con.close()
 
 
+def _key_dir():
+    """Directorio de la clave de emparejamiento (junto a la BD)."""
+    return os.path.dirname(os.path.abspath(DB_PATH))
+
+
 def forward_once(force=False):
     """Intenta un envío al receptor. Devuelve dict de estado (siempre)."""
     con = db()
     try:
-        return _fwd.forward_once(con, get_install_id(), VERSION, _forward_cfg(), force)
+        return _fwd.forward_once(con, get_install_id(), VERSION, _forward_cfg(),
+                                 _key_dir(), force)
     finally:
         con.close()
 
@@ -1002,15 +1015,22 @@ class Handler(BaseHTTPRequestHandler):
         st = forward_state()
         now = int(time.time())
         sends, fails = st["total_sends"], st["total_fails"]
+        con = db()
+        try:
+            ident = _fwd.identity_status(con)
+        finally:
+            con.close()
         self._send_json(200, {"configured": bool(TELEMETRY_SINK),
                               "last_ok": st["last_ok"], "fails": st["fails"],
                               "next_retry_in": max(0, st["next_retry"] - now),
                               "total_sends": sends, "total_fails": fails,
-                              "mean_fails": round(fails / sends, 2) if sends else 0})
+                              "mean_fails": round(fails / sends, 2) if sends else 0,
+                              "enroll": ident if not TELEMETRY_TOKEN else "legacy",
+                              "enrolled": ident == "approved" or bool(TELEMETRY_TOKEN)})
 
-    def _api_ingest_relay(self):
+    def _api_ingest_relay(self, endpoint="ingest"):
         # Las betas sin tailnet envían aquí (URL pública); se reenvía tal cual
-        # al sink local, que revalida bearer + allowlist. Destino fijo a
+        # al sink local, que revalida bearer/firma + allowlist. Destino fijo a
         # localhost: sin SSRF posible. Con rate-limit anti-spam.
         if rate_limited(self.client_ip()):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
@@ -1027,7 +1047,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
         code, resp = _fwd.relay_ingest(
             raw, self.headers.get("Authorization") or "",
-            os.environ.get("NEVERRED_SINK_LOCAL", "").rstrip("/") or SINK_LOCAL)
+            os.environ.get("NEVERRED_SINK_LOCAL", "").rstrip("/") or SINK_LOCAL,
+            endpoint)
         if code == 502:
             return self._send_json(502, {"error": "Receptor no disponible; se reintentará."})
         self.send_response(code)
@@ -1037,6 +1058,10 @@ class Handler(BaseHTTPRequestHandler):
         self._cors_headers()
         self.end_headers()
         self.wfile.write(resp)
+
+    def _api_enroll_relay(self):
+        # Enrolamiento hacia el sink local (mismo canal que la ingesta).
+        return self._api_ingest_relay("enroll")
 
     def _api_forward_now(self):
         user = self._auth_user()
@@ -1179,6 +1204,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_telemetry()
         if path == "/api/telemetry-ingest":
             return self._api_ingest_relay()
+        if path == "/api/telemetry-enroll":
+            return self._api_enroll_relay()
         if path == "/api/telemetry-forward":
             return self._api_forward_now()
         if path == "/api/demo":

@@ -5,9 +5,9 @@ Recibe SOLO agregados (instalación, día, hora, evento, conteo, versión,
 plataforma) de las apps beta con opt-in, con bearer token compartido.
 Upsert idempotente: los reintentos con backoff no duplican nada.
 
-Uso en tu Mac:
-    NEVERRED_SINK_TOKEN=<secreto> NEVERRED_SINK_DB=~/telemetry-sink.db \
-        python3 backend/telemetry_sink.py --host 127.0.0.1 --port 8140
+Uso en tu Mac (emparejamiento; el bearer legacy es opcional):
+    python3 backend/telemetry_sink.py --host 127.0.0.1 --port 8140
+    # + NEVERRED_SINK_TOKEN=<secreto> si aún usas betas con token.
 
 En cada beta, configura:
     NEVERRED_TELEMETRY_SINK=https://<tu-url> NEVERRED_TELEMETRY_TOKEN=<secreto>
@@ -20,8 +20,11 @@ import json
 import math
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -88,6 +91,13 @@ def init_db():
                total_fails INTEGER NOT NULL DEFAULT 0,
                version TEXT NOT NULL DEFAULT '',
                updated_at INTEGER NOT NULL)""")
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS sink_identities (
+               install_id TEXT PRIMARY KEY,
+               pubkey TEXT NOT NULL DEFAULT '',
+               status TEXT NOT NULL DEFAULT 'pending',
+               first_seen INTEGER NOT NULL DEFAULT 0,
+               updated_at INTEGER NOT NULL DEFAULT 0)""")
     con.commit()
     try:
         os.chmod(DB_PATH, 0o600)
@@ -97,6 +107,63 @@ def init_db():
 
 
 # valid_payload vive en telemetry_common (contrato App/Monitor).
+
+
+def _esc(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _norm_platform(platform):
+    return platform if platform in PLATFORMS else "desconocida"
+
+
+def verify_envelope(pubkey, install_id, canonical, signature):
+    """True si la firma Ed25519 verifica (ssh-keygen -Y)."""
+    if not shutil.which("ssh-keygen"):
+        return False
+    tmpd = tempfile.mkdtemp(prefix="nr-verify-")
+    try:
+        sigpath = os.path.join(tmpd, "s.sig")
+        allowpath = os.path.join(tmpd, "allow")
+        with open(sigpath, "w", encoding="utf-8") as f:
+            f.write(signature if signature.endswith("\n") else signature + "\n")
+        with open(allowpath, "w", encoding="utf-8") as f:
+            f.write("%s %s\n" % (install_id, pubkey.strip()))
+        r = subprocess.run(
+            ["ssh-keygen", "-Y", "verify", "-f", allowpath, "-I", install_id,
+             "-n", _tc.SIGN_NAMESPACE, "-s", sigpath],
+            input=canonical, capture_output=True, timeout=20)
+        return r.returncode == 0
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
+
+
+def _store_aggregates(con, body, now):
+    """Guarda un lote validado. Devuelve nº de grupos."""
+    version = str(body.get("version") or "")[:16]
+    platform = _norm_platform(body.get("platform") or "")
+    for a in body["aggregates"]:
+        con.execute(
+            "INSERT INTO sink_batches (install_id, day, hour, event, count,"
+            " version, platform, updated_at) VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(install_id, day, hour, event) DO UPDATE SET"
+            " count=excluded.count, version=excluded.version,"
+            " platform=excluded.platform, updated_at=excluded.updated_at",
+            (body["install_id"], a["date"], a["hour"], a["event"], a["count"],
+             version, platform, now))
+    stats = body.get("client_stats", {})
+    con.execute(
+        "INSERT INTO sink_stats (install_id, total_sends, total_fails, version,"
+        " updated_at) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(install_id) DO UPDATE SET"
+        " total_sends=excluded.total_sends, total_fails=excluded.total_fails,"
+        " version=excluded.version, updated_at=excluded.updated_at",
+        (body["install_id"], stats.get("total_sends", 0),
+         stats.get("total_fails", 0), version, now))
+    con.commit()
+    return len(body["aggregates"])
 
 
 PALETTE = ["#4f9cf9", "#22c55e", "#f59e0b", "#ef4444", "#a78bfa", "#14b8a6",
@@ -155,49 +222,133 @@ class Handler(BaseHTTPRequestHandler):
         return hmac.compare_digest(auth[len("Bearer "):].strip(), TOKEN)
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/telemetry-ingest":
-            return self._json(404, {"error": "Ruta no encontrada."})
-        if not TOKEN or not self._authorized():
-            return self._json(401, {"error": "No autorizado."})
+        path = urlparse(self.path).path
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
         if length <= 0 or length > 1_000_000:
             return self._json(400, {"error": "Cuerpo inválido."})
+        ctype = self.headers.get("Content-Type") or ""
         try:
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            raw = self.rfile.read(length).decode("utf-8")
         except Exception:
-            return self._json(400, {"error": "Cuerpo JSON inválido."})
+            return self._json(400, {"error": "Cuerpo inválido."})
+        if "urlencoded" in ctype:
+            from urllib.parse import parse_qsl
+            try:
+                body = dict(parse_qsl(raw, keep_blank_values=True))
+            except Exception:
+                return self._json(400, {"error": "Cuerpo inválido."})
+        else:
+            try:
+                body = json.loads(raw)
+            except Exception:
+                return self._json(400, {"error": "Cuerpo JSON inválido."})
+        if path == "/api/telemetry-ingest":
+            return self._ingest(body)
+        if path == "/api/telemetry-enroll":
+            return self._enroll(body)
+        if path == "/api/sink-identity":
+            return self._identity_action(body, "urlencoded" in ctype)
+        return self._json(404, {"error": "Ruta no encontrada."})
+
+    def _ingest(self, body):
+        if not isinstance(body, dict):
+            return self._json(400, {"error": "Cuerpo inválido."})
+        if isinstance(body.get("signature"), str):
+            err = _tc.validate_payload(body)
+            if err:
+                return self._json(400, {"error": err})
+            return self._ingest_signed(body)
+        if not TOKEN or not self._authorized():
+            return self._json(401, {"error": "No autorizado."})
         err = _tc.validate_payload(body)
         if err:
             return self._json(400, {"error": err})
-        now = int(time.time())
-        version = str(body.get("version") or "")[:16]
-        platform = str(body.get("platform") or "")
-        platform = platform if platform in PLATFORMS else "desconocida"
         con = db()
-        for a in body["aggregates"]:
-            con.execute(
-                "INSERT INTO sink_batches (install_id, day, hour, event, count,"
-                " version, platform, updated_at) VALUES (?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(install_id, day, hour, event) DO UPDATE SET"
-                " count=excluded.count, version=excluded.version,"
-                " platform=excluded.platform, updated_at=excluded.updated_at",
-                (body["install_id"], a["date"], a["hour"], a["event"], a["count"],
-                 version, platform, now))
+        stored = _store_aggregates(con, body, int(time.time()))
+        con.close()
+        return self._json(200, {"ok": True, "stored": stored})
+
+    def _ingest_signed(self, body):
+        iid = body["install_id"]
+        con = db()
+        row = con.execute("SELECT pubkey, status FROM sink_identities"
+                          " WHERE install_id = ?", (iid,)).fetchone()
+        if row is None:
+            con.close()
+            return self._json(403, {"enroll": "required"})
+        if row["status"] != "approved":
+            con.close()
+            return self._json(403, {"enroll": row["status"]})
         stats = body.get("client_stats", {})
-        con.execute(
-            "INSERT INTO sink_stats (install_id, total_sends, total_fails, version,"
-            " updated_at) VALUES (?,?,?,?,?) "
-            "ON CONFLICT(install_id) DO UPDATE SET"
-            " total_sends=excluded.total_sends, total_fails=excluded.total_fails,"
-            " version=excluded.version, updated_at=excluded.updated_at",
-            (body["install_id"], stats.get("total_sends", 0),
-             stats.get("total_fails", 0), version, now))
+        canonical = _tc.canonical_envelope(iid, body.get("version"),
+                                           body.get("platform"), stats,
+                                           body["aggregates"])
+        if not verify_envelope(row["pubkey"], iid, canonical, body["signature"]):
+            con.close()
+            return self._json(403, {"error": "Firma inválida."})
+        stored = _store_aggregates(con, body, int(time.time()))
+        con.close()
+        return self._json(200, {"ok": True, "stored": stored})
+
+    def _enroll(self, body):
+        if not isinstance(body, dict):
+            return self._json(400, {"error": "Cuerpo inválido."})
+        err = _tc.validate_enroll(body)
+        if err:
+            return self._json(400, {"error": err})
+        iid, pubkey = body["install_id"], body["pubkey"].strip()
+        now = int(time.time())
+        con = db()
+        row = con.execute("SELECT pubkey, status FROM sink_identities"
+                          " WHERE install_id = ?", (iid,)).fetchone()
+        if row is None:
+            con.execute("INSERT INTO sink_identities (install_id, pubkey, status,"
+                        " first_seen, updated_at) VALUES (?,?,?,?,?)",
+                        (iid, pubkey, "pending", now, now))
+            status = "pending"
+        elif row["status"] == "approved" and row["pubkey"] == pubkey:
+            status = "approved"
+        else:
+            if row["pubkey"] != pubkey:
+                # Clave cambiada: re-enrolar en pendiente (lo aprueba el coordinador).
+                con.execute("UPDATE sink_identities SET pubkey = ?, status = 'pending',"
+                            " updated_at = ? WHERE install_id = ?",
+                            (pubkey, now, iid))
+                status = "pending"
+            else:
+                status = row["status"]
         con.commit()
         con.close()
-        self._json(200, {"ok": True, "stored": len(body["aggregates"])})
+        return self._json(200, {"enroll": status})
+
+    def _identity_action(self, body, from_form=False):
+        # Solo localhost: el dashboard no tiene auth y el sink no se expone.
+        if self.client_address[0] not in ("127.0.0.1", "::1"):
+            return self._json(403, {"error": "Solo local."})
+        if not isinstance(body, dict):
+            return self._json(400, {"error": "Cuerpo inválido."})
+        iid = str(body.get("install_id") or "")
+        action = str(body.get("action") or "")
+        new = {"approve": "approved", "reject": "rejected",
+               "revoke": "rejected"}.get(action)
+        if not iid or not new:
+            return self._json(400, {"error": "Acción inválida."})
+        con = db()
+        cur = con.execute("UPDATE sink_identities SET status = ?, updated_at = ?"
+                          " WHERE install_id = ?", (new, int(time.time()), iid))
+        con.commit()
+        con.close()
+        if cur.rowcount == 0:
+            return self._json(404, {"error": "Instalación desconocida."})
+        if from_form:
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.end_headers()
+            return None
+        return self._json(200, {"enroll": new})
 
     def _dashboard(self):
         con = db()
@@ -215,6 +366,8 @@ class Handler(BaseHTTPRequestHandler):
         by_platform = con.execute(
             "SELECT platform, SUM(count) FROM sink_batches GROUP BY platform ORDER BY 2 DESC").fetchall()
         stats = con.execute("SELECT total_sends, total_fails FROM sink_stats").fetchall()
+        identities = con.execute("SELECT install_id, pubkey, status, updated_at"
+                                 " FROM sink_identities ORDER BY updated_at DESC").fetchall()
         con.close()
         sends = sum(r[0] for r in stats)
         fails = sum(r[1] for r in stats)
@@ -236,6 +389,39 @@ class Handler(BaseHTTPRequestHandler):
                     "<div class=ranking>%s</div></div></section>"
                     % (title, pie_svg(pairs, 200), rows))
 
+        def ident_section():
+            if not identities:
+                return ""
+            rows = []
+            for r in identities:
+                iid, status = r["install_id"], r["status"]
+                key = (r["pubkey"] or "").split()
+                fp = key[1][-12:] if len(key) > 1 else "?"
+                seen = time.strftime("%d/%m %H:%M", time.localtime(r["updated_at"] or 0))
+                if status == "pending":
+                    acts = (("<form method=post action='/api/sink-identity'>"
+                             "<input type=hidden name=install_id value='%s'>"
+                             "<input type=hidden name=action value='approve'>"
+                             "<button>Aprobar</button></form>"
+                             "<form method=post action='/api/sink-identity'>"
+                             "<input type=hidden name=install_id value='%s'>"
+                             "<input type=hidden name=action value='reject'>"
+                             "<button>Rechazar</button></form>") % (_esc(iid), _esc(iid)))
+                elif status == "approved":
+                    acts = (("<form method=post action='/api/sink-identity'>"
+                             "<input type=hidden name=install_id value='%s'>"
+                             "<input type=hidden name=action value='revoke'>"
+                             "<button>Expulsar</button></form>") % _esc(iid))
+                else:
+                    acts = "<span class=muted>rechazada</span>"
+                rows.append("<div class=row><span class=name>%s… · %s</span>"
+                            "<span class=num>%s</span><span>%s</span></div>"
+                            % (_esc(iid[:12]), _esc(status), _esc(fp + " · " + seen), acts))
+            return ("<section><h2>Instalaciones (%d)</h2><div class=ranking>%s</div>"
+                    "<p class=muted>Solo las aprobadas cuentan en las estadísticas. "
+                    "Lo pendiente se queda en la app emisora sin perderse.</p></section>"
+                    % (len(identities), "".join(rows)))
+
         html = ("""<!doctype html><html lang=es><head><meta charset=utf-8>
 <meta name=viewport content='width=device-width,initial-scale=1'>
 <title>NeverRed · Telemetría beta</title>
@@ -251,6 +437,7 @@ header h1{margin:0;font-size:1.4em}header p{margin:0}
 .card h3{margin:0 0 .2em;font-size:1.8em;color:var(--accent)}
 .card.warn h3{color:var(--red)}.card.ok h3{color:var(--green)}
 .card p{margin:0;color:var(--muted);font-size:.85em}
+form{display:inline}button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:.3em .8em;cursor:pointer;font-size:.85em}button:hover{border-color:var(--accent)}
 section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:1.2em;margin-top:1.2em}
 section h2{margin:0 0 1em;font-size:1.05em}
 .cols{display:flex;gap:2em;flex-wrap:wrap;align-items:flex-start}
@@ -273,7 +460,7 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
 <div class=card><h3>%d</h3><p>pico en una hora%s</p></div>
 <div class=card><h3>%.2f</h3><p>fallos medios por envío · %d envíos, %d fallos</p></div>
 </div>
-%s%s%s
+%s%s%s%s
 <footer>NeverRed · la telemetría beta solo contiene conteos por (instalación, día, hora, evento). Sin importes, textos ni identificadores.</footer>
 </body></html>""" % (
             now_s, users,
@@ -284,7 +471,8 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
             mean, sends, fails,
             section("Funciones más empleadas", [(r[0], r[1]) for r in by_event]),
             section("Versiones", [(r[0] or "?", r[1]) for r in by_version]),
-            section("Plataformas", [(r[0], r[1]) for r in by_platform])))
+            section("Plataformas", [(r[0], r[1]) for r in by_platform]),
+            ident_section()))
         return html.encode("utf-8")
 
     def do_GET(self):
@@ -312,7 +500,8 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
 def main():
     import argparse
     if not TOKEN:
-        raise SystemExit("Define NEVERRED_SINK_TOKEN (bearer compartido con las betas).")
+        print("[sink] Sin NEVERRED_SINK_TOKEN: solo ingesta firmada (emparejamiento).")
+    ap = argparse.ArgumentParser(description="Receptor de telemetría NeverRed.")
     ap = argparse.ArgumentParser(description="Receptor de telemetría NeverRed.")
     ap.add_argument("--host", default=os.environ.get("SINK_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("SINK_PORT", "8140")))

@@ -2,14 +2,20 @@
 """NeverRed — contrato compartido App <-> Monitor de telemetría.
 
 Frontera entre los dos mundos: el catálogo cerrado de eventos, los
-validadores puros (sin E/S, sin BD) y la lectura del fichero de
+validadores puros (sin E/S, sin BD), el protocolo de emparejamiento
+asimétrico (Ed25519 vía ssh-keygen) y la lectura del fichero de
 configuración del destino (`telemetry.conf`).
 
-Lo importan tanto `server.py` (lado App) como `telemetry_sink.py` (lado
-Monitor). El monitor NO importa `server`: se despliega copiando solo
-`telemetry_sink.py` + este fichero.
+Lo importan `server.py` (lado App), `telemetry_forward.py` y
+`telemetry_sink.py` (lado Monitor). El monitor NO importa `server`:
+se despliega copiando `telemetry_sink.py` + este fichero.
+
+NOTA: importar siempre como `import telemetry_common as _tc` (nunca
+`from telemetry_common import ...` en cascada): el Python del sistema
+provoca pérdidas de nombres con la segunda forma tras varias importaciones.
 """
 
+import json
 import os
 import re
 
@@ -34,6 +40,12 @@ TELEMETRY_DAYS = 90
 TELEMETRY_MAX_BATCH = 100
 AGGREGATE_MAX_BATCH = 500
 COUNT_MAX = 1_000_000
+
+# Emparejamiento asimétrico (v1): la App genera un par Ed25519 y el Monitor
+# aprueba su pubkey. Espacio de nombres de firma (ssh-keygen -Y).
+SIGN_NAMESPACE = "neverred-telemetry-v1"
+PUBKEY_RE = re.compile(r"^ssh-ed25519 [A-Za-z0-9+/]+={0,2}( .*)?$")
+ENROLL_STATES = ("none", "pending", "approved", "rejected", "unavailable", "legacy")
 
 # Claves permitidas en telemetry.conf (nada más se lee de ese fichero).
 CONF_SINK = "NEVERRED_TELEMETRY_SINK"
@@ -97,6 +109,34 @@ def validate_payload(body):
         if not isinstance(v, int) or isinstance(v, bool) or v < 0:
             return "Stat inválida: %s." % k
     return None
+
+
+def validate_pubkey(pubkey):
+    """None = pubkey Ed25519 con formato válido; str = error."""
+    if not isinstance(pubkey, str) or not PUBKEY_RE.match(pubkey.strip()):
+        return "Pubkey inválida (se espera ssh-ed25519)."
+    return None
+
+
+def validate_enroll(body):
+    """None = solicitud de enrolamiento válida; str = error."""
+    if not isinstance(body, dict):
+        return "Cuerpo JSON inválido."
+    iid = body.get("install_id")
+    if not isinstance(iid, str) or not 8 <= len(iid) <= 128:
+        return "install_id inválido."
+    return validate_pubkey(body.get("pubkey"))
+
+
+def canonical_envelope(install_id, version, platform, client_stats, aggregates):
+    """Bytes canónicos que firma la App y verifica el Monitor (JSON ordenado)."""
+    stats = client_stats if isinstance(client_stats, dict) else {}
+    env = {"install_id": install_id, "version": str(version or "")[:16],
+           "platform": str(platform or ""),
+           "client_stats": {"total_sends": int(stats.get("total_sends", 0)),
+                            "total_fails": int(stats.get("total_fails", 0))},
+           "aggregates": aggregates if isinstance(aggregates, list) else []}
+    return json.dumps(env, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def read_telemetry_conf(path):
