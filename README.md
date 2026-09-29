@@ -225,7 +225,7 @@ hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
 `VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
 coinciden, el frontal se autorrefresca en bucle).
 
-### Telemetría de uso (beta, solo store)
+### Telemetría de uso (beta)
 
 Opt-in por usuario, apagada por defecto (pie → **Telemetría**). Cuando se
 activa, el frontal envía por lotes a `POST /api/telemetry` solo eventos de
@@ -281,8 +281,8 @@ La app solo instala actualizaciones con firma Ed25519 válida. Tras publicar
 la release, firma cada `.dmg`/`.AppImage` y sube el `.sig` como asset:
 
 ```bash
-ssh-keygen -Y sign -f packaging/release-key -n neverred-update NeverRed-1.8.0.dmg
-gh release upload v1.8.0 NeverRed-1.8.0.dmg.sig
+ssh-keygen -Y sign -f packaging/release-key -n neverred-update NeverRed-2.0.0.dmg
+gh release upload v2.0.0 NeverRed-2.0.0.dmg.sig
 ```
 
 La privada (`packaging/release-key`) no está en git: guárdala a buen recaudo.
