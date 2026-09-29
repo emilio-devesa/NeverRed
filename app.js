@@ -1198,7 +1198,8 @@ async function loadTelemetryPanel() {
     if (!f.configured) { fwdP.textContent = 'Sin receptor configurado en este equipo.'; return; }
     const ago = f.last_ok ? 'último envío ' + new Date(f.last_ok * 1000).toLocaleString('es-ES') : 'aún sin envíos';
     const wait = f.next_retry_in > 0 ? ` · reintento en ${Math.ceil(f.next_retry_in / 60)} min` : '';
-    fwdP.textContent = `${ago} · fallos seguidos: ${f.fails}${wait}.`;
+    const mean = (f.total_sends > 0) ? ` · media de fallos por envío: ${f.mean_fails} (${f.total_fails}/${f.total_sends})` : '';
+    fwdP.textContent = `${ago} · fallos seguidos: ${f.fails}${wait}${mean}.`;
   } catch { fwdP.textContent = 'No se pudo consultar el estado de envío.'; }
 }
 document.getElementById('btnForwardNow').addEventListener('click', async () => {

@@ -69,7 +69,13 @@ class ForwardCase(unittest.TestCase):
         st, _ = sink_call(self.port, "/api/telemetry-ingest",
                           {"install_id": "x" * 16,
                            "aggregates": [{"event": "euros", "date": "2026-01-01",
-                                           "count": 1}]})
+                                           "hour": "10", "count": 1}]})
+        self.assertEqual(st, 400)
+        st, _ = sink_call(self.port, "/api/telemetry-ingest",
+                          {"install_id": "x" * 16,
+                           "aggregates": [{"event": "vista_diario",
+                                           "date": "2026-01-01",
+                                           "hour": "99", "count": 1}]})
         self.assertEqual(st, 400)
 
     def test_ida_y_vuelta_idempotente(self):
@@ -95,6 +101,11 @@ class ForwardCase(unittest.TestCase):
             got = {(b["event"], b["count"]) for b in body["batches"]}
             self.assertIn(("vista_diario", 2), got)
             self.assertIn(("asiento_creado", 1), got)
+            # hora, plataforma y stats viajan con el lote
+            b0 = body["batches"][0]
+            self.assertIn("hour", b0)
+            self.assertEqual(b0["platform"], server.TELEMETRY_PLATFORM)
+            self.assertTrue(any(s["total_sends"] >= 1 for s in body["stats"]))
             # reintento: idempotente, sin duplicados
             con = sqlite3.connect(_tmp.name)
             con.execute("UPDATE telemetry_forward SET watermark = 0 WHERE id = 1")
@@ -102,8 +113,9 @@ class ForwardCase(unittest.TestCase):
             con.close()
             server.forward_once(force=True)
             st, body = sink_call(self.port, "/api/sink-summary")
-            total = sum(b["count"] for b in body["batches"])
-            self.assertEqual(total, 3)
+            mine = [b for b in body["batches"]
+                    if b["install_id"] == server.get_install_id()]
+            self.assertEqual(sum(b["count"] for b in mine), 3)
             # token malo con trabajo pendiente: falla y programa backoff
             con = sqlite3.connect(_tmp.name)
             con.execute("UPDATE telemetry_forward SET watermark = 0 WHERE id = 1")
@@ -124,6 +136,20 @@ class ForwardCase(unittest.TestCase):
             self.assertEqual(st["configured"], False)
         finally:
             pass
+
+    def test_dashboard(self):
+        sink_call(self.port, "/api/telemetry-ingest",
+                  {"install_id": "d" * 16, "version": "t", "platform": "macOS",
+                   "aggregates": [{"event": "vista_diario", "date": "2026-09-29",
+                                   "hour": "10", "count": 3}]})
+        import urllib.request
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%d/" % self.port) as r:
+            html = r.read().decode()
+        for needle in ("instalaciones totales", "pico en un día", "pico en una hora",
+                       "fallos medios por envío", "Funciones más empleadas",
+                       "Versiones", "Plataformas", "<svg"):
+            self.assertIn(needle, html)
 
 
 class RelayCase(unittest.TestCase):

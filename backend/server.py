@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 from datetime import date as _date
@@ -143,7 +144,9 @@ def init_db():
             watermark INTEGER NOT NULL DEFAULT 0,
             last_ok INTEGER NOT NULL DEFAULT 0,
             fails INTEGER NOT NULL DEFAULT 0,
-            next_retry INTEGER NOT NULL DEFAULT 0
+            next_retry INTEGER NOT NULL DEFAULT 0,
+            total_sends INTEGER NOT NULL DEFAULT 0,
+            total_fails INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -165,6 +168,12 @@ def init_db():
     if "asked" not in cols:
         con.execute("ALTER TABLE telemetry_consent ADD COLUMN asked INTEGER NOT NULL DEFAULT 0")
         con.commit()
+    # Migración: contadores acumulados de envíos para la media de reintentos.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_forward)")]
+    for col in ("total_sends", "total_fails"):
+        if col not in cols:
+            con.execute("ALTER TABLE telemetry_forward ADD COLUMN %s INTEGER NOT NULL DEFAULT 0" % col)
+            con.commit()
     con.close()
 
 
@@ -227,6 +236,9 @@ TELEMETRY_SINK = os.environ.get("NEVERRED_TELEMETRY_SINK", "").rstrip("/")
 TELEMETRY_TOKEN = os.environ.get("NEVERRED_TELEMETRY_TOKEN", "")
 FORWARD_EVERY = int(os.environ.get("NEVERRED_FORWARD_EVERY", "900"))
 FORWARD_MAX_DELAY = 3600
+# Plataforma de ESTA instalación (solo SO, nada identificable).
+TELEMETRY_PLATFORM = {"darwin": "macOS", "linux": "Linux",
+                      "win32": "Windows"}.get(sys.platform, sys.platform)
 
 
 def _validate_telemetry(events):
@@ -405,14 +417,16 @@ def backoff_delay(fails):
 
 
 def build_aggregates(since_ts):
-    """Agregados pendientes: [{event, date, count}]. Solo conteos por día."""
+    """Agregados pendientes: [{event, date, hour, count}]. Solo conteos."""
     con = db()
     rows = con.execute(
-        "SELECT event, date(ts, 'unixepoch'), COUNT(*) FROM telemetry_events "
-        "WHERE ts > ? GROUP BY event, date(ts, 'unixepoch') ORDER BY 2, 1",
+        "SELECT event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch'), COUNT(*)"
+        " FROM telemetry_events WHERE ts > ?"
+        " GROUP BY event, date(ts, 'unixepoch'), strftime('%H', ts, 'unixepoch')"
+        " ORDER BY 2, 3, 1",
         (since_ts,)).fetchall()
     con.close()
-    return [{"event": e, "date": d, "count": c} for e, d, c in rows]
+    return [{"event": e, "date": d, "hour": h, "count": c} for e, d, h, c in rows]
 
 
 def forward_state():
@@ -439,8 +453,16 @@ def forward_once(force=False):
     status["pending"] = len(aggs)
     if not aggs:
         return status
+    # El intento cuenta antes de enviar: lo que viaja ya incluye este envío.
+    con = db()
+    con.execute("UPDATE telemetry_forward SET total_sends = total_sends + 1 WHERE id = 1")
+    con.commit()
+    con.close()
     import urllib.request
     body = json.dumps({"install_id": get_install_id(), "version": VERSION,
+                       "platform": TELEMETRY_PLATFORM,
+                       "client_stats": {"total_sends": st["total_sends"] + 1,
+                                        "total_fails": st["total_fails"]},
                        "aggregates": aggs}).encode()
     req = urllib.request.Request(
         TELEMETRY_SINK + "/api/telemetry-ingest", data=body, method="POST",
@@ -462,8 +484,9 @@ def forward_once(force=False):
     else:
         fails = st["fails"] + 1
         delay = backoff_delay(fails)
-        con.execute("UPDATE telemetry_forward SET fails = ?, next_retry = ? "
-                    "WHERE id = 1", (fails, now + delay))
+        con.execute("UPDATE telemetry_forward SET fails = ?, next_retry = ?, "
+                    "total_fails = total_fails + 1 WHERE id = 1",
+                    (fails, now + delay))
         status.update(fails=fails, next_retry_in=delay)
     con.commit()
     con.close()
@@ -1058,9 +1081,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "Sesión no válida."})
         st = forward_state()
         now = int(time.time())
+        sends, fails = st["total_sends"], st["total_fails"]
         self._send_json(200, {"configured": bool(TELEMETRY_SINK),
                               "last_ok": st["last_ok"], "fails": st["fails"],
-                              "next_retry_in": max(0, st["next_retry"] - now)})
+                              "next_retry_in": max(0, st["next_retry"] - now),
+                              "total_sends": sends, "total_fails": fails,
+                              "mean_fails": round(fails / sends, 2) if sends else 0})
 
     def _api_ingest_relay(self):
         # Las betas sin tailnet envían aquí (URL pública); se reenvía tal cual

@@ -244,12 +244,13 @@ aplaza la decisión. El estado vive en `telemetry_consent.asked`.
 
 Si configuras `NEVERRED_TELEMETRY_SINK` (URL del receptor) y
 `NEVERRED_TELEMETRY_TOKEN` (secreto compartido), un hilo envía cada 15 min
-(`NEVERRED_FORWARD_EVERY`) solo agregados `(instalación, día, evento,
-conteo)` con la versión de la app. Sin receptor a la vista, reintenta con
-backoff (1, 2, 4… máx. 60 min); el receptor hace upsert idempotente por
-`(install_id, día, evento)`, así que los duplicados no cuentan doble. Cada
-instalación se identifica con un seudónimo aleatorio (`install.id` junto a
-la BD). Estado y disparo manual en el panel de Telemetría.
+(`NEVERRED_FORWARD_EVERY`) solo agregados `(instalación, día, hora, evento,
+conteo)` más versión, plataforma (solo el SO) y contadores de intentos.
+Sin receptor a la vista, reintenta con backoff (1, 2, 4… máx. 60 min); el
+receptor hace upsert idempotente. El panel del coordinador
+(`telemetry_sink.py`, endpoint `/`) muestra instalaciones totales, picos por
+día y por hora, tartas de funciones/versiones/plataformas y fallos medios por
+envío — tu señal de si la infraestructura aguanta por uptime.
 
 Receptor mínimo (en tu Mac, dentro de la red Tailscale para la prueba):
 
