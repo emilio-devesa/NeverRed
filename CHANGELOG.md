@@ -1,6 +1,9 @@
 # NeverRed — Historial de cambios
 
-## v2.2.1 — Mensaje sin conexión + pidfile rancio
+## v2.2.2 — El Finder muestra la versión nueva
+- El actualizador de macOS re-registra la app en Launch Services tras
+  instalarla: el Finder ya no se queda mostrando la versión vieja
+  (el contenido sí se actualizaba; eran los metadatos cacheados)
 - Sin servidor, la app de escritorio ahora dice "vuelve a abrir NeverRed"
   en vez de mandar ejecutar `python3 backend/server.py` (era texto de desarrollo)
 - El lanzador (macOS y Linux) elimina el `server.pid` rancio tras el
