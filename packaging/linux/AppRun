@@ -42,6 +42,11 @@ if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null \
 else
   REUSE=0
 fi
+# Pidfile rancio (p. ej. tras el autoapagado por inactividad): si el proceso
+# ya no existe, se elimina para no arrastrar estado muerto al arranque.
+if [ -f "$PIDF" ] && ! kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+  rm -f "$PIDF"
+fi
 
 # Actualizaciones: si instala una nueva, la abre y salimos
 if [ -x "$HERE/check-update.sh" ]; then

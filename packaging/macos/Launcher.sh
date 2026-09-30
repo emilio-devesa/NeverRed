@@ -22,6 +22,11 @@ if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null \
   /usr/bin/open "$URL"  # ya estaba en marcha: solo abre el navegador
   exit 0
 fi
+# Pidfile rancio (p. ej. tras el autoapagado por inactividad): si el proceso
+# ya no existe, se elimina para no arrastrar estado muerto al arranque.
+if [ -f "$PIDF" ] && ! kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+  rm -f "$PIDF"
+fi
 
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=/usr/bin/python3; fi
 export NEVERRED_DB="$DATA/neverred.db" HOST=127.0.0.1 PORT="$PORT"

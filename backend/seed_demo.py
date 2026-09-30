@@ -99,12 +99,12 @@ for idx, (y, m, current) in enumerate(MONTHS):
     add(P(12), 'Suministros (luz, agua, internet)', [('a605', imp_sum, 0), ('a572', 0, imp_sum)])
     for i in range(3):
         imp_sup = round(random.uniform(45, 130), 2)
-        add(P(random.randint(4, top)), random.choice(supers),
+        add(P(random.randint(1, top)), random.choice(supers),
             [('a601', imp_sup, 0), ('a520', 0, imp_sup)])
     desc, imp = random.choice(ocios)
-    add(P(random.randint(6, top)), desc, [('a603', imp, 0), ('a572', 0, imp)])
+    add(P(random.randint(1, top)), desc, [('a603', imp, 0), ('a572', 0, imp)])
     if idx % 2 == 0:
-        add(P(random.randint(8, top)), 'Suscripción gimnasio',
+        add(P(random.randint(1, top)), 'Suscripción gimnasio',
             [('a603', 35, 0), ('a572', 0, 35)])
     add(P(20), 'Transferencia a ahorros', [('a573', 200, 0), ('a572', 0, 200)])
     # pago de la tarjeta a fin de mes (saldo acreedor = crédito - débito)

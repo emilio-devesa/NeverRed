@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.2.0';
+const NEVERRED_BUILD = '2.2.1';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -889,7 +889,7 @@ async function enterDemo() {
   } catch {
     authNote.textContent = FROM_FILE
       ? 'No se pudo contactar con la API en http://127.0.0.1:8000.'
-      : 'No hay conexión con el servidor. Ejecuta: python3 backend/server.py';
+      : 'Si usas la app de escritorio, vuelve a abrir NeverRed; si la arrancas a mano: python3 backend/server.py';
   }
 }
 document.getElementById('knownList').addEventListener('click', ev => {
@@ -948,7 +948,7 @@ async function handleAuth(endpoint, payload, errEl) {
   } catch {
     errEl.textContent = FROM_FILE
       ? 'No se pudo contactar con la API en http://127.0.0.1:8000. Comprueba que el servidor está arrancado (python3 backend/server.py) o, mejor, abre http://127.0.0.1:8000 en el navegador.'
-      : 'No hay conexión con el servidor. Ejecuta: python3 backend/server.py';
+      : 'Si usas la app de escritorio, vuelve a abrir NeverRed; si la arrancas a mano: python3 backend/server.py';
     return;
   }
   let data = {};

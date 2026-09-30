@@ -1,6 +1,16 @@
 # NeverRed — Historial de cambios
 
-## v2.2.0 — Emparejamiento asimétrico
+## v2.2.1 — Mensaje sin conexión + pidfile rancio
+- Sin servidor, la app de escritorio ahora dice "vuelve a abrir NeverRed"
+  en vez de mandar ejecutar `python3 backend/server.py` (era texto de desarrollo)
+- El lanzador (macOS y Linux) elimina el `server.pid` rancio tras el
+  autoapagado por inactividad, sin arrastrar estado muerto
+- Causa del reporte: al cerrar la última pestaña todo se apaga solo en
+  ~20 s (diseño); volver por el navegador sin reabrir la app dejaba la
+  cáscara en caché sin servidor detrás
+- La demo fallaba los días 1–5 de cada mes (`randint` con rango vacío):
+  los días aleatorios ahora parten del día 1 (afectaba a `/api/demo` y
+  a `seed_demo.py`)
 - La app genera un par Ed25519 en el primer arranque y se enrola sola
 - Ingesta firmada; el coordinador aprueba/veta desde el dashboard
 - Sin aprobar no se almacena nada (la app retiene todo sin pérdidas)

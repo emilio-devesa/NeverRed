@@ -41,7 +41,7 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.2.0")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.2.1")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -304,10 +304,10 @@ def demo_data():
         add(P(12), 'Suministros (luz, agua, internet)', [('a605', s, 0), ('a572', 0, s)])
         for _ in range(3):
             g = round(random.uniform(45, 130), 2)
-            add(P(random.randint(4, top)), random.choice(supers),
+            add(P(random.randint(1, top)), random.choice(supers),
                 [('a601', g, 0), ('a520', 0, g)])
         desc, imp = random.choice(ocios)
-        add(P(random.randint(6, top)), desc, [('a603', imp, 0), ('a572', 0, imp)])
+        add(P(random.randint(1, top)), desc, [('a603', imp, 0), ('a572', 0, imp)])
         add(P(20), 'Transferencia a ahorros', [('a573', 200, 0), ('a572', 0, 200)])
         deuda = round(sum(l['credit'] - l['debit'] for e in entries
                           for l in e['lines'] if l['accountId'] == 'a520'
