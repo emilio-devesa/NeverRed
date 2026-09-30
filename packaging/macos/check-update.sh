@@ -126,6 +126,10 @@ MNT="$(hdiutil attach -nobrowse -readonly "$DMG" 2>/dev/null | awk -F'\t' '/Volu
 TARGET="/Applications/NeverRed.app"
 rm -rf "$TARGET"
 cp -R "$MNT/NeverRed.app" "$TARGET"
+# Refresca Launch Services: sin esto el Finder sigue mostrando la versión
+# vieja (misma ruta + mismo identificador = metadatos cacheados).
+touch "$TARGET" 2>/dev/null
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$TARGET" >/dev/null 2>&1 || true
 hdiutil detach "$MNT" >/dev/null 2>&1
 rm -f "$DMG"
 printf '%s\n' "$REMOTE" > "$DATA/skipped_version"
