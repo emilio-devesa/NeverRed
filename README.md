@@ -101,7 +101,7 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 - **CORS restringido** al mismo origen y al modo archivo local.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, sírvelo siempre por HTTPS (directo o tras Caddy; ver `Caddyfile`).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
-- **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se borran el estado en memoria y su copia local, y nadie hereda los datos de otro usuario.
+- **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se borran el estado en memoria y su copia local, y nadie hereda los datos de otro usuario. Los tickers de Mercado y la clave de Alpha Vantage también son por usuario.
 - **Tu cuenta es tuya**: puedes cambiar la contraseña (cierra las demás sesiones) o eliminar tu cuenta y todos tus datos desde el pie de la app.
 - **Demo**: siempre la última en la lista de acceso; entrar crea o restablece
   sus 6 meses de datos sin pedir contraseña ni tocar a otros usuarios.
@@ -152,11 +152,12 @@ manifest.webmanifest, sw.js — PWA instalable con carcasa offline
 backend/server.py         — API + SQLite + estáticos (solo stdlib)
 backend/backup.py         — copias de la BD con retención
 backend/seed_demo.py      — usuario demo con 6 meses de movimientos
-backend/tests/            — suite unittest del backend
+backend/tests/            — suites unittest (server, market, telemetry…)
 backend/neverred.db       — base de datos (se crea al arrancar; no se versiona)
+frontend/tests/           — tests node de la lógica pura (contabilidad, mercado, simuladores)
 packaging/macos/          — Launcher.sh + build.sh (.app + .dmg sin dependencias)
 Dockerfile, compose.yaml, Caddyfile — despliegue
-.github/workflows/       — ci.yml (push/PR), release.yml + packaging-macos.yml (tags v*)
+.github/workflows/       — ci (push/PR: backend + market + node), release + packaging-macos/-linux (tags v*)
 docs/                     — capturas para este README
 ```
 
@@ -176,6 +177,13 @@ docs/                     — capturas para este README
 | POST | `/api/sessions/rotate` | Cierra todas las sesiones salvo la actual |
 | GET | `/api/data` | Datos contables del usuario |
 | PUT | `/api/data` | Guarda `{accounts, entries, seq, currency, budgets, recurring}` (validado) |
+| GET | `/api/market/status` | ¿Hay clave propia? + nº de tickers + cuota diaria restante |
+| POST | `/api/market/key` | `{key}` guarda tu clave personal de Alpha Vantage (solo servidor) |
+| DELETE | `/api/market/key` | Olvida tu clave de Alpha Vantage |
+| GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
+| POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
+| DELETE | `/api/market/tickers?symbol=X` | Quita un ticker (la serie en caché se conserva) |
+| GET | `/api/market/history?symbol=X` | Serie ~100 sesiones + mín/máx/variación (`&refresh=1` fuerza descarga) |
 | POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
 
@@ -222,8 +230,11 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 14 tests (solo stdlib)
-node --test frontend/tests/            # frontal: lógica contable (sin dependencias)
+python3 backend/tests/test_server.py   # backend: 20 tests (solo stdlib)
+python3 backend/tests/test_market.py    # mercado: 15 tests (sin red, con mock)
+python3 backend/tests/test_telemetry_forward.py   # forward: 7 tests
+python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
+node --test frontend/tests/            # frontal: contabilidad, mercado y simuladores (sin dependencias)
 ```
 
 ## Releases (automáticas con GitHub Actions)
