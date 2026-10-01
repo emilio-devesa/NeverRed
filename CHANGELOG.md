@@ -1,5 +1,10 @@
 # NeverRed — Historial de cambios
 
+## v2.4.1 — Evolución de los activos
+- Nueva tarjeta en Informes: saldo diario de cada activo en 180 días más
+  patrimonio total (activos − pasivos), con valor al pasar el puntero
+  y tabla de saldos a fin de mes
+
 ## v2.4.0 — Actualizador que respeta tu instalación
 - Actualiza la copia que estés usando (antes forzaba /Applications)
   y solo da por buena la instalación si trae la versión esperada
