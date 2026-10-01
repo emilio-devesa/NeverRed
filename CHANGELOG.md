@@ -1,6 +1,12 @@
 # NeverRed — Historial de cambios
 
-## v2.3.3 — El rango de fechas manda
+## v2.3.4 — App de verdad en el Dock + actualizador con diario
+- Nuevo lanzador nativo (Swift, sin dependencias): icono con punto de
+  activa, sin rebote eterno; Salir desde el Dock detiene el servidor y
+  cerrar todas las pestañas cierra la app sola
+- El actualizador escribe `update.log` en la carpeta de datos (fin de
+  los fallos silenciosos: cada paso deja rastro con su motivo)
+- Diario: el mes/rango queda centrado también al ocultar los laterales
 - Elegir Desde/Hasta activa un modo propio sobre todo el histórico
   (aunque cruce meses): oculta Mes anterior/Siguiente y el título
   muestra el rango (p. ej. 01/09/2026 - 10/10/2026)

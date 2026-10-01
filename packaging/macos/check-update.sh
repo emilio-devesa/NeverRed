@@ -13,6 +13,15 @@ RELEASE_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBXSqPW7x7HSHNj8akFRTv2dX7dU
 SIGN_ID="neverred-release"
 SIGN_NS="neverred-update"
 
+# Diario de a bordo: cada arranque del actualizador deja rastro (la 2.3.3
+# enseñó que un actualizador silencioso es imposible de diagnosticar).
+ULOG="$DATA/update.log"
+ulog() {
+  mkdir -p "$DATA" 2>/dev/null
+  printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$ULOG" 2>/dev/null
+  tail -n 200 "$ULOG" 2>/dev/null > "$ULOG.tmp" && mv "$ULOG.tmp" "$ULOG" 2>/dev/null
+}
+
 # Solo señaliza el PID si de verdad es nuestro server.py (un pidfile rancio
 # podría apuntar a otro proceso por reutilización de PIDs).
 stop_server() { # $1=pidfile
@@ -46,7 +55,7 @@ verify_sig() { # $1=fichero $2=url-de-su-.sig — 0=válido, 1=rechazado
 command -v python3 >/dev/null 2>&1 || exit 0
 
 LOCAL="$(defaults read "$MACOS_DIR/../Info.plist" CFBundleShortVersionString 2>/dev/null || echo 0.0.0)"
-JSON="$(curl -fsSL -m 15 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)" || exit 0
+JSON="$(curl -fsSL -m 15 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)" || { ulog "sin red (local=$LOCAL)"; exit 0; }
 
 EVAL="$(python3 -c '
 import json, sys
@@ -71,7 +80,7 @@ NOTES="$(printf '%s' "$EVAL" | tail -n +4)"
 [ -z "$REMOTE" ] || [ -z "$ASSET" ] && exit 0
 
 mkdir -p "$DATA"
-if [ -f "$DATA/skipped_version" ] && [ "$(cat "$DATA/skipped_version")" = "$REMOTE" ]; then exit 0; fi
+if [ -f "$DATA/skipped_version" ] && [ "$(cat "$DATA/skipped_version")" = "$REMOTE" ]; then ulog "omitida $REMOTE (local=$LOCAL)"; exit 0; fi
 
 # Versiones por entorno: el tag viene de la red y nunca se interpola en código.
 NEWER="$(REMOTE="$REMOTE" LOCAL="$LOCAL" python3 -c '
@@ -83,7 +92,8 @@ try:
 except Exception:
     print("0")
 ')"
-[ "$NEWER" = "1" ] || exit 0
+[ "$NEWER" = "1" ] || { ulog "al día ($LOCAL)"; exit 0; }
+ulog "nueva $REMOTE (local=$LOCAL)"
 
 # Diálogo: pregunta separada del changelog (campo con scroll); si falla,
 # se recurre al diálogo simple del sistema.
@@ -111,27 +121,32 @@ display dialog "Hay una nueva versión de NeverRed (" & ver & ") disponible." & 
 fi
 
 case "$CHOICE" in
-  *Omitir*) echo "$REMOTE" > "$DATA/skipped_version"; exit 0 ;;
+  *Omitir*) echo "$REMOTE" > "$DATA/skipped_version"; ulog "omitida por el usuario: $REMOTE"; exit 0 ;;
   *Instalar*) ;;
-  *) exit 0 ;; # Más tarde, abandono o error: seguir normal
+  *) ulog "pospuesta por el usuario: $REMOTE"; exit 0 ;; # Más tarde, abandono o error: seguir normal
 esac
 
 # Descarga e instalación silenciosa, luego reabre la app nueva
 DMG="$DATA/NeverRed-update.dmg"
-curl -fsSL -m 120 -o "$DMG" "$ASSET" 2>/dev/null || exit 0
+curl -fsSL -m 120 -o "$DMG" "$ASSET" 2>/dev/null || { ulog "falló descarga $REMOTE"; exit 0; }
 # Sin firma válida no se instala nada (ni se monta la imagen).
-verify_sig "$DMG" "$ASSET_SIG" || { rm -f "$DMG"; exit 0; }
+verify_sig "$DMG" "$ASSET_SIG" || { rm -f "$DMG"; ulog "firma inválida $REMOTE"; exit 0; }
 MNT="$(hdiutil attach -nobrowse -readonly "$DMG" 2>/dev/null | awk -F'\t' '/Volumes/ {print $3; exit}')"
-[ -z "$MNT" ] || [ ! -d "$MNT/NeverRed.app" ] && { rm -f "$DMG"; exit 0; }
+[ -z "$MNT" ] || [ ! -d "$MNT/NeverRed.app" ] && { rm -f "$DMG"; ulog "montaje fallido $REMOTE"; exit 0; }
 TARGET="/Applications/NeverRed.app"
 rm -rf "$TARGET"
 cp -R "$MNT/NeverRed.app" "$TARGET"
 # Refresca Launch Services: sin esto el Finder sigue mostrando la versión
 # vieja (misma ruta + mismo identificador = metadatos cacheados).
 touch "$TARGET" 2>/dev/null
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$TARGET" >/dev/null 2>&1 || true
+if /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$TARGET" >/dev/null 2>&1; then
+  ulog "Launch Services re-registrado"
+else
+  ulog "aviso: lsregister falló"
+fi
 hdiutil detach "$MNT" >/dev/null 2>&1
 rm -f "$DMG"
+ulog "instalada $REMOTE"
 printf '%s\n' "$REMOTE" > "$DATA/skipped_version"
 # Detiene el servidor viejo para que la app nueva arranque limpia
 if [ -f "$DATA/server.pid" ]; then stop_server "$DATA/server.pid"; fi

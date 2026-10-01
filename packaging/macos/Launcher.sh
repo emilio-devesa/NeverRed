@@ -4,14 +4,20 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RES="$HERE/../Resources/app"
-DATA="$HOME/Library/Application Support/NeverRed"
+DATA="${NEVERRED_DATA_DIR:-$HOME/Library/Application Support/NeverRed}"
 PORT="${PORT:-8000}"
 URL="http://127.0.0.1:$PORT"
 PIDF="$DATA/server.pid"
 mkdir -p "$DATA"
 
+# Modo --detach (lanzador nativo Swift): la comprobación de actualizaciones
+# ya la hizo él; aquí solo reutilizar o arrancar en segundo plano y salir
+# (el servidor queda reparentado y el Swift lo vigila por el pidfile).
+DETACH=0
+[ "${1:-}" = "--detach" ] && DETACH=1
+
 # Actualizaciones: si instala una nueva, ya reabre la app y salimos
-if [ -x "$HERE/check-update.sh" ]; then
+if [ $DETACH -eq 0 ] && [ -x "$HERE/check-update.sh" ]; then
   UPD=0
   "$HERE/check-update.sh" "$HERE" "$DATA" || UPD=$?
   if [ "$UPD" -eq 42 ]; then exit 0; fi
@@ -60,6 +66,16 @@ export NEVERRED_QUIT_WHEN_IDLE=1 NEVERRED_IDLE_TIMEOUT=20
 "$PY" "$RES/backend/server.py" >"$DATA/server.log" 2>&1 &
 SRV=$!
 echo $SRV > "$PIDF"
+if [ $DETACH -eq 1 ]; then
+  # El lanzador nativo vigila el pidfile; aquí solo esperar a que responda.
+  i=0
+  while [ $i -lt 20 ]; do
+    curl -sf -o /dev/null "$URL/api/health" 2>/dev/null && break
+    sleep 0.5; i=$((i + 1))
+  done
+  /usr/bin/open "$URL"
+  exit 0
+fi
 # Al salir de la app (Dock → Salir) se detiene el servidor: sin actividad oculta.
 trap 'kill $SRV 2>/dev/null; rm -f "$PIDF"; exit 0' TERM INT
 i=0

@@ -26,7 +26,7 @@ cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$RES/"
 cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
 cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
-cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
+cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/Launcher.sh"
 # Destino de telemetría del build (vacío = local pura). El coordinador lo
 # rellena con NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN para builds beta.
 _telemetry_sub() {
@@ -34,10 +34,17 @@ _telemetry_sub() {
   sed "s|__NEVERRED_BUILD_SINK__|$(_esc "${NEVERRED_BUILD_SINK:-}")|g; s|__NEVERRED_BUILD_TOKEN__|$(_esc "${NEVERRED_BUILD_TOKEN:-}")|g" \
     "$1" > "$STAGE/launcher.tmp" && mv "$STAGE/launcher.tmp" "$1"
 }
-_telemetry_sub "$APP/Contents/MacOS/NeverRed"
+_telemetry_sub "$APP/Contents/MacOS/Launcher.sh"
+# Lanzador nativo (Swift, solo Xcode de serie): icono con punto en el Dock,
+# sin rebote eterno y cierre limpio desde el Dock. Delega en Launcher.sh.
+if ! command -v swiftc >/dev/null 2>&1; then
+  echo "Error: swiftc no encontrado (hace falta Xcode o Command Line Tools)." >&2
+  exit 1
+fi
+swiftc -O -o "$APP/Contents/MacOS/NeverRed" packaging/macos/NeverRed.swift -framework Cocoa
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
 cp packaging/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
-chmod +x "$APP/Contents/MacOS/NeverRed" "$APP/Contents/MacOS/check-update.sh"
+chmod +x "$APP/Contents/MacOS/Launcher.sh" "$APP/Contents/MacOS/check-update.sh"
 
 # Icono .icns a partir del SVG (QuickLook + iconutil, todo de serie)
 ICONSET="$STAGE/AppIcon.iconset"
