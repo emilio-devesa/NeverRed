@@ -45,7 +45,7 @@ Debajo vive **Asientos recurrentes**: plantillas mensuales (nómina, alquiler) y
 
 ## Mayor
 
-Movimientos y saldo acumulado de cada cuenta, con su naturaleza (**deudora**: Activo/Gasto; **acreedora**: Pasivo/Patrimonio/Ingreso) y filtro por texto.
+Movimientos y saldo acumulado de cada cuenta, con su naturaleza (**deudora**: Activo/Gasto; **acreedora**: Pasivo/Patrimonio/Ingreso) y filtro por texto. El enlace **Vista mensual** muestra un mes con su navegación (‹ Mes anterior / Mes siguiente ›) y fila de **saldo inicial**; **Vista global** devuelve la lista completa.
 
 ## Cuentas
 
