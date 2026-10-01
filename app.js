@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.3.2';
+const NEVERRED_BUILD = '2.3.3';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -445,28 +445,38 @@ function entryCard(e) {
 function renderDiario() {
   const q = (document.getElementById('searchDiario').value || '').toLowerCase();
   const fromEl = document.getElementById('filterFrom'), toEl = document.getElementById('filterTo');
-  // Desde/Hasta: refinamiento limitado al mes visible (solo día del mes).
-  fromEl.min = toEl.min = NR.monthStart(diarioMonth);
-  fromEl.max = toEl.max = NR.monthEnd(diarioMonth);
+  const prevBtn = document.getElementById('diarioPrev'), nextBtn = document.getElementById('diarioNext');
+  const labelEl = document.getElementById('diarioMonthLabel'), todayBtn = document.getElementById('diarioToday');
   const from = fromEl.value, to = toEl.value;
+  // Con rango de fechas: modo propio sobre todo el histórico (puede cruzar
+  // meses); la navegación por mes se oculta y el título muestra el rango.
+  const rangeActive = !!(from || to);
   const badMonth = e => !/^\d{4}-\d{2}$/.test(NR.monthKey(e.date)); // sin fecha válida: siempre visible
-  const monthList = [...state.entries]
-    .filter(e => NR.monthKey(e.date) === diarioMonth || badMonth(e))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  let list = monthList;
+  const base = rangeActive ? [...state.entries]
+    : [...state.entries].filter(e => NR.monthKey(e.date) === diarioMonth || badMonth(e));
+  let list = base.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   if (from) list = list.filter(e => e.date >= from);
   if (to) list = list.filter(e => e.date <= to);
   if (q) list = list.filter(e => e.desc.toLowerCase().includes(q) ||
     e.lines.some(l => (accById(l.accountId)?.name || '').toLowerCase().includes(q)));
   document.getElementById('diarioList').innerHTML = list.length ? list.map(entryCard).join('')
-    : (monthList.length
+    : (base.length
       ? '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>'
-      : '<p class="muted">Este mes no tiene asientos todavía.</p>');
-  document.getElementById('diarioMonthLabel').textContent = NR.monthLabel(diarioMonth);
-  document.getElementById('diarioToday').hidden = diarioMonth === NR.currentMonth();
-  const minM = NR.minMonth(state.entries);
-  document.getElementById('diarioPrev').disabled = !minM || diarioMonth <= minM;
-  document.getElementById('diarioNext').disabled = diarioMonth >= NR.currentMonth();
+      : (rangeActive
+        ? '<p class="muted">Sin asientos en este rango.</p>'
+        : '<p class="muted">Este mes no tiene asientos todavía.</p>'));
+  if (rangeActive) {
+    labelEl.textContent = NR.rangeLabel(from, to);
+    prevBtn.hidden = nextBtn.hidden = true;
+    todayBtn.hidden = false;
+  } else {
+    labelEl.textContent = NR.monthLabel(diarioMonth);
+    prevBtn.hidden = nextBtn.hidden = false;
+    const minM = NR.minMonth(state.entries);
+    prevBtn.disabled = !minM || diarioMonth <= minM;
+    nextBtn.disabled = diarioMonth >= NR.currentMonth();
+    todayBtn.hidden = diarioMonth === NR.currentMonth();
+  }
   renderRecurring();
 }
 let diarioMonth = NR.currentMonth();

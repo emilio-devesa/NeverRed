@@ -100,4 +100,10 @@ describe('navegación por meses', () => {
   it('currentMonth tiene formato YYYY-MM', () => {
     assert.match(NR.currentMonth(), /^\d{4}-\d{2}$/);
   });
+  it('rangeLabel describe el rango en español', () => {
+    assert.equal(NR.rangeLabel('2026-09-01', '2026-10-09'), '01/09/2026 - 09/10/2026');
+    assert.equal(NR.rangeLabel('2026-09-01', ''), 'Desde 01/09/2026');
+    assert.equal(NR.rangeLabel('', '2026-10-09'), 'Hasta 09/10/2026');
+    assert.equal(NR.rangeLabel('', ''), '');
+  });
 });

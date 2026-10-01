@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.3.2 — CSS con versión (fin de la caché rancia)
+## v2.3.3 — El rango de fechas manda
+- Elegir Desde/Hasta activa un modo propio sobre todo el histórico
+  (aunque cruce meses): oculta Mes anterior/Siguiente y el título
+  muestra el rango (p. ej. 01/09/2026 - 10/10/2026)
+- "Volver al mes en curso" desactiva el filtrado y devuelve el mes actual
 - La hoja de estilos lleva la versión en la URL: cada release invalida
   la caché del Service Worker y los cambios visuales aparecen a la primera
 - Corregía el caso real de la 2.3.1 (HTML nuevo + CSS viejo: botones
