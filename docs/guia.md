@@ -9,21 +9,16 @@ permalink: /guia/
 ## Instalar en macOS (primera vez)
 
 1. Descarga el `.dmg` de [Releases](https://github.com/emilio-devesa/NeverRed/releases) (vale para Intel y Apple Silicon), ábrelo y arrastra **NeverRed** a **Aplicaciones**.
-2. Haz doble clic. Como la app no está firmada con certificado Apple, macOS la bloqueará con este aviso (es normal, no es un virus):
+2. Abre el **Terminal** (está en Aplicaciones → Utilidades) y ejecuta esta orden una sola vez:
 
-![Alerta de Gatekeeper](NeverRed-MacOS-GateKeeper-Alerta.png)
+   ```bash
+   xattr -cr /Applications/NeverRed.app
+   ```
 
-3. Pulsa **Aceptar** y abre **Ajustes → Privacidad y seguridad**. Baja hasta el apartado Seguridad: verás el aviso del bloqueo con el botón **Abrir igualmente**:
+   macOS marca las descargas de internet y, como la app aún no lleva firma de pago de Apple, sin este paso dice que "está dañada". No es un virus y no vuelve a pedirlo nunca más.
+3. Haz doble clic en NeverRed: arranca su servidor y se abre en tu navegador.
 
-![Ajustes, Privacidad y seguridad](NeverRed-MacOS-Ajustes-Privacidad-y-seguridad.png)
-
-4. Pulsa **Abrir igualmente** y confirma una última vez:
-
-![Confirmación de apertura](NeverRed-MacOS-GateKeeper-Confirmación.png)
-
-A partir de ahí la app abre con normalidad y no vuelve a preguntar.
-
-Si macOS dice que la app "está dañada" (versiones 2.3.4–2.3.5): borra esa copia e instala la 2.3.6 o posterior, que vuelve al flujo normal de arriba. Atajo para la copia actual sin reinstalar: `xattr -cr /Applications/NeverRed.app` en el Terminal y vuelta a empezar.
+A partir de ahí la app abre con normalidad. Las siguientes actualizaciones llegan solas desde la propia app y no necesitan repetir este paso.
 
 ## Entrar
 
