@@ -53,7 +53,7 @@ Tu plan de cuentas en 5 familias. Crea, edita o archiva cuentas.
 
 ## Informes
 
-Balance de comprobación (descargable en CSV), cuenta de resultados, balance general y **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos. El enlace **Vista mensual** del resultado muestra un mes con su navegación (‹ Mes anterior / Mes siguiente ›); **Volver a la vista acumulada** devuelve el total.
+Balance de comprobación (descargable en CSV), cuenta de resultados, balance general y **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos. Arriba del todo, **Evolución de los activos**: saldo diario de cada activo en 180 días más el patrimonio total, con valor al pasar el puntero y tabla de fines de mes. El enlace **Vista mensual** del resultado muestra un mes con su navegación (‹ Mes anterior / Mes siguiente ›); **Volver a la vista acumulada** devuelve el total.
 
 ## Tu cuenta
 
