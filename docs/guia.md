@@ -23,6 +23,8 @@ permalink: /guia/
 
 A partir de ahí la app abre con normalidad y no vuelve a preguntar.
 
+Si macOS dice que la app "está dañada" (versiones 2.3.4–2.3.5): borra esa copia e instala la 2.3.6 o posterior, que vuelve al flujo normal de arriba. Atajo para la copia actual sin reinstalar: `xattr -cr /Applications/NeverRed.app` en el Terminal y vuelta a empezar.
+
 ## Entrar
 
 Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
