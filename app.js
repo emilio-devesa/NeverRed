@@ -1744,7 +1744,8 @@ document.getElementById('btnLoanCalc').addEventListener('click', () => {
     <tr><td>Total pagado</td><td class="num">${fmt(q.total)}</td></tr>
     <tr><td>Intereses totales</td><td class="num" style="color:var(--red)">${fmt(q.interest)}</td></tr>
     </tbody></table>`;
-  drawStackedBars('loanChart', q.schedule, '#22c55e', '#ef4444', 'Capital', 'Intereses');
+  drawStackedBars('loanChart', q.schedule.map(s => ({ year: s.year, a: s.capital, b: s.interest })),
+    '#22c55e', '#ef4444', 'Capital', 'Intereses');
   document.getElementById('loanTable').innerHTML = `<table class="table"><thead><tr><th>Año</th><th class="num">Capital</th><th class="num">Intereses</th><th class="num">Cuota anual</th></tr></thead><tbody>` +
     q.schedule.map(s => `<tr><td>${s.year}</td><td class="num">${fmtNum(s.capital)}</td><td class="num">${fmtNum(s.interest)}</td><td class="num">${fmtNum(round2(q.monthly * 12))}</td></tr>`).join('') +
     `</tbody></table>`;
