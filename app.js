@@ -1216,6 +1216,7 @@ function endSession() {
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior
   resetMarket(); // tampoco tickers ni gráficas de Mercado del anterior
+  resetSimulators(); // ni resultados de simuladores (solo viven en el DOM)
   nukeServiceWorker(); // la próxima entrada cargará la última versión, nunca caché vieja
   try { localStorage.removeItem('neverred_session'); } catch {}
   quickUser = null;
@@ -1271,6 +1272,7 @@ async function loadUserData() {
 function enterApp() {
   if (!currentUser) return;
   resetMarket(); // la pestaña recargará los tickers de ESTE usuario al abrirse
+  resetSimulators(); // los simuladores no persisten: empiezan limpios
   authOverlay.hidden = true;
   document.getElementById('userEmail').textContent = currentUser.email;
   state.user.name = currentUser.name;
@@ -1674,6 +1676,107 @@ document.getElementById('marketList').addEventListener('click', async ev => {
   }
 });
 function renderTools() { renderMarket(); }
+
+// ---------- Herramientas / Simuladores (cálculo local, sin persistencia) ----------
+// Nada se guarda (ni BD, ni localStorage, ni red): al cambiar de usuario basta
+// con devolver los formularios a sus valores iniciales y vaciar resultados.
+const SIM_DEFAULTS = { loanAmount: '120000', loanRate: '3', loanYears: '25', yldInitial: '10000', yldMonthly: '200', yldRate: '5', yldYears: '10' };
+function resetSimulators() {
+  for (const [id, v] of Object.entries(SIM_DEFAULTS)) {
+    const el = document.getElementById(id);
+    if (el) el.value = v;
+  }
+  for (const id of ['loanResults', 'yieldResults']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  }
+  for (const id of ['loanError', 'yieldError']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  }
+  for (const id of ['loanChart', 'yieldChart', 'loanDetails', 'yieldDetails']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  }
+}
+function drawStackedBars(canvasId, rows, cA, cB, legendA, legendB) {
+  const cv = document.getElementById(canvasId);
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const max = Math.max(1, ...rows.map(r => r.a + r.b));
+  const n = rows.length, slot = W / n, bw = Math.min(26, slot * 0.55);
+  const base = H - 20, step = Math.max(1, Math.ceil(n / 12));
+  rows.forEach((r, i) => {
+    const x = i * slot + (slot - bw) / 2;
+    const ha = (r.a / max) * (H - 60), hb = (r.b / max) * (H - 60);
+    ctx.fillStyle = cB; ctx.fillRect(x, base - ha - hb, bw, Math.max(0, hb));
+    ctx.fillStyle = cA; ctx.fillRect(x, base - ha, bw, Math.max(0, ha));
+    if (i % step === 0) {
+      ctx.fillStyle = '#9aa5b4'; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('año ' + r.year, x + bw / 2, H - 6);
+    }
+  });
+  ctx.font = '11px system-ui'; ctx.textAlign = 'left';
+  ctx.fillStyle = cA; ctx.fillRect(8, 8, 10, 10);
+  ctx.fillStyle = '#9aa5b4'; ctx.fillText(legendA, 22, 17);
+  const off = 30 + ctx.measureText(legendA).width;
+  ctx.fillStyle = cB; ctx.fillRect(off, 8, 10, 10);
+  ctx.fillStyle = '#9aa5b4'; ctx.fillText(legendB, off + 14, 17);
+}
+document.getElementById('btnLoanCalc').addEventListener('click', () => {
+  const err = document.getElementById('loanError');
+  err.textContent = '';
+  const q = NR.loanQuote(document.getElementById('loanAmount').value,
+    document.getElementById('loanRate').value, document.getElementById('loanYears').value);
+  const box = document.getElementById('loanResults');
+  const show = ok => {
+    document.getElementById('loanChart').hidden = !ok;
+    document.getElementById('loanDetails').hidden = !ok;
+  };
+  if (!q) {
+    err.textContent = 'Revisa los datos: importe > 0, TIN 0–100 %, plazo entero 1–50 años.';
+    box.innerHTML = ''; show(false); return;
+  }
+  box.innerHTML = `<table class="table"><tbody>
+    <tr><td>Cuota mensual</td><td class="num"><strong>${fmt(q.monthly)}</strong></td></tr>
+    <tr><td>Total pagado</td><td class="num">${fmt(q.total)}</td></tr>
+    <tr><td>Intereses totales</td><td class="num" style="color:var(--red)">${fmt(q.interest)}</td></tr>
+    </tbody></table>`;
+  drawStackedBars('loanChart', q.schedule, '#22c55e', '#ef4444', 'Capital', 'Intereses');
+  document.getElementById('loanTable').innerHTML = `<table class="table"><thead><tr><th>Año</th><th class="num">Capital</th><th class="num">Intereses</th><th class="num">Cuota anual</th></tr></thead><tbody>` +
+    q.schedule.map(s => `<tr><td>${s.year}</td><td class="num">${fmtNum(s.capital)}</td><td class="num">${fmtNum(s.interest)}</td><td class="num">${fmtNum(round2(q.monthly * 12))}</td></tr>`).join('') +
+    `</tbody></table>`;
+  show(true);
+});
+document.getElementById('btnYieldCalc').addEventListener('click', () => {
+  const err = document.getElementById('yieldError');
+  err.textContent = '';
+  const g = NR.yieldGrowth(document.getElementById('yldInitial').value,
+    document.getElementById('yldMonthly').value, document.getElementById('yldRate').value,
+    document.getElementById('yldYears').value);
+  const box = document.getElementById('yieldResults');
+  const show = ok => {
+    document.getElementById('yieldChart').hidden = !ok;
+    document.getElementById('yieldDetails').hidden = !ok;
+  };
+  if (!g) {
+    err.textContent = 'Revisa los datos: importes ≥ 0, rentabilidad 0–100 %, plazo entero 1–50 años.';
+    box.innerHTML = ''; show(false); return;
+  }
+  box.innerHTML = `<table class="table"><tbody>
+    <tr><td>Total aportado</td><td class="num">${fmt(g.invested)}</td></tr>
+    <tr><td>Valor final</td><td class="num"><strong>${fmt(g.final)}</strong></td></tr>
+    <tr><td>Ganancia</td><td class="num" style="color:${g.gain < 0 ? 'var(--red)' : 'var(--green)'}"><strong>${fmt(g.gain)}</strong></td></tr>
+    </tbody></table>`;
+  drawStackedBars('yieldChart', g.yearly.map(y => ({ year: y.year, a: y.invested, b: round2(y.value - y.invested) })),
+    '#38bdf8', '#22c55e', 'Aportado', 'Ganancia');
+  document.getElementById('yieldTable').innerHTML = `<table class="table"><thead><tr><th>Año</th><th class="num">Aportado</th><th class="num">Valor</th><th class="num">Ganancia</th></tr></thead><tbody>` +
+    g.yearly.map(y => `<tr><td>${y.year}</td><td class="num">${fmtNum(y.invested)}</td><td class="num">${fmtNum(y.value)}</td><td class="num">${fmtNum(round2(y.value - y.invested))}</td></tr>`).join('') +
+    `</tbody></table>`;
+  show(true);
+});
 
 // ---------- Init ----------
 function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); renderTools(); }

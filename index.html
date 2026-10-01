@@ -328,13 +328,40 @@
       <div id="sub-prestamos" hidden>
         <div class="card">
           <h3>Simulador de préstamos</h3>
-          <p class="muted">Próximamente: cuota mensual, intereses totales y tabla de amortización.</p>
+          <p class="muted small">Sistema francés: cuota mensual constante con TIN anual. Todo se calcula en tu navegador; nada se guarda ni se envía.</p>
+          <div class="form-grid">
+            <label>Importe del préstamo<input type="number" id="loanAmount" value="120000" min="1" max="1000000000" step="100" /></label>
+            <label>TIN anual %<input type="number" id="loanRate" value="3" min="0" max="100" step="0.01" /></label>
+            <label>Plazo (años)<input type="number" id="loanYears" value="25" min="1" max="50" step="1" /></label>
+          </div>
+          <div class="modal-actions">
+            <span class="spacer"></span>
+            <button class="btn primary" id="btnLoanCalc" type="button">Calcular</button>
+          </div>
+          <p class="error" id="loanError" role="alert"></p>
+          <div id="loanResults"></div>
+          <canvas id="loanChart" width="600" height="260" hidden></canvas>
+          <details class="small muted" id="loanDetails" hidden><summary>Ver tabla año por año</summary><div id="loanTable"></div></details>
         </div>
       </div>
       <div id="sub-rendimientos" hidden>
         <div class="card">
           <h3>Simulador de rendimientos</h3>
-          <p class="muted">Próximamente: interés compuesto con aportaciones periódicas.</p>
+          <p class="muted small">Interés compuesto con capitalización mensual. Todo se calcula en tu navegador; nada se guarda ni se envía.</p>
+          <div class="form-grid">
+            <label>Capital inicial<input type="number" id="yldInitial" value="10000" min="0" max="1000000000" step="100" /></label>
+            <label>Aportación mensual<input type="number" id="yldMonthly" value="200" min="0" max="10000000" step="10" /></label>
+            <label>Rentabilidad anual %<input type="number" id="yldRate" value="5" min="0" max="100" step="0.01" /></label>
+            <label>Plazo (años)<input type="number" id="yldYears" value="10" min="1" max="50" step="1" /></label>
+          </div>
+          <div class="modal-actions">
+            <span class="spacer"></span>
+            <button class="btn primary" id="btnYieldCalc" type="button">Calcular</button>
+          </div>
+          <p class="error" id="yieldError" role="alert"></p>
+          <div id="yieldResults"></div>
+          <canvas id="yieldChart" width="600" height="260" hidden></canvas>
+          <details class="small muted" id="yieldDetails" hidden><summary>Ver tabla año por año</summary><div id="yieldTable"></div></details>
         </div>
       </div>
     </section>
