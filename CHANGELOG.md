@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.3.9 — PyG como el Mayor + limpieza del lanzador
+## v2.4.0 — Actualizador que respeta tu instalación
+- Actualiza la copia que estés usando (antes forzaba /Applications)
+  y solo da por buena la instalación si trae la versión esperada
+- Diario del actualizador más claro ("ya instalada", nº de notas, diálogo usado)
+- Notas sin retornos Windows que podían vaciar el diálogo
 - La cuenta de resultados vuelve a ser una sola tarjeta con enlace
   **Vista mensual / Volver a la vista acumulada** (igual que el Mayor)
 - Fuera restos del lanzador nativo (ObjC/Swift): el ejecutable es el

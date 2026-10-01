@@ -102,10 +102,13 @@ for p in /usr/bin/python3 python3; do
   if $p -c 'import tkinter' 2>/dev/null; then TKPY=$p; break; fi
 done
 NOTES_FILE="$DATA/release-notes.txt"
-printf '%s' "$NOTES" > "$NOTES_FILE"
+printf '%s' "$NOTES" | tr -d '\r' > "$NOTES_FILE"
+ulog "notas: ${#NOTES} caracteres"
 CHOICE=""
 if [ -n "$TKPY" ]; then
+  ulog "diálogo tkinter ($TKPY)"
   CHOICE="$($TKPY "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" "$LOCAL" 2>/dev/null)"
+  [ -n "$CHOICE" ] && ulog "diálogo tkinter: $CHOICE"
 fi
 case "$CHOICE" in
   install) CHOICE='Instalar' ;;
@@ -113,8 +116,9 @@ case "$CHOICE" in
   later) CHOICE='Más tarde' ;;
 esac
 if [ -z "$CHOICE" ]; then
-  # Sin comillas: romperían el AppleScript. Recorte a lo que cabe en el diálogo.
-  SHORTNOTES="$(printf '%s' "$NOTES" | tr -d '"' | head -c 400)"
+  ulog "diálogo sistema"
+  # Sin comillas ni retornos: romperían el AppleScript. Recorte a lo que cabe.
+  SHORTNOTES="$(printf '%s' "$NOTES" | tr -d '"\r' | head -c 400)"
   CHOICE="$(SHORTNOTES="$SHORTNOTES" REMOTE="$REMOTE" LOCAL="$LOCAL" osascript -e '
 set notes to system attribute "SHORTNOTES"
 set ver to system attribute "REMOTE"
@@ -136,7 +140,9 @@ curl -fsSL -m 120 -o "$DMG" "$ASSET" 2>/dev/null || { ulog "falló descarga $REM
 verify_sig "$DMG" "$ASSET_SIG" || { rm -f "$DMG"; ulog "firma inválida $REMOTE"; exit 0; }
 MNT="$(hdiutil attach -nobrowse -readonly "$DMG" 2>/dev/null | awk -F'\t' '/Volumes/ {print $3; exit}')"
 [ -z "$MNT" ] || [ ! -d "$MNT/NeverRed.app" ] && { rm -f "$DMG"; ulog "montaje fallido $REMOTE"; exit 0; }
-TARGET="/Applications/NeverRed.app"
+# Destino: el bundle que ejecuta este actualizador (respeta dónde lo puso
+# el usuario en su día; antes iba fijo a /Applications).
+TARGET="$(cd "$MACOS_DIR/../.." && pwd)"
 rm -rf "$TARGET"
 cp -R "$MNT/NeverRed.app" "$TARGET"
 # Refresca Launch Services: sin esto el Finder sigue mostrando la versión
@@ -149,6 +155,13 @@ else
 fi
 hdiutil detach "$MNT" >/dev/null 2>&1
 rm -f "$DMG"
+# Solo se marca y reabre si la copia instalada trae la versión esperada
+# (si se ejecutaba desde el DMG u otro sitio no escribible, no se finge éxito).
+INSTALLED="$(defaults read "$TARGET/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo ?)"
+if [ "${REMOTE#v}" != "$INSTALLED" ]; then
+  ulog "instalación no verificada (instalado=$INSTALLED remoto=$REMOTE)"
+  exit 0
+fi
 ulog "instalada $REMOTE"
 printf '%s\n' "$REMOTE" > "$DATA/skipped_version"
 # Detiene el servidor viejo para que la app nueva arranque limpia

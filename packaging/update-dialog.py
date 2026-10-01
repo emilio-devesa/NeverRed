@@ -20,7 +20,7 @@ FALLBACK = ("Mejoras internas y correcciones de errores.\n\n"
 def main():
     remote = sys.argv[1]
     with open(sys.argv[2], encoding="utf-8", errors="replace") as f:
-        raw = f.read()
+        raw = f.read().replace("\r\n", "\n").replace("\r", "\n")
     # Las notas pueden traer el bloque de descarga al final: en la app sobra
     # (el usuario ya la tiene instalada); nos quedamos con las novedades.
     notes = raw.split("## Descargar")[0].strip()[:2000] or FALLBACK
