@@ -42,7 +42,7 @@ Vista general: ecuación fundamental en vivo, patrimonio neto, gráfico de ingre
 
 ## Diario
 
-El libro de todos tus asientos: crear (con N líneas), editar, **duplicar**, marcar como **↻ mensual**, borrar, buscar y filtrar por fechas. Botón **Importar CSV** para traer movimientos del banco (`fecha;descripción;importe`).
+El libro de todos tus asientos: crear (con N líneas), editar, **duplicar**, marcar como **↻ mensual**, borrar, buscar y filtrar por fechas. Se ven mes a mes con **‹ Mes anterior / Mes siguiente ›** encima de la lista (los filtros de fecha quedan como refinamiento por día dentro del mes). Botón **Importar CSV** para traer movimientos del banco (`fecha;descripción;importe`).
 
 Debajo vive **Asientos recurrentes**: plantillas mensuales (nómina, alquiler) y el botón **Generar pendientes del mes**, que crea lo que falte sin duplicar.
 
