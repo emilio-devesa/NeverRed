@@ -78,14 +78,16 @@ $ICONKEY
 </dict></plist>
 PLIST
 
-# Firma ad-hoc del bundle: sin sello válido Gatekeeper dice "dañado" sin
-# apelación (el binario ya trae firma ad-hoc propia del linker); con sello,
-# flujo normal de "desarrollador no identificado" con Abrir igualmente.
+# Sin firma de bundle a propósito (paridad 2.3.3): en macOS actual, un
+# sello ad-hoc válido deja la evaluación sin autoridad ("dañado" sin
+# apelación); sin firmar, Gatekeeper dice "desarrollador no identificado"
+# con "Abrir igualmente". La confianza del update la da la firma .sig
+# separada (Ed25519), no el codesign. Solo limpieza de xattrs.
 xattr -cr "$APP" 2>/dev/null || true
-codesign --force --deep --sign - "$APP" 2>/dev/null \
-  || { echo "Aviso: no se pudo firmar ad-hoc."; }
-codesign --verify --deep --strict "$APP" 2>/dev/null \
-  || { echo "Error: la firma ad-hoc no verifica." >&2; exit 1; }
+if [ -e "$APP/Contents/_CodeSignature" ]; then
+  echo "Error: ha aparecido un _CodeSignature inesperado." >&2
+  exit 1
+fi
 
 # DMG arrastrable (app + enlace a Aplicaciones)
 ln -s /Applications "$STAGE/Aplicaciones"
