@@ -1,6 +1,9 @@
 # NeverRed — Historial de cambios
 
-## v2.3.4 — App de verdad en el Dock + actualizador con diario
+## v2.3.5 — PyG del mes en Informes
+- Nueva tarjeta "PyG del mes" encima de la acumulada, con la misma
+  navegación del Diario (anterior/siguiente, mes centrado, volver al actual)
+- Balance de comprobación y Balance general siguen acumulados (son stock)
 - Nuevo lanzador nativo (Swift, sin dependencias): icono con punto de
   activa, sin rebote eterno; Salir desde el Dock detiene el servidor y
   cerrar todas las pestañas cierra la app sola

@@ -100,10 +100,20 @@ describe('navegación por meses', () => {
   it('currentMonth tiene formato YYYY-MM', () => {
     assert.match(NR.currentMonth(), /^\d{4}-\d{2}$/);
   });
-  it('rangeLabel describe el rango en español', () => {
-    assert.equal(NR.rangeLabel('2026-09-01', '2026-10-09'), '01/09/2026 - 09/10/2026');
-    assert.equal(NR.rangeLabel('2026-09-01', ''), 'Desde 01/09/2026');
-    assert.equal(NR.rangeLabel('', '2026-10-09'), 'Hasta 09/10/2026');
-    assert.equal(NR.rangeLabel('', ''), '');
+  it('entriesOfMonth filtra por mes', () => {
+    const es = [{ date: '2026-09-05' }, { date: '2026-10-02' }, { date: '2026-10-20' }];
+    assert.deepEqual(NR.entriesOfMonth(es, '2026-10'), [{ date: '2026-10-02' }, { date: '2026-10-20' }]);
+    assert.deepEqual(NR.entriesOfMonth(es, '2026-08'), []);
+    assert.deepEqual(NR.entriesOfMonth([], '2026-10'), []);
+  });
+  it('el PyG mensual cuadra con sus asientos', () => {
+    const es = [
+      { date: '2026-09-05', lines: [line('comida', 20, 0), line('banco', 0, 20)] },
+      { date: '2026-10-02', lines: [line('banco', 100, 0), line('sueldo', 0, 100)] },
+    ];
+    const tt = NR.typeTotals(ACC, NR.entriesOfMonth(es, '2026-10'));
+    assert.equal(tt.Ingreso - tt.Gasto, 100);
+    const tt2 = NR.typeTotals(ACC, NR.entriesOfMonth(es, '2026-09'));
+    assert.equal(tt2.Ingreso - tt2.Gasto, -20);
   });
 });

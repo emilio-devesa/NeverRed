@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.3.4';
+const NEVERRED_BUILD = '2.3.5';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -614,6 +614,18 @@ document.getElementById('budgetsBox').addEventListener('change', ev => {
 });
 
 // ---------- Informes ----------
+function pnlHTML(t) {
+  const res = round2(t.Ingreso - t.Gasto);
+  return `
+    <table class="table"><tbody>
+    <tr><td>Total ingresos</td><td class="num">${fmt(t.Ingreso)}</td></tr>
+    <tr><td>Total gastos</td><td class="num">${fmt(t.Gasto)}</td></tr>
+    <tr><td><strong>Resultado</strong></td><td class="num"><strong style="color:${res < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(res)}</strong></td></tr>
+    </tbody></table>
+    <p class="muted small">${res >= 0 ? '🟢 Ganas más de lo que gastas. Sigue así.' : '🔴 Gastas más de lo que ingresas: revisa tus gastos.'}</p>`;
+}
+let pnlMonth = NR.currentMonth();
+function setPnlMonth(ym) { pnlMonth = ym; renderReports(); }
 function renderReports() {
   renderBudgets();
   const t = totalsByAccount();
@@ -628,14 +640,18 @@ function renderReports() {
   document.getElementById('trialHaber').textContent = fmtNum(th);
   document.getElementById('trialSaldo').textContent = td === th ? '✓ ' + fmtNum(td) : '✗ descuadre';
   const tt = typeTotals();
+  document.getElementById('pnlBox').innerHTML = pnlHTML(tt);
   const res = round2(tt.Ingreso - tt.Gasto);
-  document.getElementById('pnlBox').innerHTML = `
-    <table class="table"><tbody>
-    <tr><td>Total ingresos</td><td class="num">${fmt(tt.Ingreso)}</td></tr>
-    <tr><td>Total gastos</td><td class="num">${fmt(tt.Gasto)}</td></tr>
-    <tr><td><strong>Resultado</strong></td><td class="num"><strong style="color:${res < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(res)}</strong></td></tr>
-    </tbody></table>
-    <p class="muted small">${res >= 0 ? '🟢 Ganas más de lo que gastas. Sigue así.' : '🔴 Gastas más de lo que ingresas: revisa tus gastos.'}</p>`;
+  // PyG del mes: mismos botones que el Diario, mes independiente.
+  const mEntries = NR.entriesOfMonth(state.entries, pnlMonth);
+  const mt = NR.typeTotals(state.accounts, mEntries);
+  document.getElementById('pnlMonthBox').innerHTML = mEntries.length ? pnlHTML(mt)
+    : '<p class="muted">Sin movimientos este mes.</p>';
+  document.getElementById('pnlMonthLabel').textContent = NR.monthLabel(pnlMonth);
+  const minM = NR.minMonth(state.entries);
+  document.getElementById('pnlPrev').disabled = !minM || pnlMonth <= minM;
+  document.getElementById('pnlNext').disabled = pnlMonth >= NR.currentMonth();
+  document.getElementById('pnlToday').hidden = pnlMonth === NR.currentMonth();
   const net = round2(tt.Activo - tt.Pasivo);
   document.getElementById('balanceBox').innerHTML = `
     <table class="table"><tbody>
@@ -647,6 +663,9 @@ function renderReports() {
     </tbody></table>
     <p class="muted small">${round2(tt.Patrimonio + res) === net ? '✓ Activo − Pasivo = Patrimonio + Resultado.' : '✗ El balance no cuadra.'}</p>`;
 }
+document.getElementById('pnlPrev').addEventListener('click', () => setPnlMonth(NR.addMonths(pnlMonth, -1)));
+document.getElementById('pnlNext').addEventListener('click', () => setPnlMonth(NR.addMonths(pnlMonth, 1)));
+document.getElementById('pnlToday').addEventListener('click', () => setPnlMonth(NR.currentMonth()));
 
 // ---------- Modal asiento ----------
 const entryModal = document.getElementById('entryModal');
@@ -1033,7 +1052,7 @@ function startSession(token, user) {
     if (FROM_FILE) localStorage.setItem('neverred_session', token);
     else localStorage.removeItem('neverred_session');
   } catch {}
-  clearDiarioFilters(); diarioMonth = NR.currentMonth();
+  clearDiarioFilters(); diarioMonth = NR.currentMonth(); pnlMonth = NR.currentMonth();
   loadUserData().then(enterApp);
 }
 /** Contabilidad vacía con el plan de cuentas base: cada usuario empieza de cero. */

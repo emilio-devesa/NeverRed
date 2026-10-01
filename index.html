@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NeverRed — Contabilidad personal por partida doble</title>
   <meta name="description" content="NeverRed: empieza y mantén tu contabilidad personal con el sistema de doble partida. Sin números rojos." />
-  <link rel="stylesheet" href="styles.css?v=2.3.4" />
+  <link rel="stylesheet" href="styles.css?v=2.3.5" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0e1116" />
@@ -240,6 +240,18 @@
           <button class="btn ghost" id="btnCsvTrial">Descargar CSV</button>
         </div>
         <div>
+          <div class="card">
+            <h3>PyG del mes</h3>
+            <div class="month-nav">
+              <button class="btn ghost" id="pnlPrev" type="button">‹ Mes anterior</button>
+              <div class="month-mid">
+                <strong id="pnlMonthLabel">—</strong><br />
+                <button class="linklike" id="pnlToday" type="button" hidden>Volver al mes en curso</button>
+              </div>
+              <button class="btn ghost" id="pnlNext" type="button">Mes siguiente ›</button>
+            </div>
+            <div id="pnlMonthBox"></div>
+          </div>
           <div class="card">
             <h3>Cuenta de resultados (PyG)</h3>
             <div id="pnlBox"></div>
