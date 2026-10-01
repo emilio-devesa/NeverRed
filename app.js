@@ -1718,24 +1718,41 @@ function resetSimulators() {
 function drawStackedBars(canvasId, rows, cA, cB, legendA, legendB) {
   const cv = document.getElementById(canvasId);
   if (!cv) return;
-  // Mitad de alto que antes (proporción como las evoluciones) y doble
-  // resolución interna: el CSS lo encoge y el texto queda nítido.
-  const W = 600, H = 160, SCALE = 2;
+  // Responsive: la resolución lógica es el ancho disponible (nunca excede
+  // la página) y si los años no caben como barras legibles se agrupan.
+  const availW = Math.max(280, Math.round(
+    (cv.parentElement && cv.parentElement.clientWidth) || 600));
+  const W = availW, H = 160, SCALE = 2;
+  const maxBars = Math.max(6, Math.floor(availW / 18));
+  let buckets = rows.map(r => ({ ...r, label: 'año ' + r.year }));
+  if (rows.length > maxBars) {
+    const size = Math.ceil(rows.length / maxBars);
+    buckets = [];
+    for (let i = 0; i < rows.length; i += size) {
+      const chunk = rows.slice(i, i + size);
+      buckets.push({
+        year: chunk[0].year,
+        a: round2(chunk.reduce((s, r) => s + r.a, 0)),
+        b: round2(chunk.reduce((s, r) => s + r.b, 0)),
+        label: chunk.length > 1 ? chunk[0].year + '–' + chunk[chunk.length - 1].year : 'año ' + chunk[0].year,
+      });
+    }
+  }
   cv.width = W * SCALE; cv.height = H * SCALE;
   const ctx = cv.getContext('2d');
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const max = Math.max(1, ...rows.map(r => r.a + r.b));
-  const n = rows.length, slot = W / n, bw = Math.min(26, slot * 0.55);
+  const max = Math.max(1, ...buckets.map(r => r.a + r.b));
+  const n = buckets.length, slot = W / n, bw = Math.min(26, slot * 0.55);
   const base = H - 20, step = Math.max(1, Math.ceil(n / 12));
-  rows.forEach((r, i) => {
+  buckets.forEach((r, i) => {
     const x = i * slot + (slot - bw) / 2;
     const ha = (r.a / max) * (H - 60), hb = (r.b / max) * (H - 60);
     ctx.fillStyle = cB; ctx.fillRect(x, base - ha - hb, bw, Math.max(0, hb));
     ctx.fillStyle = cA; ctx.fillRect(x, base - ha, bw, Math.max(0, ha));
     if (i % step === 0) {
       ctx.fillStyle = '#9aa5b4'; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('año ' + r.year, x + bw / 2, H - 6);
+      ctx.fillText(r.label, x + bw / 2, H - 6);
     }
   });
   ctx.font = '11px system-ui'; ctx.textAlign = 'left';
