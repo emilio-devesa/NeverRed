@@ -742,6 +742,35 @@ def _market_set_meta(key, value):
         con.close()
 
 
+def _av_today_key():
+    import datetime as _dt
+    return "av_used_" + _dt.datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _av_count_call():
+    """Suma 1 al contador diario de llamadas (solo llamadas reales salientes)."""
+    try:
+        n = int(_market_meta(_av_today_key()) or 0)
+    except ValueError:
+        n = 0
+    _market_set_meta(_av_today_key(), str(n + 1))
+
+
+AV_DAILY_LIMIT = 25
+
+
+def _av_quota():
+    """(used, limit) de hoy según esta instalación, o (None, None) si la
+    clave parece premium (full funciona: sin tope diario que mostrar)."""
+    if _market_meta("mode") != "compact":
+        return None, None
+    try:
+        used = int(_market_meta(_av_today_key()) or 0)
+    except ValueError:
+        used = 0
+    return used, AV_DAILY_LIMIT
+
+
 def market_history(symbol, key, force=False):
     """Serie de un símbolo. (code, obj) con code 200/404/429/502.
 
@@ -782,8 +811,10 @@ def market_history(symbol, key, force=False):
         _market_last_call = int(time.time())
     payload = None
     if _market_meta("mode") == "compact":
+        _av_count_call()
         payload = _av_get(symbol, key, full=False)  # clave gratuita: 1 llamada
     else:
+        _av_count_call()
         payload = _av_get(symbol, key, full=True)
         if isinstance(payload, dict) and "Information" in payload \
                 and "premium" in str(payload["Information"]).lower():
@@ -791,6 +822,7 @@ def market_history(symbol, key, force=False):
             # repetir el gasto, y pausar antes del reintento (límite 1 req/s).
             _market_set_meta("mode", "compact")
             time.sleep(MARKET_RETRY_DELAY)
+            _av_count_call()
             payload = _av_get(symbol, key, full=False)
     data, err = parse_av_daily(payload or {})
     con = db()
@@ -1403,7 +1435,10 @@ class Handler(BaseHTTPRequestHandler):
                         (user["id"],)).fetchone()[0]
         con.close()
         # Ojo: jamás se devuelve la clave, solo si hay alguna configurada.
-        self._send_json(200, {"configured": bool(market_key()), "tickers": n})
+        used, limit = _av_quota()
+        self._send_json(200, {"configured": bool(market_key()), "tickers": n,
+                              "quota": None if used is None
+                              else {"used": used, "limit": limit}})
 
     def _api_market_key(self):
         user = self._auth_user()

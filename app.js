@@ -1520,11 +1520,25 @@ async function loadMarket() {
   try {
     const st = await marketFetch('/api/market/status');
     marketConfigured = !!st.configured;
+    paintQuota(st.quota);
     const lt = await marketFetch('/api/market/tickers');
     marketTickers = lt.tickers || [];
     marketLoaded = true;
   } catch { marketTickers = []; }
   renderMarket();
+}
+function paintQuota(quota) {
+  const el = document.getElementById('marketQuota');
+  if (!el) return;
+  if (!quota) { el.textContent = ''; return; }
+  const left = Math.max(0, quota.limit - quota.used);
+  el.textContent = `Cuota Alpha Vantage: ${left} de ${quota.limit} peticiones disponibles hoy (conteo aproximado de esta instalación; se renueva a diario).`;
+}
+async function updateQuota() {
+  try {
+    const st = await marketFetch('/api/market/status');
+    paintQuota(st.quota);
+  } catch { /* sin red: no molestar */ }
 }
 function renderMarket() {
   const setBox = document.getElementById('marketKeySet');
@@ -1650,6 +1664,7 @@ document.getElementById('btnMarketAdd').addEventListener('click', async () => {
     if (!marketTickers.some(t => t.symbol === h.symbol)) {
       marketTickers.push({ symbol: h.symbol, added_at: Date.now() / 1000, last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, cached_at: h.cached_at, stale: h.stale });
     }
+    updateQuota();
     renderMarket();
   } catch (e) { err.textContent = e.message; }
 });
@@ -1668,6 +1683,7 @@ document.getElementById('marketList').addEventListener('click', async ev => {
     if (slot) slot.innerHTML = '<p class="muted small">Actualizando…</p>';
     delete marketDrawn[ref];
     await loadTickerChart(ref, true);
+    updateQuota();
     try {
       const lt = await marketFetch('/api/market/tickers');
       marketTickers = lt.tickers || [];

@@ -216,6 +216,7 @@ class MarketApiCase(unittest.TestCase):
 
     def test_modo_compact_recordado(self):
         # full premium una sola vez: luego va directo a compact (1 llamada).
+        server._market_set_meta("mode", "")  # modo desconocido: como instalación nueva
         tok = mkuser(self.port, "mkt6")
         calls = type(self).calls
         orig = server._av_get
@@ -255,6 +256,26 @@ class MarketApiCase(unittest.TestCase):
         self.assertEqual(body["tickers"], 0)
         st, body = call(self.port, "/api/market/status", token=tokA)
         self.assertEqual(body["tickers"], 1)
+
+    def test_cuota_contador(self):
+        # Autosuficiente: simula clave gratuita detectada y gasta 2 llamadas.
+        server._market_set_meta("mode", "compact")
+        server._market_set_meta(server._av_today_key(), "0")
+        tok = mkuser(self.port, "mktq")
+        for sym in ("QUOTA", "QUOTB"):
+            server._market_last_call = 0  # el guard de cuota no pinta aquí
+            st, body = call(self.port, "/api/market/tickers", "POST",
+                            {"symbol": sym}, token=tok)
+            self.assertEqual(st, 200, body)
+        st, body = call(self.port, "/api/market/status", token=tok)
+        q = body["quota"]
+        self.assertEqual((q["used"], q["limit"]), (2, 25))
+        # Clave premium (full funciona): sin tope diario que mostrar.
+        server._market_set_meta("mode", "full")
+        try:
+            self.assertEqual(server._av_quota(), (None, None))
+        finally:
+            server._market_set_meta("mode", "compact")
 
     def test_sin_clave(self):
         tok = mkuser(self.port, "mkt5")
