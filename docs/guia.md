@@ -56,7 +56,7 @@ Tu plan de cuentas en 5 familias. Crea, edita o archiva cuentas.
 
 ## Informes
 
-Balance de comprobación (descargable en CSV), cuenta de resultados, balance general y **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos.
+Balance de comprobación (descargable en CSV), cuenta de resultados, balance general y **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos. Encima del resultado acumulado verás el **PyG del mes**, navegable con ‹ Mes anterior / Mes siguiente › igual que el Diario.
 
 ## Tu cuenta
 
