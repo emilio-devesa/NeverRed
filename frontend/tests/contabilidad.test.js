@@ -118,6 +118,35 @@ describe('navegación por meses', () => {
   });
 });
 
+describe('balanceSeries', () => {
+  const ACCS = [
+    { id: 'caja', name: 'Caja', type: 'Activo', archived: false },
+    { id: 'banco', name: 'Banco', type: 'Activo', archived: false },
+    { id: 'tarjeta', name: 'Tarjeta', type: 'Pasivo', archived: false },
+    { id: 'vieja', name: 'Vieja', type: 'Activo', archived: true },
+  ];
+  const ES = [
+    { id: 'e1', date: '2026-09-28', desc: 'A', lines: [line('caja', 1000, 0), line('banco', 0, 1000)] },
+    { id: 'e2', date: '2026-10-02', desc: 'B', lines: [line('banco', 500, 0), line('caja', 0, 500)] },
+    { id: 'e3', date: '2026-10-03', desc: 'C', lines: [line('comida', 0, 0), line('tarjeta', 0, 0)] },
+    { id: 'e4', date: '2026-10-04', desc: 'D', lines: [line('comida', 40, 0), line('tarjeta', 0, 40)] },
+  ];
+  it('ventana, arrastre, relleno y totalActivoMenosPasivo', () => {
+    const r = NR.balanceSeries(ACCS, ES, 5, '2026-10-04');
+    assert.deepEqual(r.dates, ['2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
+    assert.equal(r.series.length, 2); // archivadas fuera
+    assert.deepEqual(r.series[0].points, [1000, 1000, 500, 500, 500]);
+    assert.deepEqual(r.series[1].points, [-1000, -1000, -500, -500, -500]);
+    // total = activos − pasivos: (1000−1000)=0 … (500−500)−40=−40
+    assert.deepEqual(r.total, [0, 0, 0, 0, -40]);
+  });
+  it('ignora fechas inválidas y futuras', () => {
+    const es = ES.concat([{ id: 'x', date: 'mañana', desc: 'X', lines: [line('caja', 999, 0), line('banco', 0, 999)] }]);
+    const r = NR.balanceSeries(ACCS, es, 2, '2026-10-04');
+    assert.deepEqual(r.series[0].points, [500, 500]);
+  });
+});
+
 describe('mayorMovements', () => {
   const es = [
     { id: 'e1', date: '2026-09-05', desc: 'A', lines: [line('banco', 1000, 0), line('capital', 0, 1000)] },

@@ -632,6 +632,108 @@ document.getElementById('budgetsBox').addEventListener('change', ev => {
 });
 
 // ---------- Informes ----------
+const ASSET_COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#f472b6', '#a78bfa', '#2dd4bf', '#facc15', '#ef4444'];
+const MES_S = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function assetsSVG(data) {
+  const W = 640, H = 280, padL = 56, padR = 10, padT = 12, padB = 24;
+  const n = data.dates.length;
+  const all = data.total.concat(data.series.flatMap(s => s.points));
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const X = i => n < 2 ? padL : padL + (i * (W - padL - padR)) / (n - 1);
+  const Y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  const f1 = x => Math.round(x * 10) / 10;
+  let s = `<svg class="assets-chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">`;
+  for (let g = 0; g <= 4; g++) {
+    const v = lo + ((hi - lo) * g) / 4, y = Y(v);
+    s += `<line x1="${padL}" y1="${f1(y)}" x2="${W - padR}" y2="${f1(y)}" stroke="var(--line)"/>`;
+    s += `<text x="${padL - 6}" y="${f1(y + 4)}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(fmtNum(v))}</text>`;
+  }
+  let lastM = '';
+  data.dates.forEach((d, i) => {
+    const m = d.slice(5, 7);
+    if (m !== lastM) {
+      lastM = m;
+      s += `<text x="${f1(X(i))}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)">${MES_S[Number(m) - 1]}</text>`;
+    }
+  });
+  const path = pts => pts.map((v, i) => `${i ? 'L' : 'M'}${f1(X(i))},${f1(Y(v))}`).join('');
+  data.series.forEach((se, si) => {
+    const c = ASSET_COLORS[si % ASSET_COLORS.length];
+    s += `<path d="${path(se.points)}" fill="none" stroke="${c}" stroke-width="2"/>`;
+  });
+  s += `<path d="${path(data.total)}" fill="none" stroke="#e5e7eb" stroke-width="2.5" stroke-dasharray="7 4"/>`;
+  data.series.forEach((se, si) => {
+    const c = ASSET_COLORS[si % ASSET_COLORS.length];
+    se.points.forEach((v, i) => {
+      s += `<circle class="pt" cx="${f1(X(i))}" cy="${f1(Y(v))}" r="2.6" fill="${c}" data-s="${si}" data-i="${i}"><title>${esc(se.name)} · ${esc(NR.fmtDateES(data.dates[i]))} · ${esc(fmt(v))}</title></circle>`;
+    });
+  });
+  data.total.forEach((v, i) => {
+    s += `<circle class="pt" cx="${f1(X(i))}" cy="${f1(Y(v))}" r="2.6" fill="#e5e7eb" data-s="-1" data-i="${i}"><title>Patrimonio total · ${esc(NR.fmtDateES(data.dates[i]))} · ${esc(fmt(v))}</title></circle>`;
+  });
+  return s + '</svg>';
+}
+function monthEndBalance(monthKey) {
+  const accs = state.accounts.filter(a => !a.archived);
+  const t = NR.totalsByAccount(accs, state.entries.filter(e => (e.date || '') <= NR.monthEnd(monthKey)));
+  let tA = 0, tP = 0;
+  for (const a of accs) {
+    const b = NR.balanceOf(a, t);
+    if (a.type === 'Activo') tA = round2(tA + b);
+    if (a.type === 'Pasivo') tP = round2(tP + b);
+  }
+  const per = {};
+  for (const a of accs) if (a.type === 'Activo') per[a.id] = NR.balanceOf(a, t);
+  return { per, total: round2(tA - tP) };
+}
+function renderAssets() {
+  const box = document.getElementById('assetsBox');
+  const accs = state.accounts.filter(a => !a.archived && a.type === 'Activo');
+  if (!state.entries.length || !accs.length) {
+    box.innerHTML = '<p class="muted">Sin datos de activos todavía.</p>';
+    return;
+  }
+  const data = NR.balanceSeries(state.accounts, state.entries, 180);
+  const last = data.dates.length - 1;
+  const chips = data.series.map((se, si) =>
+    `<span class="legend-chip"><i style="background:${ASSET_COLORS[si % ASSET_COLORS.length]}"></i>${esc(se.name)} <strong>${fmt(se.points[last])}</strong></span>`).join('') +
+    `<span class="legend-chip total"><i></i>Patrimonio total <strong>${fmt(data.total[last])}</strong></span>`;
+  const months = [];
+  const now = new Date();
+  for (let k = 5; k >= 0; k--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - k, 1);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  const tabRows = months.map(mk => {
+    const b = monthEndBalance(mk);
+    return `<tr><td>${esc(NR.monthLabel(mk))}</td>` +
+      data.series.map(se => `<td class="num">${fmtNum(b.per[se.accountId] || 0)}</td>`).join('') +
+      `<td class="num"><strong>${fmtNum(b.total)}</strong></td></tr>`;
+  }).join('');
+  box.innerHTML = `<div class="legend">${chips}</div>` + assetsSVG(data) +
+    `<div id="assetsReadout" class="muted small assets-readout"></div>` +
+    `<details class="small muted"><summary>Ver saldos a fin de mes</summary>` +
+    `<table class="table"><thead><tr><th>Mes</th>` +
+    data.series.map(se => `<th class="num">${esc(se.name)}</th>`).join('') +
+    `<th class="num">Patrimonio</th></tr></thead><tbody>${tabRows}</tbody></table></details>`;
+  const readout = document.getElementById('assetsReadout');
+  const showLast = () => {
+    readout.textContent = `${NR.fmtDateES(data.dates[last])} · Patrimonio total: ${fmt(data.total[last])}`;
+  };
+  showLast();
+  box.querySelectorAll('circle.pt').forEach(c => {
+    const say = () => {
+      const i = Number(c.dataset.i), si = Number(c.dataset.s);
+      const name = si < 0 ? 'Patrimonio total' : data.series[si].name;
+      const v = si < 0 ? data.total[i] : data.series[si].points[i];
+      readout.textContent = `${NR.fmtDateES(data.dates[i])} · ${name}: ${fmt(v)}`;
+    };
+    c.addEventListener('mouseenter', say);
+    c.addEventListener('click', say);
+  });
+  box.querySelector('svg').addEventListener('mouseleave', showLast);
+}
 function pnlHTML(t) {
   const res = round2(t.Ingreso - t.Gasto);
   return `
@@ -647,6 +749,7 @@ let pnlMonth = NR.currentMonth();
 function setPnlMonth(ym) { pnlMonth = ym; renderReports(); }
 function renderReports() {
   renderBudgets();
+  renderAssets();
   const t = totalsByAccount();
   let td = 0, th = 0;
   document.getElementById('trialTable').querySelector('tbody').innerHTML = state.accounts

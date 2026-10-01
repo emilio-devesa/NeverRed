@@ -188,6 +188,13 @@ label.check input { width: auto; padding: 0; background: none; border: none; acc
 #pnlMonthNav[hidden] { display: none; }
 .mayor-toggle { margin: 2px 0 4px; }
 .pnl-toggle { margin: 2px 0 4px; }
+.assets-chart { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 8px; font-size: 13px; }
+.legend-chip { white-space: nowrap; }
+.legend-chip i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; }
+.legend-chip.total i { background: transparent; border: 2px dashed var(--muted); width: 8px; height: 6px; }
+.assets-readout { min-height: 20px; margin: 6px 0 2px; }
+circle.pt { cursor: pointer; }
 #diarioPrev[hidden], #diarioNext[hidden] { display: none; }
 .rec-head h3 { margin: 0; }
 .rec-head p { margin: 4px 0 0; }
