@@ -26,9 +26,6 @@ cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$RES/"
 cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
 cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
-# Lanzador shell clásico (v2.3.8): el ejecutable vuelve a ser el script para
-# recuperar el flujo Gatekeeper con "Abrir igualmente". El lanzador nativo
-# (packaging/macos/NeverRed.m) queda guardado en el repo por si vuelve.
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
 # Destino de telemetría del build (vacío = local pura). El coordinador lo
 # rellena con NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN para builds beta.

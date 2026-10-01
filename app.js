@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.3.8';
+const NEVERRED_BUILD = '2.3.9';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -642,6 +642,7 @@ function pnlHTML(t) {
     </tbody></table>
     <p class="muted small">${res >= 0 ? '🟢 Ganas más de lo que gastas. Sigue así.' : '🔴 Gastas más de lo que ingresas: revisa tus gastos.'}</p>`;
 }
+let pnlMonthly = false;
 let pnlMonth = NR.currentMonth();
 function setPnlMonth(ym) { pnlMonth = ym; renderReports(); }
 function renderReports() {
@@ -657,19 +658,21 @@ function renderReports() {
   document.getElementById('trialDebe').textContent = fmtNum(td);
   document.getElementById('trialHaber').textContent = fmtNum(th);
   document.getElementById('trialSaldo').textContent = td === th ? '✓ ' + fmtNum(td) : '✗ descuadre';
-  const tt = typeTotals();
-  document.getElementById('pnlBox').innerHTML = pnlHTML(tt);
+  const mEntries = pnlMonthly ? NR.entriesOfMonth(state.entries, pnlMonth) : null;
+  const tt = pnlMonthly ? NR.typeTotals(state.accounts, mEntries) : typeTotals();
+  document.getElementById('pnlBox').innerHTML = (pnlMonthly && !mEntries.length)
+    ? '<p class="muted">Sin movimientos este mes.</p>'
+    : pnlHTML(tt);
   const res = round2(tt.Ingreso - tt.Gasto);
-  // PyG del mes: mismos botones que el Diario, mes independiente.
-  const mEntries = NR.entriesOfMonth(state.entries, pnlMonth);
-  const mt = NR.typeTotals(state.accounts, mEntries);
-  document.getElementById('pnlMonthBox').innerHTML = mEntries.length ? pnlHTML(mt)
-    : '<p class="muted">Sin movimientos este mes.</p>';
-  document.getElementById('pnlMonthLabel').textContent = NR.monthLabel(pnlMonth);
-  const minM = NR.minMonth(state.entries);
-  document.getElementById('pnlPrev').disabled = !minM || pnlMonth <= minM;
-  document.getElementById('pnlNext').disabled = pnlMonth >= NR.currentMonth();
-  document.getElementById('pnlToday').hidden = pnlMonth === NR.currentMonth();
+  document.getElementById('pnlMonthNav').hidden = !pnlMonthly;
+  document.getElementById('pnlViewToggle').textContent = pnlMonthly ? 'Volver a la vista acumulada' : 'Vista mensual';
+  if (pnlMonthly) {
+    document.getElementById('pnlMonthLabel').textContent = NR.monthLabel(pnlMonth);
+    const minM = NR.minMonth(state.entries);
+    document.getElementById('pnlPrev').disabled = !minM || pnlMonth <= minM;
+    document.getElementById('pnlNext').disabled = pnlMonth >= NR.currentMonth();
+    document.getElementById('pnlToday').hidden = pnlMonth === NR.currentMonth();
+  }
   const net = round2(tt.Activo - tt.Pasivo);
   document.getElementById('balanceBox').innerHTML = `
     <table class="table"><tbody>
@@ -681,6 +684,11 @@ function renderReports() {
     </tbody></table>
     <p class="muted small">${round2(tt.Patrimonio + res) === net ? '✓ Activo − Pasivo = Patrimonio + Resultado.' : '✗ El balance no cuadra.'}</p>`;
 }
+document.getElementById('pnlViewToggle').addEventListener('click', () => {
+  pnlMonthly = !pnlMonthly;
+  if (pnlMonthly) pnlMonth = NR.currentMonth();
+  renderReports();
+});
 document.getElementById('pnlPrev').addEventListener('click', () => setPnlMonth(NR.addMonths(pnlMonth, -1)));
 document.getElementById('pnlNext').addEventListener('click', () => setPnlMonth(NR.addMonths(pnlMonth, 1)));
 document.getElementById('pnlToday').addEventListener('click', () => setPnlMonth(NR.currentMonth()));
@@ -1071,6 +1079,7 @@ function startSession(token, user) {
     else localStorage.removeItem('neverred_session');
   } catch {}
   clearDiarioFilters(); diarioMonth = NR.currentMonth(); pnlMonth = NR.currentMonth();
+  pnlMonthly = false;
   mayorMonthly = false; mayorMonth = NR.currentMonth();
   loadUserData().then(enterApp);
 }

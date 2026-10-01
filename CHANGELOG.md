@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.3.8 — Mayor mensual + vuelta al launcher shell
+## v2.3.9 — PyG como el Mayor + limpieza del lanzador
+- La cuenta de resultados vuelve a ser una sola tarjeta con enlace
+  **Vista mensual / Volver a la vista acumulada** (igual que el Mayor)
+- Fuera restos del lanzador nativo (ObjC/Swift): el ejecutable es el
+  script clásico y el primer arranque es el de siempre
 - El Mayor tiene **Vista mensual / Vista global**: enlace sobre la tabla
   con la misma navegación por meses (anterior/siguiente, volver al actual)
   y fila de **saldo inicial** con el arrastre anterior
