@@ -1,5 +1,12 @@
 # NeverRed — Historial de cambios
 
+## v2.5.0 — Evolución de los pasivos y gráficas compactas
+- Nueva tarjeta en Informes: saldo diario de cada pasivo en 180 días más
+  el total de pasivos, con valor al pasar el puntero y tabla de saldos
+  a fin de mes (igual que la de activos)
+- Gráficas de evolución a mitad de alto para que ambas tarjetas quepan
+  en pantalla sin desplazar tanto
+
 ## v2.4.1 — Evolución de los activos
 - Nueva tarjeta en Informes: saldo diario de cada activo en 180 días más
   patrimonio total (activos − pasivos), con valor al pasar el puntero
