@@ -1718,8 +1718,12 @@ function resetSimulators() {
 function drawStackedBars(canvasId, rows, cA, cB, legendA, legendB) {
   const cv = document.getElementById(canvasId);
   if (!cv) return;
+  // Mitad de alto que antes (proporción como las evoluciones) y doble
+  // resolución interna: el CSS lo encoge y el texto queda nítido.
+  const W = 600, H = 160, SCALE = 2;
+  cv.width = W * SCALE; cv.height = H * SCALE;
   const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const max = Math.max(1, ...rows.map(r => r.a + r.b));
   const n = rows.length, slot = W / n, bw = Math.min(26, slot * 0.55);
