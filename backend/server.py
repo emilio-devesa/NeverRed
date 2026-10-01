@@ -170,6 +170,10 @@ def init_db():
             fetched_at INTEGER NOT NULL,
             points TEXT NOT NULL DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS market_keys (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            api_key TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS market_meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL DEFAULT ''
@@ -616,41 +620,47 @@ _market_last_call = 0
 
 
 def _market_key_path():
+    # Legado (clave global compartida): ya no se usa; se elimina al arrancar.
     return os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "market.key")
 
 
-def market_key():
-    """Clave efectiva: entorno manda; si no, fichero local. '' = sin configurar."""
-    env = (os.environ.get("NEVERRED_ALPHA_VANTAGE_KEY") or "").strip()
-    if env:
-        return env
+def user_market_key(user_id):
+    """Clave efectiva del usuario: la suya propia; si no tiene, el valor por
+    defecto de la instalación (entorno, normalmente vacío). '' = sin clave."""
+    con = db()
     try:
-        with open(_market_key_path()) as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+        row = con.execute("SELECT api_key FROM market_keys WHERE user_id = ?",
+                          (user_id,)).fetchone()
+    finally:
+        con.close()
+    if row and row["api_key"]:
+        return row["api_key"]
+    return (os.environ.get("NEVERRED_ALPHA_VANTAGE_KEY") or "").strip()
 
 
-def set_market_key(key):
-    """Guarda la clave en fichero solo-legible. None = formato inválido."""
+def set_user_market_key(user_id, key):
+    """Guarda la clave propia del usuario. None = formato inválido."""
     key = (key or "").strip()
     if not MARKET_KEY_RE.match(key):
         return None
-    path = _market_key_path()
-    with open(path, "w") as f:
-        f.write(key + "\n")
+    con = db()
     try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+        con.execute("INSERT INTO market_keys (user_id, api_key) VALUES (?,?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET api_key=excluded.api_key",
+                    (user_id, key))
+        con.commit()
+    finally:
+        con.close()
     return True
 
 
-def clear_market_key():
+def clear_user_market_key(user_id):
+    con = db()
     try:
-        os.remove(_market_key_path())
-    except OSError:
-        pass
+        con.execute("DELETE FROM market_keys WHERE user_id = ?", (user_id,))
+        con.commit()
+    finally:
+        con.close()
 
 
 def normalize_symbol(raw):
@@ -1164,6 +1174,8 @@ class Handler(BaseHTTPRequestHandler):
         con = db()
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM market_tickers WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM market_keys WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM telemetry_consent WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
@@ -1436,7 +1448,8 @@ class Handler(BaseHTTPRequestHandler):
         con.close()
         # Ojo: jamás se devuelve la clave, solo si hay alguna configurada.
         used, limit = _av_quota()
-        self._send_json(200, {"configured": bool(market_key()), "tickers": n,
+        self._send_json(200, {"configured": bool(user_market_key(user["id"])),
+                              "tickers": n,
                               "quota": None if used is None
                               else {"used": used, "limit": limit}})
 
@@ -1447,7 +1460,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_json()
         if not body:
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
-        if set_market_key(body.get("key")) is None:
+        if set_user_market_key(user["id"], body.get("key")) is None:
             return self._send_json(400, {"error": "Clave no válida."})
         audit("market_key", user["id"])
         self._send_json(200, {"ok": True, "configured": True})
@@ -1456,7 +1469,7 @@ class Handler(BaseHTTPRequestHandler):
         user = self._auth_user()
         if user is None:
             return self._send_json(401, {"error": "Sesión no válida."})
-        clear_market_key()
+        clear_user_market_key(user["id"])
         audit("market_key_del", user["id"])
         self._send_json(200, {"ok": True, "configured": False})
 
@@ -1497,7 +1510,7 @@ class Handler(BaseHTTPRequestHandler):
         symbol = normalize_symbol(body.get("symbol"))
         if not MARKET_SYMBOL_RE.match(symbol):
             return self._send_json(400, {"error": "Símbolo no válido (p. ej. AAPL, GOOG)."})
-        key = market_key()
+        key = user_market_key(user["id"])
         if not key:
             return self._send_json(400, {"error": "Configura primero tu clave de Alpha Vantage."})
         code, obj = market_history(symbol, key)
@@ -1533,7 +1546,7 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(urlparse(self.path).query)
         symbol = normalize_symbol((qs.get("symbol") or [""])[0])
         force = (qs.get("refresh") or [""])[0] == "1"
-        key = market_key()
+        key = user_market_key(user["id"])
         if not key:
             return self._send_json(400, {"error": "Configura primero tu clave de Alpha Vantage."})
         code, obj = market_history(symbol, key, force=force)
@@ -1676,6 +1689,13 @@ def main():
     # (BD, -wal, logs) nace solo-legible por el dueño.
     os.umask(0o077)
     init_db()
+    # Legado: la clave global compartida ya no se usa (ahora es por usuario).
+    try:
+        if os.path.isfile(_market_key_path()):
+            os.remove(_market_key_path())
+            print("[neverred] market.key global eliminado (las claves son por usuario).")
+    except OSError:
+        pass
     for p in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
         try:
             if os.path.isfile(p):

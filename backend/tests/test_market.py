@@ -116,7 +116,7 @@ class MarketApiCase(unittest.TestCase):
 
         def fake_av(symbol, key, full):
             cls.calls.append((symbol, full))
-            assert key == "TESTKEY123456789", "la clave nunca debe viajar al frontal"
+            assert key, "la llamada saliente necesita clave del servidor"
             return cls.payload
 
         server._av_get = fake_av
@@ -144,29 +144,64 @@ class MarketApiCase(unittest.TestCase):
         self.assertTrue(body["configured"])
         self.assertNotIn("TESTKEY", json.dumps(body))
 
-    def test_clave_formato_y_borrado(self):
-        tok = mkuser(self.port, "mkt2")
-        st, _ = call(self.port, "/api/market/key", "POST", {"key": "corta"}, token=tok)
+    def test_clave_por_usuario(self):
+        tokA = mkuser(self.port, "mktk1")
+        tokB = mkuser(self.port, "mktk2")
+        st, _ = call(self.port, "/api/market/key", "POST", {"key": "corta"}, token=tokA)
         self.assertEqual(st, 400)
         saved = os.environ.pop("NEVERRED_ALPHA_VANTAGE_KEY")
         try:
+            # A configura la suya; B sigue sin clave.
             st, body = call(self.port, "/api/market/key", "POST",
-                            {"key": "MiClaveValida16"}, token=tok)
+                            {"key": "ClaveDeA12345678"}, token=tokA)
             self.assertEqual(st, 200)
-            self.assertTrue(body["configured"])
-            st, body = call(self.port, "/api/market/status", token=tok)
-            self.assertTrue(body["configured"])
-            st, body = call(self.port, "/api/market/tickers", "DELETE",
-                            token=tok)
-            # DELETE sin símbolo no rompe
+            _, sA = call(self.port, "/api/market/status", token=tokA)
+            _, sB = call(self.port, "/api/market/status", token=tokB)
+            self.assertTrue(sA["configured"])
+            self.assertFalse(sB["configured"])
+            # B no puede añadir sin clave; A sí.
+            server._market_last_call = 0
+            st, _ = call(self.port, "/api/market/tickers", "POST",
+                         {"symbol": "KEYA"}, token=tokB)
+            self.assertEqual(st, 400)
+            server._market_last_call = 0
+            st, body = call(self.port, "/api/market/tickers", "POST",
+                            {"symbol": "KEYA"}, token=tokA)
+            self.assertEqual(st, 200, body)
+            # A la borra y se queda sin clave (sin defecto de instalación).
+            st, _ = call(self.port, "/api/market/key", "DELETE", token=tokA)
             self.assertEqual(st, 200)
-            st, _ = call(self.port, "/api/market/key", "DELETE", token=tok)
-            self.assertEqual(st, 200)
-            st, body = call(self.port, "/api/market/status", token=tok)
-            self.assertFalse(body["configured"])
+            _, sA = call(self.port, "/api/market/status", token=tokA)
+            self.assertFalse(sA["configured"])
         finally:
             os.environ["NEVERRED_ALPHA_VANTAGE_KEY"] = saved
-            server.clear_market_key()
+
+    def test_borrado_cuenta_limpia_mercado(self):
+        tok = mkuser(self.port, "mkdel")
+        server._market_last_call = 0
+        st, _ = call(self.port, "/api/market/tickers", "POST",
+                     {"symbol": "BYE"}, token=tok)
+        self.assertEqual(st, 200)
+        st, _ = call(self.port, "/api/market/key", "POST",
+                     {"key": "ClaveBye12345678"}, token=tok)
+        self.assertEqual(st, 200)
+        con = server.db()
+        uid = con.execute("SELECT id FROM users WHERE email = ?",
+                          ("mkdel@m.local",)).fetchone()["id"]
+        con.close()
+        st, _ = call(self.port, "/api/account", "DELETE",
+                     {"current": "secreta123"}, token=tok)
+        self.assertEqual(st, 200)
+        con = server.db()
+        try:
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM market_tickers WHERE user_id = ?",
+                (uid,)).fetchone()[0], 0)
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM market_keys WHERE user_id = ?",
+                (uid,)).fetchone()[0], 0)
+        finally:
+            con.close()
 
     def test_add_lista_historial_borrado(self):
         tok = mkuser(self.port, "mkt3")
