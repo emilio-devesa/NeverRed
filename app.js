@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.3.7';
+const NEVERRED_BUILD = '2.3.8';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -523,6 +523,8 @@ function switchTab(name) {
 }
 
 // ---------- Mayor ----------
+let mayorMonthly = false;
+let mayorMonth = NR.currentMonth();
 function renderMayor() {
   const sel = document.getElementById('mayorAccount');
   const prev = sel.value;
@@ -533,23 +535,39 @@ function renderMayor() {
   const acc = accById(sel.value) || state.accounts[0];
   if (!acc) { document.getElementById('mayorTable').querySelector('tbody').innerHTML = ''; return; }
   const q = (document.getElementById('mayorSearch').value || '').toLowerCase();
+  const r = NR.mayorMovements(state.entries, acc.id, acc.type, mayorMonthly ? mayorMonth : null);
   const rows = [];
-  let run = 0;
-  const entries = [...state.entries].sort((a, b) => a.date.localeCompare(b.date));
-  for (const e of entries) for (const l of e.lines) {
-    if (l.accountId !== acc.id) continue;
-    const d = Number(l.debit) || 0, h = Number(l.credit) || 0;
-    run = round2(run + (DEBIT_NATURE.has(acc.type) ? d - h : h - d));
-    if (q && !e.desc.toLowerCase().includes(q) && !e.date.includes(q)) continue;
-    rows.push(`<tr><td>${esc(e.date)}</td><td>${esc(e.desc)}</td><td>${esc(acc.name)}</td>
-      <td class="num">${d ? fmtNum(d) : ''}</td><td class="num">${h ? fmtNum(h) : ''}</td><td class="num"><strong>${fmt(run)}</strong></td></tr>`);
+  if (mayorMonthly && r.inicial !== 0) {
+    rows.push(`<tr><td>—</td><td colspan="2">Saldo inicial</td><td class="num"></td><td class="num"></td><td class="num"><strong>${fmt(r.inicial)}</strong></td></tr>`);
+  }
+  for (const m of r.movs) {
+    if (q && !m.desc.toLowerCase().includes(q) && !m.date.includes(q)) continue;
+    rows.push(`<tr><td>${esc(m.date)}</td><td>${esc(m.desc)}</td><td>${esc(acc.name)}</td>
+      <td class="num">${m.d ? fmtNum(m.d) : ''}</td><td class="num">${m.h ? fmtNum(m.h) : ''}</td><td class="num"><strong>${fmt(m.run)}</strong></td></tr>`);
   }
   document.getElementById('mayorName').textContent = `${acc.code} · ${acc.name}`;
-  document.getElementById('mayorBalance').textContent = fmt(run);
+  document.getElementById('mayorBalance').textContent = fmt(r.final);
   document.getElementById('mayorNature').textContent = `${acc.type} · ${DEBIT_NATURE.has(acc.type) ? 'deudora' : 'acreedora'}`;
   document.getElementById('mayorTable').querySelector('tbody').innerHTML =
     rows.join('') || '<tr><td colspan="6" class="muted">Sin movimientos en esta cuenta.</td></tr>';
+  document.getElementById('mayorMonthNav').hidden = !mayorMonthly;
+  document.getElementById('mayorViewToggle').textContent = mayorMonthly ? 'Vista global' : 'Vista mensual';
+  if (mayorMonthly) {
+    document.getElementById('mayorMonthLabel').textContent = NR.monthLabel(mayorMonth);
+    const minM = NR.minMonth(state.entries);
+    document.getElementById('mayorPrev').disabled = !minM || mayorMonth <= minM;
+    document.getElementById('mayorNext').disabled = mayorMonth >= NR.currentMonth();
+    document.getElementById('mayorToday').hidden = mayorMonth === NR.currentMonth();
+  }
 }
+document.getElementById('mayorViewToggle').addEventListener('click', () => {
+  mayorMonthly = !mayorMonthly;
+  if (mayorMonthly) mayorMonth = NR.currentMonth();
+  renderMayor();
+});
+document.getElementById('mayorPrev').addEventListener('click', () => { mayorMonth = NR.addMonths(mayorMonth, -1); renderMayor(); });
+document.getElementById('mayorNext').addEventListener('click', () => { mayorMonth = NR.addMonths(mayorMonth, 1); renderMayor(); });
+document.getElementById('mayorToday').addEventListener('click', () => { mayorMonth = NR.currentMonth(); renderMayor(); });
 document.getElementById('mayorAccount').addEventListener('change', renderMayor);
 document.getElementById('mayorSearch').addEventListener('input', renderMayor);
 
@@ -1053,6 +1071,7 @@ function startSession(token, user) {
     else localStorage.removeItem('neverred_session');
   } catch {}
   clearDiarioFilters(); diarioMonth = NR.currentMonth(); pnlMonth = NR.currentMonth();
+  mayorMonthly = false; mayorMonth = NR.currentMonth();
   loadUserData().then(enterApp);
 }
 /** Contabilidad vacía con el plan de cuentas base: cada usuario empieza de cero. */

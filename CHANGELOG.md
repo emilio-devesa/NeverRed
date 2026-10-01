@@ -1,6 +1,11 @@
 # NeverRed — Historial de cambios
 
-## v2.3.7 — El diálogo cuenta las novedades
+## v2.3.8 — Mayor mensual + vuelta al launcher shell
+- El Mayor tiene **Vista mensual / Vista global**: enlace sobre la tabla
+  con la misma navegación por meses (anterior/siguiente, volver al actual)
+  y fila de **saldo inicial** con el arrastre anterior
+- El ejecutable de macOS vuelve a ser el script clásico (flujo Gatekeeper
+  con Abrir igualmente); el lanzador nativo queda guardado en el repo
 - La actualización muestra qué trae la versión (antes enseñaba las
   instrucciones de descarga); las releases traen "Novedades" del historial
 - El diálogo dice qué versión tienes y cuál hay, y tranquiliza: los datos

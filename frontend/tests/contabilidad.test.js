@@ -117,3 +117,39 @@ describe('navegación por meses', () => {
     assert.equal(tt2.Ingreso - tt2.Gasto, -20);
   });
 });
+
+describe('mayorMovements', () => {
+  const es = [
+    { id: 'e1', date: '2026-09-05', desc: 'A', lines: [line('banco', 1000, 0), line('capital', 0, 1000)] },
+    { id: 'e2', date: '2026-09-20', desc: 'B', lines: [line('comida', 60, 0), line('banco', 0, 60)] },
+    { id: 'e3', date: '2026-10-02', desc: 'C', lines: [line('banco', 500, 0), line('sueldo', 0, 500)] },
+  ];
+  it('global: saldo corrido completo', () => {
+    const r = NR.mayorMovements(es, 'banco', 'Activo', null);
+    assert.equal(r.inicial, 0);
+    assert.equal(r.movs.length, 3);
+    assert.deepEqual(r.movs.map(m => m.run), [1000, 940, 1440]);
+    assert.equal(r.final, 1440);
+  });
+  it('mensual: arrastra lo anterior y corta lo posterior', () => {
+    const r = NR.mayorMovements(es, 'banco', 'Activo', '2026-10');
+    assert.equal(r.inicial, 940);
+    assert.equal(r.movs.length, 1);
+    assert.equal(r.movs[0].run, 1440);
+    assert.equal(r.final, 1440);
+  });
+  it('mensual sin movimientos: conserva el arrastre', () => {
+    const r = NR.mayorMovements(es, 'banco', 'Activo', '2026-08');
+    assert.deepEqual(r.movs, []);
+    assert.equal(r.inicial, 0);
+    assert.equal(r.final, 0);
+    const r2 = NR.mayorMovements(es, 'comida', 'Gasto', '2026-10');
+    assert.deepEqual(r2.movs, []);
+    assert.equal(r2.inicial, 60);
+    assert.equal(r2.final, 60);
+  });
+  it('respeta la naturaleza acreedora', () => {
+    const r = NR.mayorMovements(es, 'capital', 'Patrimonio', null);
+    assert.deepEqual(r.movs.map(m => m.run), [1000]);
+  });
+});
