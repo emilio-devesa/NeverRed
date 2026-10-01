@@ -1556,7 +1556,7 @@ function renderMarket() {
       const c = TREND_COLOR[t.trend] || TREND_COLOR.flat;
       const pct = (t.change_pct >= 0 ? '+' : '') + fmtNum(t.change_pct) + ' %';
       return `<div class="card ticker-card">
-        <div class="ticker-head"><strong>${esc(t.symbol)}</strong>
+        <div class="ticker-head"><strong><a href="https://es.finance.yahoo.com/quote/${encodeURIComponent(t.symbol)}/" target="_blank" rel="noopener" title="Ver ${esc(t.symbol)} en Yahoo Finanzas">${esc(t.symbol)} ↗</a></strong>
           <span style="color:${c}">${TREND_ARROW[t.trend] || ''} ${pct} (${TREND_WORD[t.trend] || ''})</span>
           <span class="muted small">cierre: ${esc(fmtNum(t.last))} · ${esc(marketWhen(t.cached_at))}${t.stale ? ' · desactualizado' : ''}</span>
           <span class="spacer"></span>

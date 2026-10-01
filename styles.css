@@ -225,6 +225,8 @@ canvas { width: 100%; height: auto; background: var(--panel2); border-radius: 10
 .subtab.active { border-color: var(--green); color: var(--text); }
 .ticker-card { margin-top: 12px; }
 .ticker-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ticker-head strong a { color: var(--text); text-decoration: underline dotted; }
+.ticker-head strong a:hover { text-decoration: underline; }
 .ticker-chart { margin-top: 8px; }
 .ticker-readout { min-height: 1.2em; margin-top: 4px; }
 
