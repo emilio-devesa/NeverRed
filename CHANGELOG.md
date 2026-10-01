@@ -1,6 +1,9 @@
 # NeverRed — Historial de cambios
 
-## v2.3.0 — Diario paginado por meses
+## v2.3.1 — Navegación de mes pulida
+- Anterior a la izquierda, mes centrado, Siguiente a la derecha (rejilla real)
+- Botones deshabilitados en gris para que se entienda el límite
+- Enlace "Volver al mes en curso" bajo el mes cuando no es el actual
 - Los asientos se ven mes a mes, con "Mes anterior / Mes siguiente" encima
   de la lista (anterior se deshabilita sin historial; siguiente, en el mes actual)
 - Desde/Hasta quedan como refinamiento por día dentro del mes visible

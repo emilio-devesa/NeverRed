@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.3.0';
+const NEVERRED_BUILD = '2.3.1';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -463,6 +463,7 @@ function renderDiario() {
       ? '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>'
       : '<p class="muted">Este mes no tiene asientos todavía.</p>');
   document.getElementById('diarioMonthLabel').textContent = NR.monthLabel(diarioMonth);
+  document.getElementById('diarioToday').hidden = diarioMonth === NR.currentMonth();
   const minM = NR.minMonth(state.entries);
   document.getElementById('diarioPrev').disabled = !minM || diarioMonth <= minM;
   document.getElementById('diarioNext').disabled = diarioMonth >= NR.currentMonth();
@@ -481,6 +482,7 @@ function setDiarioMonth(ym) {
 }
 document.getElementById('diarioPrev').addEventListener('click', () => setDiarioMonth(NR.addMonths(diarioMonth, -1)));
 document.getElementById('diarioNext').addEventListener('click', () => setDiarioMonth(NR.addMonths(diarioMonth, 1)));
+document.getElementById('diarioToday').addEventListener('click', () => setDiarioMonth(NR.currentMonth()));
 function dupeEntry(id) {
   const e = state.entries.find(x => x.id === id);
   if (!e) return;
