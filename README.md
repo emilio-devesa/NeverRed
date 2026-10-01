@@ -114,7 +114,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 - **Libro diario**: asientos con N líneas, validación `Debe = Haber`, edición, borrado, filtros y búsqueda.
 - **Libro mayor**: movimientos y saldo acumulado por cuenta, con naturaleza deudora/acreedora.
 - **Plan de cuentas**: 5 familias (Activo, Pasivo, Patrimonio, Ingreso, Gasto), crear/editar/archivar.
-- **Informes**: balance de comprobación (con CSV), cuenta de resultados (PyG) y balance general.
+- **Informes**: balance general y PyG lado a lado, evolución diaria de activos
+  y pasivos (con gráficas plegables), balance de comprobación (con CSV).
+- **Herramientas**: Mercado (gráficas de tickers con tu clave gratuita de
+  Alpha Vantage), simulador de préstamos y simulador de rendimientos.
 - **Panel**: patrimonio neto, ecuación fundamental en vivo, gráfico ingresos vs gastos 6 meses, accesos rápidos (sueldo, gasto, transferencia).
 - **Presupuestos**: límite mensual por gasto con avisos al 80 % y al superar.
 - **Recurrentes**: plantillas mensuales (nómina, alquiler) con generación sin duplicados.

@@ -15,6 +15,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 backend/tests/test_server.py
+      - run: python3 backend/tests/test_market.py
 
   frontend:
     runs-on: ubuntu-latest

@@ -1,5 +1,20 @@
 # NeverRed — Historial de cambios
 
+## v2.6.0 — Herramientas: Mercado y simuladores
+- Nueva pestaña **Herramientas** con tres utilidades
+- **Mercado**: añade tickers (AAPL, GOOG, AIR.MC…) y ve su gráfica de
+  los últimos meses en verde/rojo según vaya al alza o a la baja, con
+  máximos, mínimos y variación del periodo; cada ticker enlaza a su ficha
+  de Yahoo Finanzas. Necesita tu clave gratuita de Alpha Vantage (cada
+  usuario guarda la suya; la app te dice dónde conseguirla y cuánta cuota
+  diaria te queda)
+- **Simulador de préstamos**: cuota mensual, total e intereses de un
+  préstamo francés, con gráfica anual y tabla año por año
+- **Simulador de rendimientos**: interés compuesto con aportaciones
+  mensuales, con gráfica anual y tabla año por año
+- Informes reordenados: Balance y PyG arriba lado a lado; evoluciones
+  y comprobación plegables para una página más recogida
+
 ## v2.5.0 — Evolución de los pasivos y gráficas compactas
 - Nueva tarjeta en Informes: saldo diario de cada pasivo en 180 días más
   el total de pasivos, con valor al pasar el puntero y tabla de saldos
