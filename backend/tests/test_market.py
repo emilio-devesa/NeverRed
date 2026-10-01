@@ -214,6 +214,33 @@ class MarketApiCase(unittest.TestCase):
         finally:
             type(self).payload = cls_payload
 
+    def test_modo_compact_recordado(self):
+        # full premium una sola vez: luego va directo a compact (1 llamada).
+        tok = mkuser(self.port, "mkt6")
+        calls = type(self).calls
+        orig = server._av_get
+        server.MARKET_RETRY_DELAY = 0
+        try:
+            def fake_premium(symbol, key, full):
+                calls.append((symbol, full))
+                if full:
+                    return {"Information": "The outputsize=full parameter value "
+                                           "is a premium feature"}
+                return type(self).payload
+            server._av_get = fake_premium
+            st, body = call(self.port, "/api/market/tickers", "POST",
+                            {"symbol": "MODEA"}, token=tok)
+            self.assertEqual(st, 200, body)
+            self.assertEqual([c[1] for c in calls], [True, False])
+            calls.clear()
+            server._market_last_call = 0  # el guard de cuota no pinta aquí
+            st, body = call(self.port, "/api/market/tickers", "POST",
+                            {"symbol": "MODEB"}, token=tok)
+            self.assertEqual(st, 200, body)
+            self.assertEqual([c[1] for c in calls], [False])  # solo compact
+        finally:
+            server._av_get = orig
+
     def test_sin_clave(self):
         tok = mkuser(self.port, "mkt5")
         saved = os.environ.pop("NEVERRED_ALPHA_VANTAGE_KEY")

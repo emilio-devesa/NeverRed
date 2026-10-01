@@ -170,6 +170,10 @@ def init_db():
             fetched_at INTEGER NOT NULL,
             points TEXT NOT NULL DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS market_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
         """
     )
     con.commit()
@@ -602,6 +606,9 @@ def validate_data(body):
 MARKET_DAYS = 180
 MARKET_TTL = 86400
 MARKET_MIN_GAP = 12
+# Pausa antes de reintentar con compact tras un full premium: la API pide
+# ~1 petición/segundo en cuota gratuita y dos llamadas seguidas la disparan.
+MARKET_RETRY_DELAY = 2
 MARKET_SYMBOL_RE = re.compile(r"^[A-Z0-9.\-:]{1,12}$")
 MARKET_KEY_RE = re.compile(r"^[A-Za-z0-9]{8,32}$")
 _market_lock = threading.Lock()
@@ -715,6 +722,26 @@ def _market_stats(closes):
             "change_pct": pct, "trend": trend, "points": len(closes)}
 
 
+def _market_meta(key):
+    con = db()
+    try:
+        row = con.execute("SELECT value FROM market_meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else ""
+    finally:
+        con.close()
+
+
+def _market_set_meta(key, value):
+    con = db()
+    try:
+        con.execute("INSERT INTO market_meta (key, value) VALUES (?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, value))
+        con.commit()
+    finally:
+        con.close()
+
+
 def market_history(symbol, key, force=False):
     """Serie de un símbolo. (code, obj) con code 200/404/429/502.
 
@@ -753,10 +780,18 @@ def market_history(symbol, key, force=False):
                 return 200, out
             return 429, {"error": "Cuota de la API: reintenta en %d s." % wait}
         _market_last_call = int(time.time())
-    payload = _av_get(symbol, key, full=True)
-    if isinstance(payload, dict) and "Information" in payload \
-            and "premium" in str(payload["Information"]).lower():
-        payload = _av_get(symbol, key, full=False)  # full es premium: compact
+    payload = None
+    if _market_meta("mode") == "compact":
+        payload = _av_get(symbol, key, full=False)  # clave gratuita: 1 llamada
+    else:
+        payload = _av_get(symbol, key, full=True)
+        if isinstance(payload, dict) and "Information" in payload \
+                and "premium" in str(payload["Information"]).lower():
+            # El full diario es premium: recordar modo compact para no
+            # repetir el gasto, y pausar antes del reintento (límite 1 req/s).
+            _market_set_meta("mode", "compact")
+            time.sleep(MARKET_RETRY_DELAY)
+            payload = _av_get(symbol, key, full=False)
     data, err = parse_av_daily(payload or {})
     con = db()
     if err is None:
