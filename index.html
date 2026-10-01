@@ -237,19 +237,42 @@
     <!-- INFORMES -->
     <section id="view-informes" class="view">
       <div class="toolbar"><h2>Informes</h2></div>
-      <div class="card">
-        <h3>Evolución de los activos</h3>
-        <p class="muted small">Saldo diario de cada activo en los últimos 180 días, más el patrimonio total (activos − pasivos). Pasa el puntero por un punto para ver su valor.</p>
-        <div id="assetsBox"></div>
-      </div>
-      <div class="card">
-        <h3>Evolución de los pasivos</h3>
-        <p class="muted small">Saldo diario de cada pasivo en los últimos 180 días, más el total de pasivos. Pasa el puntero por un punto para ver su valor.</p>
-        <div id="liabBox"></div>
-      </div>
       <div class="grid-2">
         <div class="card">
-          <h3>Balance de comprobación</h3>
+          <h3>Balance general</h3>
+          <div id="balanceBox"></div>
+        </div>
+        <div class="card">
+          <h3>Cuenta de resultados (PyG)</h3>
+          <div class="pnl-toggle"><button class="linklike" id="pnlViewToggle" type="button">Vista mensual</button></div>
+          <div class="month-nav" id="pnlMonthNav" hidden>
+            <button class="btn ghost" id="pnlPrev" type="button">‹ Mes anterior</button>
+            <div class="month-mid">
+              <strong id="pnlMonthLabel">—</strong><br />
+              <button class="linklike" id="pnlToday" type="button" hidden>Volver al mes en curso</button>
+            </div>
+            <button class="btn ghost" id="pnlNext" type="button">Mes siguiente ›</button>
+          </div>
+          <div id="pnlBox"></div>
+        </div>
+      </div>
+      <div class="card">
+        <details class="fold" open>
+          <summary>Evolución de los activos</summary>
+          <p class="muted small">Saldo diario de cada activo en los últimos 180 días, más el patrimonio total (activos − pasivos). Pasa el puntero por un punto para ver su valor.</p>
+          <div id="assetsBox"></div>
+        </details>
+      </div>
+      <div class="card">
+        <details class="fold" open>
+          <summary>Evolución de los pasivos</summary>
+          <p class="muted small">Saldo diario de cada pasivo en los últimos 180 días, más el total de pasivos. Pasa el puntero por un punto para ver su valor.</p>
+          <div id="liabBox"></div>
+        </details>
+      </div>
+      <div class="card">
+        <details class="fold">
+          <summary>Balance de comprobación</summary>
           <p class="muted">Suma de debe, haber y saldo por cuenta. El total debe cuadrar.</p>
           <table class="table" id="trialTable">
             <thead><tr><th>Cuenta</th><th>Tipo</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
@@ -257,26 +280,7 @@
             <tfoot><tr><th colspan="2">Totales</th><th class="num" id="trialDebe">—</th><th class="num" id="trialHaber">—</th><th class="num" id="trialSaldo">—</th></tr></tfoot>
           </table>
           <button class="btn ghost" id="btnCsvTrial">Descargar CSV</button>
-        </div>
-        <div>
-          <div class="card">
-            <h3>Cuenta de resultados (PyG)</h3>
-            <div class="pnl-toggle"><button class="linklike" id="pnlViewToggle" type="button">Vista mensual</button></div>
-            <div class="month-nav" id="pnlMonthNav" hidden>
-              <button class="btn ghost" id="pnlPrev" type="button">‹ Mes anterior</button>
-              <div class="month-mid">
-                <strong id="pnlMonthLabel">—</strong><br />
-                <button class="linklike" id="pnlToday" type="button" hidden>Volver al mes en curso</button>
-              </div>
-              <button class="btn ghost" id="pnlNext" type="button">Mes siguiente ›</button>
-            </div>
-            <div id="pnlBox"></div>
-          </div>
-          <div class="card">
-            <h3>Balance general</h3>
-            <div id="balanceBox"></div>
-          </div>
-        </div>
+        </details>
       </div>
       <div class="card">
         <h3>Presupuestos del mes</h3>
