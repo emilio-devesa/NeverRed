@@ -80,7 +80,7 @@ NOTES="$(printf '%s' "$EVAL" | tail -n +4)"
 [ -z "$REMOTE" ] || [ -z "$ASSET" ] && exit 0
 
 mkdir -p "$DATA"
-if [ -f "$DATA/skipped_version" ] && [ "$(cat "$DATA/skipped_version")" = "$REMOTE" ]; then ulog "omitida $REMOTE (local=$LOCAL)"; exit 0; fi
+if [ -f "$DATA/skipped_version" ] && [ "$(cat "$DATA/skipped_version")" = "$REMOTE" ]; then ulog "ya instalada $REMOTE (local=$LOCAL)"; exit 0; fi
 
 # Versiones por entorno: el tag viene de la red y nunca se interpola en código.
 NEWER="$(REMOTE="$REMOTE" LOCAL="$LOCAL" python3 -c '
@@ -105,7 +105,7 @@ NOTES_FILE="$DATA/release-notes.txt"
 printf '%s' "$NOTES" > "$NOTES_FILE"
 CHOICE=""
 if [ -n "$TKPY" ]; then
-  CHOICE="$($TKPY "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+  CHOICE="$($TKPY "$MACOS_DIR/update-dialog.py" "$REMOTE" "$NOTES_FILE" "$LOCAL" 2>/dev/null)"
 fi
 case "$CHOICE" in
   install) CHOICE='Instalar' ;;
@@ -113,10 +113,13 @@ case "$CHOICE" in
   later) CHOICE='Más tarde' ;;
 esac
 if [ -z "$CHOICE" ]; then
-  CHOICE="$(NOTES="$NOTES" REMOTE="$REMOTE" osascript -e '
-set notes to system attribute "NOTES"
+  # Sin comillas: romperían el AppleScript. Recorte a lo que cabe en el diálogo.
+  SHORTNOTES="$(printf '%s' "$NOTES" | tr -d '"' | head -c 400)"
+  CHOICE="$(SHORTNOTES="$SHORTNOTES" REMOTE="$REMOTE" LOCAL="$LOCAL" osascript -e '
+set notes to system attribute "SHORTNOTES"
 set ver to system attribute "REMOTE"
-display dialog "Hay una nueva versión de NeverRed (" & ver & ") disponible." & return & return & notes buttons {"Omitir versión", "Más tarde", "Instalar"} default button "Instalar" cancel button "Más tarde" with title "Actualización de NeverRed" giving up after 120
+set loc to system attribute "LOCAL"
+display dialog "NeverRed " & ver & " disponible (tienes " & loc & ")." & return & return & notes buttons {"Omitir versión", "Más tarde", "Instalar"} default button "Instalar" cancel button "Más tarde" with title "Actualización de NeverRed" giving up after 120
 ' 2>/dev/null | sed -n 's/.*button returned:\(.*\)/\1/p')" || exit 0
 fi
 

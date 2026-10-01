@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Diálogo de actualización de NeverRed (Tkinter, de serie en macOS).
 
-La pregunta va separada de los cambios: estos aparecen en un campo de
-texto con unas pocas líneas a la vista y barras de desplazamiento.
+Cuenta qué trae la versión, con las novedades en un campo con scroll, y
+tranquiliza: los datos se conservan y la descarga se verifica con firma.
 
-Uso: update-dialog.py <versión> <fichero-changelog>
+Uso: update-dialog.py <remota> <fichero-notas> [local]
 Imprime: install | later | skip.
 NEVERRED_DIALOG_TIMEOUT_MS autocierra como 'later' (para pruebas).
 """
@@ -13,21 +13,35 @@ import sys
 import tkinter as tk
 from tkinter import scrolledtext
 
+FALLBACK = ("Mejoras internas y correcciones de errores.\n\n"
+            "Tus datos y ajustes se conservan tal cual.")
+
 
 def main():
-    version, path = sys.argv[1], sys.argv[2]
-    with open(path, encoding="utf-8", errors="replace") as f:
-        notes = f.read()[:2000]
+    remote = sys.argv[1]
+    with open(sys.argv[2], encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+    # Las notas pueden traer el bloque de descarga al final: en la app sobra
+    # (el usuario ya la tiene instalada); nos quedamos con las novedades.
+    notes = raw.split("## Descargar")[0].strip()[:2000] or FALLBACK
+    local = sys.argv[3] if len(sys.argv) > 3 else ""
+    same = local and local.lstrip("v") == remote.lstrip("v")
     choice = {"v": "later"}
     root = tk.Tk()
     root.title("Actualización de NeverRed")
-    tk.Label(root, text="¿Deseas actualizar a la versión %s?" % version,
-             font=("", 13, "bold")).pack(padx=16, pady=(14, 4))
-    tk.Label(root, text="Cambios de la nueva versión:").pack(anchor="w", padx=16)
+    head = "NeverRed %s disponible" % remote
+    if local and not same:
+        head += " (tienes la %s)" % local
+    tk.Label(root, text=head, font=("", 13, "bold")).pack(padx=16, pady=(14, 2))
+    tk.Label(root, text="Novedades de esta versión:").pack(anchor="w", padx=16)
     txt = scrolledtext.ScrolledText(root, width=64, height=8, wrap="word")
-    txt.insert("1.0", notes or "(sin notas de versión)")
+    txt.insert("1.0", notes)
     txt.configure(state="disabled")
     txt.pack(padx=16, pady=6, fill="both", expand=True)
+    tk.Label(root, text="Tus datos y ajustes se conservan. "
+                        "La descarga se verifica con firma antes de instalar.",
+             fg="#888", font=("", 11), wraplength=480,
+             justify="left").pack(anchor="w", padx=16, pady=(0, 8))
     bar = tk.Frame(root)
     bar.pack(pady=(0, 14))
 

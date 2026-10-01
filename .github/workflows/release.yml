@@ -56,21 +56,43 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Notas de la versión (CHANGELOG → body de la release)
+        env:
+          TAG: ${{ github.ref_name }}
+          IMAGE: ${{ env.IMAGE }}
+        run: |
+          python3 - "$TAG" "$IMAGE" <<'PYEOF' > /tmp/release-body.md
+          import re
+          import sys
+          tag, image = sys.argv[1], sys.argv[2]
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(r'^## ' + re.escape(tag) + r'[ \t—-]*([^\n]*)\n(.*?)(?=^## |\Z)',
+                        text, re.S | re.M)
+          if m and m.group(2).strip():
+              title = m.group(1).strip()
+              head = '## Novedades en %s%s' % (tag, ' — ' + title if title else '')
+              notes = head + '\n' + m.group(2).strip()
+          else:
+              notes = '## Novedades en %s\nMejoras internas y correcciones.' % tag
+          dl = ('Historial completo: '
+                '[CHANGELOG.md](https://github.com/emilio-devesa/NeverRed/blob/main/CHANGELOG.md)'
+                '\n\n## Descargar 📥\n'
+                '- **macOS (sin instalar nada)**: baja el `.dmg` en *Assets*\n'
+                '  (vale para Intel y Apple Silicon), arrástralo a Aplicaciones\n'
+                '  y haz doble clic.\n'
+                '- **Linux (sin instalar nada)**: baja el `.AppImage`, dale\n'
+                '  permiso de ejecución y haz doble clic.\n'
+                '- **Docker** 🐳:\n'
+                '```bash\ndocker run -d --name neverred -p 8000:8000 \\\n'
+                '  -v neverred-data:/data --restart unless-stopped \\\n'
+                '  %s:%s\n```\n'
+                'Abrir **http://servidor:8000** y registrarse. La BD persiste en el volumen.\n'
+                'Demo: `python3 backend/seed_demo.py` → demo@neverred.local / DemoNeverRed2026.'
+                % (image, tag))
+          print(notes + '\n\n' + dl)
+          PYEOF
+          head -8 /tmp/release-body.md
+
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          generate_release_notes: true
-          body: |
-            ## Descargar 📥
-            - **macOS (sin instalar nada)**: baja el `.dmg` en *Assets*
-              (vale para Intel y Apple Silicon), arrástralo a Aplicaciones
-              y haz doble clic.
-            - **Linux (sin instalar nada)**: baja el `.AppImage`, dale
-              permiso de ejecución y haz doble clic.
-            - **Docker** 🐳:
-            ```bash
-            docker run -d --name neverred -p 8000:8000 \
-              -v neverred-data:/data --restart unless-stopped \
-              ${{ env.IMAGE }}:${{ github.ref_name }}
-            ```
-            Abrir **http://servidor:8000** y registrarse. La BD persiste en el volumen.
-            Demo: `python3 backend/seed_demo.py` → demo@neverred.local / DemoNeverRed2026.
+          body_path: /tmp/release-body.md

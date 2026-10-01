@@ -1,6 +1,11 @@
 # NeverRed — Historial de cambios
 
-## v2.3.6 — La app vuelve a abrirse (adiós al "dañado")
+## v2.3.7 — El diálogo cuenta las novedades
+- La actualización muestra qué trae la versión (antes enseñaba las
+  instrucciones de descarga); las releases traen "Novedades" del historial
+- El diálogo dice qué versión tienes y cuál hay, y tranquiliza: los datos
+  se conservan y la descarga se verifica con firma
+- "Ya instalada" en el diario cuando no hay nada que hacer (antes "omitida")
 - El lanzador es Objective-C universal (Intel + Apple Silicon) y el bundle
   lleva firma ad-hoc: Gatekeeper vuelve al flujo normal (Abrir igualmente)
   en vez de decir "está dañado" sin apelación (2.3.4–2.3.5)

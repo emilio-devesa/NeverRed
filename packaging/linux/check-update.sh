@@ -97,7 +97,7 @@ done
 if [ -n "$TKPY" ]; then
   NOTES_FILE="$DATA/release-notes.txt"
   printf '%s' "$NOTES" > "$NOTES_FILE"
-  TK="$($TKPY "$(dirname "$0")/update-dialog.py" "$REMOTE" "$NOTES_FILE" 2>/dev/null)"
+  TK="$($TKPY "$(dirname "$0")/update-dialog.py" "$REMOTE" "$NOTES_FILE" "$LOCAL" 2>/dev/null)"
 else
   TK=""
 fi
@@ -109,7 +109,7 @@ esac
 # 2) Respaldo con zenity si existe entorno gráfico
 if [ -z "$CHOICE" ] && command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   CHOICE="$(zenity --question --title="Actualización de NeverRed" \
-    --text="Hay una nueva versión ($REMOTE) disponible.\n\n$NOTES" \
+    --text="NeverRed ($REMOTE) disponible (tienes $LOCAL).\n\n$NOTES" \
     --ok-label="Instalar" --cancel-label="Más tarde" \
     --extra-button="Omitir versión" 2>/dev/null; echo "rc=$?")"
   case "$CHOICE" in
