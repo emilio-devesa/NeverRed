@@ -36,6 +36,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.0
+
+Nueva pestaña **Herramientas**: **Mercado** (gráficas de tickers como AAPL o AIR.MC, con tu clave gratuita de Alpha Vantage —cada usuario la suya— y cuota diaria visible), **simulador de préstamos** (cuota francesa con gráfica anual) y **simulador de rendimientos** (interés compuesto con aportaciones). Además, **Informes reordenados**: Balance y PyG lado a lado arriba, evoluciones y comprobación plegables.
+
 ## Novedades en v2.0.0
 
 **Telemetría opcional**: la app puede registrar qué funciones usas (solo conteos, nunca importes ni textos) para ayudar a mejorarla. Apagada por defecto —se pregunta una sola vez al entrar— y puedes activarla o desactivarla cuando quieras desde el pie de la app, en **Telemetría**.

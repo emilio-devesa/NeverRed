@@ -53,7 +53,19 @@ Tu plan de cuentas en 5 familias. Crea, edita o archiva cuentas.
 
 ## Informes
 
-Balance de comprobación (descargable en CSV), cuenta de resultados, balance general y **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos. Arriba del todo, **Evolución de los activos**: saldo diario de cada activo en 180 días más el patrimonio total, con valor al pasar el puntero y tabla de fines de mes. Justo debajo, **Evolución de los pasivos** con el mismo formato (cada pasivo más su total). El enlace **Vista mensual** del resultado muestra un mes con su navegación (‹ Mes anterior / Mes siguiente ›); **Volver a la vista acumulada** devuelve el total.
+Balance general y PyG lado a lado arriba; debajo, **Evolución de los activos** y **Evolución de los pasivos** (saldo diario en ~180 días más su total, con valor al pasar el puntero y tabla de fines de mes) y el **Balance de comprobación** (descargable en CSV): las tres tarjetas van plegables para una página más recogida. Cierran la página los **presupuestos del mes**: pon un límite a cada gasto y te avisamos al 80 % y al superarlos. El enlace **Vista mensual** del resultado muestra un mes con su navegación (‹ Mes anterior / Mes siguiente ›); **Volver a la vista acumulada** devuelve el total.
+
+## Herramientas
+
+Tres utilidades que no tocan tu contabilidad.
+
+**Mercado**: añade tickers de valores cotizados (AAPL, GOOG, AIR.MC…) y ve su gráfica de los últimos meses en verde (al alza), rojo (a la baja) o blanco (plana), con máximos, mínimos y variación del periodo; el nombre de cada ticker enlaza a su ficha de Yahoo Finanzas. Necesita tu **clave gratuita de Alpha Vantage** (25 consultas/día): la pides en un minuto en [alphavantage.co/support](https://www.alphavantage.co/support/) y la pegas al final de la pestaña. Cada usuario guarda la suya propia; la app te muestra cuánta cuota diaria te queda y guarda cada serie en caché 24 h para no gastarla.
+
+**Simulador de préstamos**: importe, TIN anual y años → cuota mensual francesa, total e intereses, con gráfica anual apilada (capital/intereses) y tabla año por año.
+
+**Simulador de rendimientos**: capital inicial, aportación mensual, rentabilidad anual y años → aportado, valor final y ganancia con interés compuesto mensual, con gráfica anual apilada y tabla año por año.
+
+Todo se calcula en tu navegador: nada se guarda ni se envía.
 
 ## Tu cuenta
 
