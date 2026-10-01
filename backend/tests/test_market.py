@@ -241,6 +241,21 @@ class MarketApiCase(unittest.TestCase):
         finally:
             server._av_get = orig
 
+    def test_usuarios_aislados(self):
+        # Los tickers de A jamás aparecen en la lista de B.
+        tokA = mkuser(self.port, "mkta")
+        tokB = mkuser(self.port, "mktb")
+        st, _ = call(self.port, "/api/market/tickers", "POST",
+                     {"symbol": "AISLA"}, token=tokA)
+        self.assertEqual(st, 200)
+        st, body = call(self.port, "/api/market/tickers", token=tokB)
+        self.assertEqual(st, 200)
+        self.assertEqual(body["tickers"], [])
+        st, body = call(self.port, "/api/market/status", token=tokB)
+        self.assertEqual(body["tickers"], 0)
+        st, body = call(self.port, "/api/market/status", token=tokA)
+        self.assertEqual(body["tickers"], 1)
+
     def test_sin_clave(self):
         tok = mkuser(self.port, "mkt5")
         saved = os.environ.pop("NEVERRED_ALPHA_VANTAGE_KEY")

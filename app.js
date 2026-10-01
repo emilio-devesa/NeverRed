@@ -1215,6 +1215,7 @@ function endSession() {
   sessionToken = null; currentUser = null;
   clearTimeout(saveTimer);
   state = freshState(''); // que el siguiente usuario no vea ni herede nada del anterior
+  resetMarket(); // tampoco tickers ni gráficas de Mercado del anterior
   nukeServiceWorker(); // la próxima entrada cargará la última versión, nunca caché vieja
   try { localStorage.removeItem('neverred_session'); } catch {}
   quickUser = null;
@@ -1269,6 +1270,7 @@ async function loadUserData() {
 }
 function enterApp() {
   if (!currentUser) return;
+  resetMarket(); // la pestaña recargará los tickers de ESTE usuario al abrirse
   authOverlay.hidden = true;
   document.getElementById('userEmail').textContent = currentUser.email;
   state.user.name = currentUser.name;
@@ -1460,6 +1462,15 @@ let marketConfigured = false;
 let marketLoaded = false;
 let marketDrawn = {}; // símbolo → gráfica ya pintada (no repintar en cada render)
 let marketSeries = {}; // símbolo → última serie recibida (repintado sin red)
+function resetMarket() {
+  // Los tickers son por usuario: al cambiar de sesión no puede quedar
+  // rastro del anterior (ni lista, ni gráficas, ni flag de cargado).
+  marketTickers = [];
+  marketConfigured = false;
+  marketLoaded = false;
+  marketDrawn = {};
+  marketSeries = {};
+}
 function marketSVG(dates, closes, color) {
   const W = 640, H = 140, padL = 56, padR = 10, padT = 8, padB = 20;
   const n = dates.length;
