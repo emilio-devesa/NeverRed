@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.3.1 — Navegación de mes pulida
+## v2.3.2 — CSS con versión (fin de la caché rancia)
+- La hoja de estilos lleva la versión en la URL: cada release invalida
+  la caché del Service Worker y los cambios visuales aparecen a la primera
+- Corregía el caso real de la 2.3.1 (HTML nuevo + CSS viejo: botones
+  apilados, grises y enlace sin estilo)
 - Anterior a la izquierda, mes centrado, Siguiente a la derecha (rejilla real)
 - Botones deshabilitados en gris para que se entienda el límite
 - Enlace "Volver al mes en curso" bajo el mes cuando no es el actual
