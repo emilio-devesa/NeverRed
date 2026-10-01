@@ -9,6 +9,9 @@ __pycache__/
 .DS_Store
 packaging/release-key
 backend/install.id
+# Clave de Alpha Vantage (Mercado): solo vive en el servidor local, jamás en git
+market.key
+backend/market.key
 # Informe privado para inversores (no subir nunca)
 REPORT.MD
 REPORT.DOCX

@@ -83,6 +83,7 @@
       <button class="tab" data-view="mayor" role="tab">Mayor</button>
       <button class="tab" data-view="cuentas" role="tab">Cuentas</button>
       <button class="tab" data-view="informes" role="tab">Informes</button>
+      <button class="tab" data-view="herramientas" role="tab">Herramientas</button>
     </nav>
     <div class="top-actions">
       <span id="userEmail" class="muted small" title="Usuario actual"></span>
@@ -286,6 +287,55 @@
         <h3>Presupuestos del mes</h3>
         <p class="muted">Límite mensual por cuenta de gasto. Aviso al superar el 80 % y al pasarte.</p>
         <div id="budgetsBox"></div>
+      </div>
+    </section>
+
+    <!-- HERRAMIENTAS -->
+    <section id="view-herramientas" class="view">
+      <div class="toolbar"><h2>Herramientas</h2>
+        <div class="toolbar-row" role="tablist" aria-label="Herramientas">
+          <button class="btn subtab active" data-sub="mercado" type="button">Mercado</button>
+          <button class="btn subtab" data-sub="prestamos" type="button">Simulador de préstamos</button>
+          <button class="btn subtab" data-sub="rendimientos" type="button">Simulador de rendimientos</button>
+        </div>
+      </div>
+      <div id="sub-mercado">
+        <div class="card">
+          <h3>Clave de Alpha Vantage</h3>
+          <p class="muted small">Tus cotizaciones se piden con tu clave personal (gratuita, 25 consultas/día). Se guarda solo en este servidor y nunca sale de él: no aparece en exportaciones ni registros.</p>
+          <div id="marketKeySet" hidden>
+            <p>● Clave configurada ✓ <button class="btn ghost small" id="btnMarketKeyDel" type="button">Quitar clave</button></p>
+          </div>
+          <div id="marketKeyForm" hidden>
+            <div class="toolbar-row">
+              <input type="password" id="marketKeyInput" placeholder="Pega tu clave de Alpha Vantage" autocomplete="off" maxlength="32" />
+              <button class="btn primary" id="btnMarketKeySave" type="button">Guardar clave</button>
+            </div>
+            <p class="error" id="marketKeyError" role="alert"></p>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Mis valores</h3>
+          <div class="toolbar-row">
+            <input id="marketSymbol" type="text" placeholder="Ticker: AAPL, GOOG…" maxlength="12" autocomplete="off" />
+            <button class="btn primary" id="btnMarketAdd" type="button">+ Añadir</button>
+          </div>
+          <p class="error" id="marketError" role="alert"></p>
+          <p class="muted small">Cada valor guarda su serie 180 días en caché 24 h: abrir la pestaña no gasta cuota. Precios en la divisa de cotización.</p>
+          <div id="marketList"></div>
+        </div>
+      </div>
+      <div id="sub-prestamos" hidden>
+        <div class="card">
+          <h3>Simulador de préstamos</h3>
+          <p class="muted">Próximamente: cuota mensual, intereses totales y tabla de amortización.</p>
+        </div>
+      </div>
+      <div id="sub-rendimientos" hidden>
+        <div class="card">
+          <h3>Simulador de rendimientos</h3>
+          <p class="muted">Próximamente: interés compuesto con aportaciones periódicas.</p>
+        </div>
       </div>
     </section>
   </main>

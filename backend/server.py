@@ -23,7 +23,7 @@ import threading
 import time
 from datetime import date as _date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Ruta de la BD configurable (imprescindible para Docker/volúmenes)
@@ -159,6 +159,17 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
         CREATE INDEX IF NOT EXISTS idx_telemetry_user ON telemetry_events(user_id);
         CREATE INDEX IF NOT EXISTS idx_telemetry_event ON telemetry_events(event, ts);
+        CREATE TABLE IF NOT EXISTS market_tickers (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, symbol)
+        );
+        CREATE TABLE IF NOT EXISTS market_cache (
+            symbol TEXT PRIMARY KEY,
+            fetched_at INTEGER NOT NULL,
+            points TEXT NOT NULL DEFAULT '{}'
+        );
         """
     )
     con.commit()
@@ -581,6 +592,193 @@ def validate_data(body):
         if err:
             return err
     return None
+
+
+# ---------------- Mercado (Herramientas): proxy Alpha Vantage ----------------
+# La clave API NUNCA viaja al frontal ni al export: vive solo en este
+# servidor (variable de entorno o fichero 600 junto a la BD) y se usa para
+# las llamadas salientes. Cuota gratuita: 25 req/día, 5/min → caché de 24 h
+# por símbolo y separación mínima de 12 s entre llamadas a la API.
+MARKET_DAYS = 180
+MARKET_TTL = 86400
+MARKET_MIN_GAP = 12
+MARKET_SYMBOL_RE = re.compile(r"^[A-Z0-9.\-:]{1,12}$")
+MARKET_KEY_RE = re.compile(r"^[A-Za-z0-9]{8,32}$")
+_market_lock = threading.Lock()
+_market_last_call = 0
+
+
+def _market_key_path():
+    return os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "market.key")
+
+
+def market_key():
+    """Clave efectiva: entorno manda; si no, fichero local. '' = sin configurar."""
+    env = (os.environ.get("NEVERRED_ALPHA_VANTAGE_KEY") or "").strip()
+    if env:
+        return env
+    try:
+        with open(_market_key_path()) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def set_market_key(key):
+    """Guarda la clave en fichero solo-legible. None = formato inválido."""
+    key = (key or "").strip()
+    if not MARKET_KEY_RE.match(key):
+        return None
+    path = _market_key_path()
+    with open(path, "w") as f:
+        f.write(key + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return True
+
+
+def clear_market_key():
+    try:
+        os.remove(_market_key_path())
+    except OSError:
+        pass
+
+
+def normalize_symbol(raw):
+    return re.sub(r"\s+", "", str(raw or "")).upper()
+
+
+def _av_get(symbol, key, full):
+    """Una llamada a TIME_SERIES_DAILY. Dict parseado o None (red)."""
+    import urllib.request
+    import urllib.parse as _up
+    qs = _up.urlencode({"function": "TIME_SERIES_DAILY", "symbol": symbol,
+                        "outputsize": "full" if full else "compact", "apikey": key})
+    req = urllib.request.Request("https://www.alphavantage.co/query?" + qs,
+                                 headers={"User-Agent": "NeverRed/" + VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            raw = r.read(15_000_000)
+    except Exception:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def parse_av_daily(payload, days=MARKET_DAYS):
+    """Puro y testeable. Devuelve (data, err) con err en None/"invalid"/"rate".
+
+    data = {"dates": [...], "closes": [...]} en ventana de `days` naturales;
+    si la ventana trae <2 puntos se usa todo lo disponible (p. ej. compact).
+    """
+    if not isinstance(payload, dict):
+        return None, "rate"
+    if "Error Message" in payload:
+        return None, "invalid"
+    if "Information" in payload or "Note" in payload:
+        return None, "rate"
+    ts = payload.get("Time Series (Daily)")
+    if not isinstance(ts, dict) or not ts:
+        return None, "invalid"
+    pts = []
+    for d, bar in sorted(ts.items()):
+        if not isinstance(bar, dict):
+            continue
+        try:
+            c = float(bar.get("4. close", ""))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(c):
+            pts.append((d, c))
+    if len(pts) < 2:
+        return None, "invalid"
+    import datetime as _dt
+    cutoff = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
+    window = [p for p in pts if p[0] >= cutoff]
+    if len(window) < 2:
+        window = pts[-100:] if len(pts) > 100 else pts
+    return {"dates": [d for d, _ in window],
+            "closes": [c for _, c in window]}, None
+
+
+def _market_stats(closes):
+    first, last = closes[0], closes[-1]
+    lo, hi = min(closes), max(closes)
+    pct = round((last - first) / first * 100, 2) if first else 0.0
+    trend = "up" if pct > 0.1 else ("down" if pct < -0.1 else "flat")
+    return {"first": first, "last": last, "min": lo, "max": hi,
+            "change_pct": pct, "trend": trend, "points": len(closes)}
+
+
+def market_history(symbol, key, force=False):
+    """Serie de un símbolo. (code, obj) con code 200/404/429/502.
+
+    Usa caché de 24 h; `force` la salta (respetando el guard de cuota).
+    Ante cuota agotada sirve caché caducada marcada stale:true.
+    """
+    symbol = normalize_symbol(symbol)
+    if not MARKET_SYMBOL_RE.match(symbol):
+        return 400, {"error": "Símbolo no válido (letras, cifras y . - :)."}
+    now = int(time.time())
+    con = db()
+    row = con.execute("SELECT fetched_at, points FROM market_cache WHERE symbol = ?",
+                      (symbol,)).fetchone()
+    cached = None
+    if row:
+        try:
+            cached = json.loads(row["points"])
+        except Exception:
+            cached = None
+    fresh = bool(row and cached and now - row["fetched_at"] < MARKET_TTL)
+    if cached and fresh and not force:
+        con.close()
+        out = {"symbol": symbol, **_market_stats(cached["closes"]),
+               "dates": cached["dates"], "closes": cached["closes"],
+               "cached_at": row["fetched_at"], "stale": False}
+        return 200, out
+    global _market_last_call
+    with _market_lock:
+        wait = MARKET_MIN_GAP - (now - _market_last_call)
+        if wait > 0:
+            con.close()
+            if cached:
+                out = {"symbol": symbol, **_market_stats(cached["closes"]),
+                       "dates": cached["dates"], "closes": cached["closes"],
+                       "cached_at": row["fetched_at"], "stale": True}
+                return 200, out
+            return 429, {"error": "Cuota de la API: reintenta en %d s." % wait}
+        _market_last_call = int(time.time())
+    payload = _av_get(symbol, key, full=True)
+    if isinstance(payload, dict) and "Information" in payload \
+            and "premium" in str(payload["Information"]).lower():
+        payload = _av_get(symbol, key, full=False)  # full es premium: compact
+    data, err = parse_av_daily(payload or {})
+    con = db()
+    if err is None:
+        con.execute("INSERT INTO market_cache (symbol, fetched_at, points) VALUES (?,?,?) "
+                    "ON CONFLICT(symbol) DO UPDATE SET fetched_at=excluded.fetched_at,"
+                    " points=excluded.points",
+                    (symbol, int(time.time()), json.dumps(data)))
+        con.commit()
+        con.close()
+        return 200, {"symbol": symbol, **_market_stats(data["closes"]),
+                     "dates": data["dates"], "closes": data["closes"],
+                     "cached_at": int(time.time()), "stale": False}
+    con.close()
+    if err == "invalid":
+        return 404, {"error": "No se encontró el ticker %s en Alpha Vantage." % symbol}
+    if cached:
+        out = {"symbol": symbol, **_market_stats(cached["closes"]),
+               "dates": cached["dates"], "closes": cached["closes"],
+               "cached_at": row["fetched_at"], "stale": True}
+        return 200, out
+    return 429, {"error": "Cuota diaria de Alpha Vantage agotada (25 req/día). "
+                          "Prueba mañana o quita algún ticker."}
 
 
 # ---------------- Servidor HTTP ----------------
@@ -1161,6 +1359,116 @@ class Handler(BaseHTTPRequestHandler):
         self._extra = {"ETag": etag_of(body)}
         self._send_json(200, {"ok": True, "etag": etag_of(body)})
 
+    def _api_market_status(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        n = con.execute("SELECT COUNT(*) FROM market_tickers WHERE user_id = ?",
+                        (user["id"],)).fetchone()[0]
+        con.close()
+        # Ojo: jamás se devuelve la clave, solo si hay alguna configurada.
+        self._send_json(200, {"configured": bool(market_key()), "tickers": n})
+
+    def _api_market_key(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        body = self._read_json()
+        if not body:
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        if set_market_key(body.get("key")) is None:
+            return self._send_json(400, {"error": "Clave no válida."})
+        audit("market_key", user["id"])
+        self._send_json(200, {"ok": True, "configured": True})
+
+    def _api_market_key_del(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        clear_market_key()
+        audit("market_key_del", user["id"])
+        self._send_json(200, {"ok": True, "configured": False})
+
+    def _api_market_tickers(self):
+        # Lista sin gastar cuota: usa solo la caché (last null = aún sin datos).
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        rows = con.execute(
+            "SELECT t.symbol, t.added_at, c.fetched_at, c.points FROM market_tickers t "
+            "LEFT JOIN market_cache c ON c.symbol = t.symbol "
+            "WHERE t.user_id = ? ORDER BY t.added_at", (user["id"],)).fetchall()
+        con.close()
+        out = []
+        for symbol, added_at, fetched_at, points in rows:
+            item = {"symbol": symbol, "added_at": added_at, "last": None,
+                    "change_pct": None, "trend": None, "cached_at": fetched_at,
+                    "stale": True}
+            try:
+                data = json.loads(points) if points else None
+                if data and data.get("closes"):
+                    item.update(_market_stats(data["closes"]))
+                    item["cached_at"] = fetched_at
+                    item["stale"] = (int(time.time()) - (fetched_at or 0)) > MARKET_TTL
+            except Exception:
+                pass
+            out.append(item)
+        self._send_json(200, {"tickers": out})
+
+    def _api_market_add(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        body = self._read_json()
+        if not body:
+            return self._send_json(400, {"error": "Cuerpo JSON inválido."})
+        symbol = normalize_symbol(body.get("symbol"))
+        if not MARKET_SYMBOL_RE.match(symbol):
+            return self._send_json(400, {"error": "Símbolo no válido (p. ej. AAPL, GOOG)."})
+        key = market_key()
+        if not key:
+            return self._send_json(400, {"error": "Configura primero tu clave de Alpha Vantage."})
+        code, obj = market_history(symbol, key)
+        if code != 200:
+            return self._send_json(code, obj)
+        con = db()
+        con.execute("INSERT INTO market_tickers (user_id, symbol, added_at) VALUES (?,?,?) "
+                    "ON CONFLICT(user_id, symbol) DO NOTHING",
+                    (user["id"], symbol, int(time.time())))
+        con.commit()
+        con.close()
+        audit("market_add", user["id"], symbol)
+        self._send_json(200, {"ok": True, "history": obj})
+
+    def _api_market_del(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        qs = parse_qs(urlparse(self.path).query)
+        symbol = normalize_symbol((qs.get("symbol") or [""])[0])
+        con = db()
+        con.execute("DELETE FROM market_tickers WHERE user_id = ? AND symbol = ?",
+                    (user["id"], symbol))
+        con.commit()
+        con.close()
+        audit("market_del", user["id"], symbol)
+        self._send_json(200, {"ok": True})
+
+    def _api_market_history(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        qs = parse_qs(urlparse(self.path).query)
+        symbol = normalize_symbol((qs.get("symbol") or [""])[0])
+        force = (qs.get("refresh") or [""])[0] == "1"
+        key = market_key()
+        if not key:
+            return self._send_json(400, {"error": "Configura primero tu clave de Alpha Vantage."})
+        code, obj = market_history(symbol, key, force=force)
+        self._send_json(code, obj)
+
     # -- enrutado --
     def do_GET(self):  # noqa: N802 - firma de la stdlib
         path = urlparse(self.path).path
@@ -1172,6 +1480,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_me()
         if path == "/api/data":
             return self._api_get_data()
+        if path == "/api/market/status":
+            return self._api_market_status()
+        if path == "/api/market/tickers":
+            return self._api_market_tickers()
+        if path == "/api/market/history":
+            return self._api_market_history()
         if path == "/api/telemetry-consent":
             return self._api_telemetry_consent()
         if path == "/api/telemetry-summary":
@@ -1210,6 +1524,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_forward_now()
         if path == "/api/demo":
             return self._api_demo()
+        if path == "/api/market/key":
+            return self._api_market_key()
+        if path == "/api/market/tickers":
+            return self._api_market_add()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_PUT(self):  # noqa: N802 - firma de la stdlib
@@ -1223,6 +1541,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):  # noqa: N802 - firma de la stdlib
         if urlparse(self.path).path == "/api/account":
             return self._api_delete_account()
+        if urlparse(self.path).path == "/api/market/key":
+            return self._api_market_key_del()
+        if urlparse(self.path).path == "/api/market/tickers":
+            return self._api_market_del()
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_OPTIONS(self):  # noqa: N802 - firma de la stdlib

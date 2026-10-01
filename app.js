@@ -1451,8 +1451,221 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
   } catch { err.textContent = 'Sin conexión con el servidor.'; }
 });
 
+// ---------- Herramientas / Mercado ----------
+const TREND_COLOR = { up: '#22c55e', down: '#ef4444', flat: '#e5e7eb' };
+const TREND_ARROW = { up: '▲', down: '▼', flat: '●' };
+const TREND_WORD = { up: 'al alza', down: 'a la baja', flat: 'plana' };
+let marketTickers = [];
+let marketConfigured = false;
+let marketLoaded = false;
+let marketDrawn = {}; // símbolo → gráfica ya pintada (no repintar en cada render)
+let marketSeries = {}; // símbolo → última serie recibida (repintado sin red)
+function marketSVG(dates, closes, color) {
+  const W = 640, H = 140, padL = 56, padR = 10, padT = 8, padB = 20;
+  const n = dates.length;
+  let lo = Math.min(...closes), hi = Math.max(...closes);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const X = i => n < 2 ? padL : padL + (i * (W - padL - padR)) / (n - 1);
+  const Y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  const f1 = x => Math.round(x * 10) / 10;
+  let s = `<svg class="assets-chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">`;
+  for (let g = 0; g <= 3; g++) {
+    const v = lo + ((hi - lo) * g) / 3, y = Y(v);
+    s += `<line x1="${padL}" y1="${f1(y)}" x2="${W - padR}" y2="${f1(y)}" stroke="var(--line)"/>`;
+    s += `<text x="${padL - 6}" y="${f1(y + 3)}" text-anchor="end" font-size="9" fill="var(--muted)">${esc(fmtNum(v))}</text>`;
+  }
+  let lastM = '';
+  dates.forEach((d, i) => {
+    const m = d.slice(5, 7);
+    if (m !== lastM) {
+      lastM = m;
+      s += `<text x="${f1(X(i))}" y="${H - 5}" text-anchor="middle" font-size="9" fill="var(--muted)">${MES_S[Number(m) - 1]}</text>`;
+    }
+  });
+  s += `<path d="${closes.map((v, i) => `${i ? 'L' : 'M'}${f1(X(i))},${f1(Y(v))}`).join('')}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+  closes.forEach((v, i) => {
+    s += `<circle class="pt" cx="${f1(X(i))}" cy="${f1(Y(v))}" r="2" fill="${color}" data-i="${i}"><title>${esc(NR.fmtDateES(dates[i]))} · ${esc(fmtNum(v))}</title></circle>`;
+  });
+  return s + '</svg>';
+}
+function marketWhen(ts) {
+  if (!ts) return 'sin datos';
+  try {
+    const s = new Date(ts * 1000).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return 'actualizado: ' + s;
+  } catch { return ''; }
+}
+async function marketFetch(path, opts) {
+  const res = await fetch(api(path), { headers: authHeaders(), ...(opts || {}) });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { endSession(); throw new Error('sesión'); }
+  if (!res.ok) throw new Error(data.error || 'Error de red.');
+  return data;
+}
+async function loadMarket() {
+  if (!currentUser) return;
+  try {
+    const st = await marketFetch('/api/market/status');
+    marketConfigured = !!st.configured;
+    const lt = await marketFetch('/api/market/tickers');
+    marketTickers = lt.tickers || [];
+    marketLoaded = true;
+  } catch { marketTickers = []; }
+  renderMarket();
+}
+function renderMarket() {
+  const setBox = document.getElementById('marketKeySet');
+  const formBox = document.getElementById('marketKeyForm');
+  if (!setBox) return; // vista aún no montada
+  setBox.hidden = !marketConfigured;
+  formBox.hidden = marketConfigured;
+  const list = document.getElementById('marketList');
+  const cards = marketTickers.filter(t => t.last != null);
+  const pending = marketTickers.filter(t => t.last == null);
+  list.innerHTML = (!marketLoaded ? '<p class="muted">Cargando…</p>'
+    : (!marketTickers.length ? '<p class="muted">Sin valores. Añade tu primer ticker arriba (p. ej. AAPL).</p>' : '')) +
+    pending.map(t => `<div class="card ticker-card"><div class="ticker-head"><strong>${esc(t.symbol)}</strong><span class="muted small">cargando serie…</span></div><div class="ticker-chart" data-chart="${esc(t.symbol)}"></div></div>`).join('') +
+    cards.map(t => {
+      const c = TREND_COLOR[t.trend] || TREND_COLOR.flat;
+      const pct = (t.change_pct >= 0 ? '+' : '') + fmtNum(t.change_pct) + ' %';
+      return `<div class="card ticker-card">
+        <div class="ticker-head"><strong>${esc(t.symbol)}</strong>
+          <span style="color:${c}">${TREND_ARROW[t.trend] || ''} ${pct} (${TREND_WORD[t.trend] || ''})</span>
+          <span class="muted small">cierre: ${esc(fmtNum(t.last))} · ${esc(marketWhen(t.cached_at))}${t.stale ? ' · desactualizado' : ''}</span>
+          <span class="spacer"></span>
+          <button class="btn ghost small" data-refresh="${esc(t.symbol)}" type="button">Actualizar</button>
+          <button class="btn ghost small" data-del="${esc(t.symbol)}" type="button">Quitar</button>
+        </div>
+        <div class="ticker-chart" data-chart="${esc(t.symbol)}"></div>
+        <div class="muted small ticker-readout" data-readout="${esc(t.symbol)}"></div>
+        <details class="small muted"><summary>Máximos y mínimos del periodo</summary>
+          <table class="table"><tbody>
+            <tr><td>Precio máximo</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
+            <tr><td>Precio mínimo</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
+            <tr><td>Variación del periodo</td><td class="num" style="color:${c}"><strong>${pct}</strong></td></tr>
+            <tr><td>Puntos de cotización</td><td class="num">${t.points}</td></tr>
+          </tbody></table>
+        </details>
+      </div>`;
+    }).join('');
+  // Las series viajan aparte y solo con la vista visible: abrir Herramientas
+  // no gasta cuota si todo está en caché, y editar asientos no repinta.
+  // Las ya descargadas se repintan desde memoria (sin red).
+  const toolsVisible = document.getElementById('view-herramientas').classList.contains('active');
+  marketTickers.forEach(t => {
+    const h = marketSeries[t.symbol];
+    if (h && marketDrawn[t.symbol]) paintTickerChart(t.symbol, h);
+    else if (toolsVisible && !marketDrawn[t.symbol]) loadTickerChart(t.symbol);
+  });
+}
+function paintTickerChart(symbol, h) {
+  const slot = document.querySelector(`[data-chart="${symbol}"]`);
+  if (!slot || !h) return;
+  const c = TREND_COLOR[h.trend] || TREND_COLOR.flat;
+  slot.innerHTML = marketSVG(h.dates, h.closes, c);
+  const readout = document.querySelector(`[data-readout="${symbol}"]`);
+  const last = h.dates.length - 1;
+  const showLast = () => { if (readout) readout.textContent = `${NR.fmtDateES(h.dates[last])} · cierre: ${fmtNum(h.closes[last])}`; };
+  showLast();
+  slot.querySelectorAll('circle.pt').forEach(pt => {
+    const say = () => { if (readout) readout.textContent = `${NR.fmtDateES(h.dates[Number(pt.dataset.i)])} · cierre: ${fmtNum(h.closes[Number(pt.dataset.i)])}`; };
+    pt.addEventListener('mouseenter', say);
+    pt.addEventListener('click', say);
+  });
+  const svg = slot.querySelector('svg');
+  if (svg) svg.addEventListener('mouseleave', showLast);
+}
+async function loadTickerChart(symbol, force) {
+  const slot = document.querySelector(`[data-chart="${symbol}"]`);
+  if (!slot) return;
+  try {
+    const h = await marketFetch(`/api/market/history?symbol=${encodeURIComponent(symbol)}${force ? '&refresh=1' : ''}`);
+    marketDrawn[symbol] = true;
+    marketSeries[symbol] = h;
+    paintTickerChart(symbol, h);
+    // Refresca la cabecera con los stats recién llegados (p. ej. ticker nuevo).
+    const i = marketTickers.findIndex(t => t.symbol === symbol);
+    if (i >= 0 && marketTickers[i].last == null) {
+      marketTickers[i] = { ...marketTickers[i], last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, cached_at: h.cached_at, stale: h.stale };
+      renderMarket();
+    }
+  } catch (e) {
+    if (String(e.message) !== 'sesión') slot.innerHTML = `<p class="muted small">Sin serie: ${esc(e.message)}</p>`;
+  }
+}
+document.querySelectorAll('.subtab').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.subtab').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('sub-mercado').hidden = b.dataset.sub !== 'mercado';
+  document.getElementById('sub-prestamos').hidden = b.dataset.sub !== 'prestamos';
+  document.getElementById('sub-rendimientos').hidden = b.dataset.sub !== 'rendimientos';
+}));
+document.querySelector('.tab[data-view="herramientas"]').addEventListener('click', () => {
+  if (!marketLoaded) loadMarket();
+});
+document.getElementById('btnMarketKeySave').addEventListener('click', async () => {
+  const err = document.getElementById('marketKeyError');
+  err.textContent = '';
+  const key = document.getElementById('marketKeyInput').value.trim();
+  if (!key) { err.textContent = 'Pega tu clave primero.'; return; }
+  try {
+    await marketFetch('/api/market/key', { method: 'POST', body: JSON.stringify({ key }) });
+    document.getElementById('marketKeyInput').value = '';
+    marketConfigured = true;
+    renderMarket();
+  } catch (e) { err.textContent = e.message; }
+});
+document.getElementById('btnMarketKeyDel').addEventListener('click', async () => {
+  if (!confirm('¿Quitar la clave de Alpha Vantage de este servidor? Los tickers se conservan.')) return;
+  try {
+    await fetch(api('/api/market/key'), { method: 'DELETE', headers: authHeaders() });
+    marketConfigured = false;
+    renderMarket();
+  } catch {}
+});
+document.getElementById('btnMarketAdd').addEventListener('click', async () => {
+  const err = document.getElementById('marketError');
+  err.textContent = '';
+  const inp = document.getElementById('marketSymbol');
+  const symbol = inp.value.trim().toUpperCase();
+  if (!symbol) { err.textContent = 'Escribe un ticker (p. ej. AAPL).'; return; }
+  try {
+    const data = await marketFetch('/api/market/tickers', { method: 'POST', body: JSON.stringify({ symbol }) });
+    inp.value = '';
+    marketLoaded = true;
+    const h = data.history;
+    if (!marketTickers.some(t => t.symbol === h.symbol)) {
+      marketTickers.push({ symbol: h.symbol, added_at: Date.now() / 1000, last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, cached_at: h.cached_at, stale: h.stale });
+    }
+    renderMarket();
+  } catch (e) { err.textContent = e.message; }
+});
+document.getElementById('marketList').addEventListener('click', async ev => {
+  const del = ev.target.dataset.del;
+  const ref = ev.target.dataset.refresh;
+  if (del) {
+    marketTickers = marketTickers.filter(t => t.symbol !== del);
+    delete marketDrawn[del];
+    delete marketSeries[del];
+    renderMarket();
+    try { await fetch(api('/api/market/tickers?symbol=' + encodeURIComponent(del)), { method: 'DELETE', headers: authHeaders() }); }
+    catch {}
+  } else if (ref) {
+    const slot = document.querySelector(`[data-chart="${ref}"]`);
+    if (slot) slot.innerHTML = '<p class="muted small">Actualizando…</p>';
+    delete marketDrawn[ref];
+    await loadTickerChart(ref, true);
+    try {
+      const lt = await marketFetch('/api/market/tickers');
+      marketTickers = lt.tickers || [];
+      renderMarket();
+    } catch {}
+  }
+});
+function renderTools() { renderMarket(); }
+
 // ---------- Init ----------
-function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); }
+function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); renderTools(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; consentModal.hidden = true; } });
 // Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
 document.addEventListener('keydown', e => {

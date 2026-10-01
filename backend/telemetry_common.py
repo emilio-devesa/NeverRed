@@ -26,7 +26,7 @@ import re
 TELEMETRY_EVENTS = {
     "app_opened": {},
     "vista_inicio": {}, "vista_diario": {}, "vista_mayor": {},
-    "vista_cuentas": {}, "vista_informes": {},
+    "vista_cuentas": {}, "vista_informes": {}, "vista_herramientas": {},
     "asiento_creado": {"n_lineas": int},
     "asiento_eliminado": {},
     "csv_importado": {"n_filas": int},
