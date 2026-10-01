@@ -145,6 +145,18 @@ describe('balanceSeries', () => {
     const r = NR.balanceSeries(ACCS, es, 2, '2026-10-04');
     assert.deepEqual(r.series[0].points, [500, 500]);
   });
+  it('grupo Pasivo: series de pasivos y total suma de pasivos', () => {
+    const r = NR.balanceSeries(ACCS, ES, 5, '2026-10-04', 'Pasivo');
+    assert.equal(r.series.length, 1);
+    assert.equal(r.series[0].name, 'Tarjeta');
+    assert.deepEqual(r.series[0].points, [0, 0, 0, 0, 40]);
+    assert.deepEqual(r.total, [0, 0, 0, 0, 40]);
+  });
+  it('grupo por defecto sigue siendo Activo con patrimonio', () => {
+    const r = NR.balanceSeries(ACCS, ES, 5, '2026-10-04');
+    assert.equal(r.series.length, 2);
+    assert.deepEqual(r.total, [0, 0, 0, 0, -40]);
+  });
 });
 
 describe('mayorMovements', () => {
