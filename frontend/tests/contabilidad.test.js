@@ -66,3 +66,38 @@ describe('ecuación fundamental', () => {
     assert.equal(NR.isBooksBalanced(ACC, entries), false);
   });
 });
+
+describe('navegación por meses', () => {
+  it('monthKey extrae YYYY-MM', () => {
+    assert.equal(NR.monthKey('2026-10-05'), '2026-10');
+    assert.equal(NR.monthKey('2026-10'), '2026-10');
+    assert.equal(NR.monthKey(''), '');
+  });
+  it('addMonths avanza, retrocede y cruza de año', () => {
+    assert.equal(NR.addMonths('2026-10', 1), '2026-11');
+    assert.equal(NR.addMonths('2026-10', -1), '2026-09');
+    assert.equal(NR.addMonths('2026-12', 1), '2027-01');
+    assert.equal(NR.addMonths('2026-01', -1), '2025-12');
+    assert.equal(NR.addMonths('2026-10', 0), '2026-10');
+    assert.equal(NR.addMonths('2026-10', -10), '2025-12');
+  });
+  it('monthStart/monthEnd acotan el mes (incluido febrero bisiesto)', () => {
+    assert.equal(NR.monthStart('2026-10'), '2026-10-01');
+    assert.equal(NR.monthEnd('2026-10'), '2026-10-31');
+    assert.equal(NR.monthEnd('2026-02'), '2026-02-28');
+    assert.equal(NR.monthEnd('2024-02'), '2024-02-29');
+  });
+  it('monthLabel habla español', () => {
+    assert.equal(NR.monthLabel('2026-10'), 'Octubre de 2026');
+    assert.equal(NR.monthLabel('2026-01'), 'Enero de 2026');
+  });
+  it('minMonth encuentra el mes más antiguo con asientos', () => {
+    assert.equal(NR.minMonth([]), null);
+    assert.equal(NR.minMonth([
+      { date: '2026-10-05' }, { date: '2026-04-12' }, { date: '2026-07-01' },
+    ]), '2026-04');
+  });
+  it('currentMonth tiene formato YYYY-MM', () => {
+    assert.match(NR.currentMonth(), /^\d{4}-\d{2}$/);
+  });
+});

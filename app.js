@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.2.2';
+const NEVERRED_BUILD = '2.3.0';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -358,7 +358,7 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
     const t = entryTotal({ lines: e.lines });
     return `${e.date}|${e.desc}|${t.d.toFixed(2)}`;
   }));
-  let n = 0, dup = 0;
+  let n = 0, dup = 0, maxM = null;
   for (const x of csvRows) {
     if (seen.has(`${x.date}|${x.desc}|${Math.abs(x.amount).toFixed(2)}`)) { dup++; continue; }
     const a = Math.abs(x.amount);
@@ -367,10 +367,13 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
       : (exp ? [{ accountId: exp, debit: a, credit: 0 }, { accountId: bank, debit: 0, credit: a }] : null);
     if (!lines) continue;
     state.entries.push({ id: uid(), n: state.seq++, date: x.date, desc: x.desc, lines });
+    const m = NR.monthKey(x.date);
+    if (/^\d{4}-\d{2}$/.test(m) && (!maxM || m > maxM)) maxM = m;
     n++;
   }
   csvModal.hidden = true;
-  save(); renderAll();
+  save();
+  clearDiarioFilters(); if (maxM) diarioMonth = maxM; renderAll();
   alert(`Importados ${n} movimientos como asientos cuadrados${dup ? ` (${dup} ya existían).` : '.'}`);
   track('csv_importado', { n_filas: n });
 });
@@ -416,7 +419,8 @@ document.getElementById('btnRunRecurring').addEventListener('click', () => {
     r.lastRun = mk; n++;
   }
   if (!n) { alert('Nada pendiente: las plantillas de este mes ya están generadas.'); return; }
-  save(); renderAll();
+  save();
+  clearDiarioFilters(); diarioMonth = NR.currentMonth(); renderAll();
   alert(`Generados ${n} asiento(s) del mes.`);
   track('recurrentes_generados', { n });
 });
@@ -440,16 +444,43 @@ function entryCard(e) {
 }
 function renderDiario() {
   const q = (document.getElementById('searchDiario').value || '').toLowerCase();
-  const from = document.getElementById('filterFrom').value, to = document.getElementById('filterTo').value;
-  let list = [...state.entries].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const fromEl = document.getElementById('filterFrom'), toEl = document.getElementById('filterTo');
+  // Desde/Hasta: refinamiento limitado al mes visible (solo día del mes).
+  fromEl.min = toEl.min = NR.monthStart(diarioMonth);
+  fromEl.max = toEl.max = NR.monthEnd(diarioMonth);
+  const from = fromEl.value, to = toEl.value;
+  const badMonth = e => !/^\d{4}-\d{2}$/.test(NR.monthKey(e.date)); // sin fecha válida: siempre visible
+  const monthList = [...state.entries]
+    .filter(e => NR.monthKey(e.date) === diarioMonth || badMonth(e))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  let list = monthList;
   if (from) list = list.filter(e => e.date >= from);
   if (to) list = list.filter(e => e.date <= to);
   if (q) list = list.filter(e => e.desc.toLowerCase().includes(q) ||
     e.lines.some(l => (accById(l.accountId)?.name || '').toLowerCase().includes(q)));
   document.getElementById('diarioList').innerHTML = list.length ? list.map(entryCard).join('')
-    : '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>';
+    : (monthList.length
+      ? '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>'
+      : '<p class="muted">Este mes no tiene asientos todavía.</p>');
+  document.getElementById('diarioMonthLabel').textContent = NR.monthLabel(diarioMonth);
+  const minM = NR.minMonth(state.entries);
+  document.getElementById('diarioPrev').disabled = !minM || diarioMonth <= minM;
+  document.getElementById('diarioNext').disabled = diarioMonth >= NR.currentMonth();
   renderRecurring();
 }
+let diarioMonth = NR.currentMonth();
+function clearDiarioFilters() {
+  document.getElementById('searchDiario').value = '';
+  document.getElementById('filterFrom').value = '';
+  document.getElementById('filterTo').value = '';
+}
+function setDiarioMonth(ym) {
+  diarioMonth = ym;
+  clearDiarioFilters();
+  renderDiario();
+}
+document.getElementById('diarioPrev').addEventListener('click', () => setDiarioMonth(NR.addMonths(diarioMonth, -1)));
+document.getElementById('diarioNext').addEventListener('click', () => setDiarioMonth(NR.addMonths(diarioMonth, 1)));
 function dupeEntry(id) {
   const e = state.entries.find(x => x.id === id);
   if (!e) return;
@@ -690,7 +721,8 @@ document.getElementById('btnSaveEntry').addEventListener('click', () => {
   } else {
     state.entries.push({ id: uid(), n: state.seq++, date, desc, lines });
   }
-  save(); entryModal.hidden = true; renderAll();
+  save(); entryModal.hidden = true;
+  clearDiarioFilters(); diarioMonth = NR.monthKey(date); renderAll();
   track('asiento_creado', { n_lineas: lines.length });
 });
 
@@ -989,6 +1021,7 @@ function startSession(token, user) {
     if (FROM_FILE) localStorage.setItem('neverred_session', token);
     else localStorage.removeItem('neverred_session');
   } catch {}
+  clearDiarioFilters(); diarioMonth = NR.currentMonth();
   loadUserData().then(enterApp);
 }
 /** Contabilidad vacía con el plan de cuentas base: cada usuario empieza de cero. */

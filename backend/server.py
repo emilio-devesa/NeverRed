@@ -41,7 +41,7 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.2.2")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.3.0")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))

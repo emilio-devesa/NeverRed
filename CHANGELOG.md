@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.2.2 — El Finder muestra la versión nueva
+## v2.3.0 — Diario paginado por meses
+- Los asientos se ven mes a mes, con "Mes anterior / Mes siguiente" encima
+  de la lista (anterior se deshabilita sin historial; siguiente, en el mes actual)
+- Desde/Hasta quedan como refinamiento por día dentro del mes visible
+- Crear, importar o generar salta al mes del asiento; la búsqueda convive igual
 - El actualizador de macOS re-registra la app en Launch Services tras
   instalarla: el Finder ya no se queda mostrando la versión vieja
   (el contenido sí se actualizaba; eran los metadatos cacheados)
