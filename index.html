@@ -301,6 +301,16 @@
       </div>
       <div id="sub-mercado">
         <div class="card">
+          <h3>Mis valores</h3>
+          <div class="toolbar-row">
+            <input id="marketSymbol" type="text" placeholder="Ticker: AAPL, GOOG…" maxlength="12" autocomplete="off" />
+            <button class="btn primary" id="btnMarketAdd" type="button">+ Añadir</button>
+          </div>
+          <p class="error" id="marketError" role="alert"></p>
+          <p class="muted small">Cada valor guarda su serie en caché 24 h: abrir la pestaña no gasta cuota. La cuota gratuita devuelve las últimas 100 sesiones (~5 meses). Precios en la divisa de cotización.</p>
+          <div id="marketList"></div>
+        </div>
+        <div class="card">
           <h3>Clave de Alpha Vantage</h3>
           <p class="muted small">Tus cotizaciones se piden con tu clave personal (gratuita, 25 consultas/día). Se guarda solo en este servidor y nunca sale de él: no aparece en exportaciones ni registros.</p>
           <div id="marketKeySet" hidden>
@@ -313,16 +323,6 @@
             </div>
             <p class="error" id="marketKeyError" role="alert"></p>
           </div>
-        </div>
-        <div class="card">
-          <h3>Mis valores</h3>
-          <div class="toolbar-row">
-            <input id="marketSymbol" type="text" placeholder="Ticker: AAPL, GOOG…" maxlength="12" autocomplete="off" />
-            <button class="btn primary" id="btnMarketAdd" type="button">+ Añadir</button>
-          </div>
-          <p class="error" id="marketError" role="alert"></p>
-          <p class="muted small">Cada valor guarda su serie en caché 24 h: abrir la pestaña no gasta cuota. La cuota gratuita devuelve las últimas 100 sesiones (~5 meses). Precios en la divisa de cotización.</p>
-          <div id="marketList"></div>
         </div>
       </div>
       <div id="sub-prestamos" hidden>
