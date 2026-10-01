@@ -1,6 +1,10 @@
 # NeverRed — Historial de cambios
 
-## v2.3.5 — PyG del mes en Informes
+## v2.3.6 — La app vuelve a abrirse (adiós al "dañado")
+- El lanzador es Objective-C universal (Intel + Apple Silicon) y el bundle
+  lleva firma ad-hoc: Gatekeeper vuelve al flujo normal (Abrir igualmente)
+  en vez de decir "está dañado" sin apelación (2.3.4–2.3.5)
+- El actualizador escribe `update.log`: cada paso deja rastro con su motivo
 - Nueva tarjeta "PyG del mes" encima de la acumulada, con la misma
   navegación del Diario (anterior/siguiente, mes centrado, volver al actual)
 - Balance de comprobación y Balance general siguen acumulados (son stock)

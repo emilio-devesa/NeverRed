@@ -35,13 +35,15 @@ _telemetry_sub() {
     "$1" > "$STAGE/launcher.tmp" && mv "$STAGE/launcher.tmp" "$1"
 }
 _telemetry_sub "$APP/Contents/MacOS/Launcher.sh"
-# Lanzador nativo (Swift, solo Xcode de serie): icono con punto en el Dock,
-# sin rebote eterno y cierre limpio desde el Dock. Delega en Launcher.sh.
-if ! command -v swiftc >/dev/null 2>&1; then
-  echo "Error: swiftc no encontrado (hace falta Xcode o Command Line Tools)." >&2
+# Lanzador nativo (Objective-C, solo clang de serie): binario universal
+# Intel + Apple Silicon, icono con punto en el Dock, sin rebote eterno y
+# cierre limpio desde el Dock. Delega en Launcher.sh.
+if ! command -v clang >/dev/null 2>&1; then
+  echo "Error: clang no encontrado (hace falta Xcode o Command Line Tools)." >&2
   exit 1
 fi
-swiftc -O -o "$APP/Contents/MacOS/NeverRed" packaging/macos/NeverRed.swift -framework Cocoa
+clang -O2 -fobjc-arc -arch arm64 -arch x86_64 -mmacosx-version-min=11 \
+  -framework Cocoa -o "$APP/Contents/MacOS/NeverRed" packaging/macos/NeverRed.m
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
 cp packaging/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
 chmod +x "$APP/Contents/MacOS/Launcher.sh" "$APP/Contents/MacOS/check-update.sh"
@@ -84,6 +86,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 $ICONKEY
 </dict></plist>
 PLIST
+
+# Firma ad-hoc del bundle: sin sello válido Gatekeeper dice "dañado" sin
+# apelación (el binario ya trae firma ad-hoc propia del linker); con sello,
+# flujo normal de "desarrollador no identificado" con Abrir igualmente.
+xattr -cr "$APP" 2>/dev/null || true
+codesign --force --deep --sign - "$APP" 2>/dev/null \
+  || { echo "Aviso: no se pudo firmar ad-hoc."; }
+codesign --verify --deep --strict "$APP" 2>/dev/null \
+  || { echo "Error: la firma ad-hoc no verifica." >&2; exit 1; }
 
 # DMG arrastrable (app + enlace a Aplicaciones)
 ln -s /Applications "$STAGE/Aplicaciones"
