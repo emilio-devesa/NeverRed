@@ -11,12 +11,23 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 ## Descargar para macOS (sin instalar nada)
 
 1. Descarga el `.dmg` desde **Releases** en GitHub (vale para Intel
-   y Apple Silicon: no lleva binarios, solo scripts y el Python de macOS).
+   y Apple Silicon).
 2. Ábrelo y arrastra **NeverRed** a **Aplicaciones**.
-3. Doble clic en NeverRed: se abre en tu navegador. Listo.
+3. Abre el **Terminal** (está en Aplicaciones → Utilidades) y ejecuta
+   esta orden una sola vez:
+
+   ```bash
+   xattr -cr /Applications/NeverRed.app
+   ```
+
+   (macOS marca las descargas de internet; sin este paso dice que la
+   app "está dañada". No vuelve a pedirlo nunca más).
+4. Doble clic en NeverRed: se abre en tu navegador. Listo.
 
 No pide instalar Python ni nada más (usa lo que ya trae macOS). Tus datos
 quedan en tu Mac (`~/Library/Application Support/NeverRed`).
+Las siguientes actualizaciones llegan solas desde la propia app
+y no necesitan repetir este paso.
 
 ## Descargar para Linux (sin instalar nada)
 
