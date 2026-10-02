@@ -37,6 +37,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.4
+
+Tickers de Mercado reordenables: arrastra las tarjetas (o usa ↑/↓) y tu orden se conserva entre sesiones.
+
 ## Novedades en v2.6.3
 
 Mercado adaptado al plan gratuito actual de Alpha Vantage (serie diaria, 1 petición por ticker) y mensajes de error que distinguen entre fallo de conexión, ritmo excesivo y cuota diaria agotada.
