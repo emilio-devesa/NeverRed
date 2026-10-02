@@ -1957,6 +1957,20 @@ async function boot() {
     openReset(true); return; // viene del enlace del correo
   }
   if (!sessionToken) {
+    if (!FROM_FILE) {
+      // Sin token en localStorage la sesión puede seguir viva en la cookie
+      // HttpOnly: se intenta antes de rendirse al login (p. ej. tras F5).
+      authNote.textContent = 'Recuperando tu sesión…';
+      try {
+        const res = await fetch(api('/api/me'), { headers: authHeaders() });
+        if (!res.ok) throw new Error('sin sesión');
+        const { user } = await res.json();
+        currentUser = user;
+        await loadUserData();
+        enterApp();
+        return;
+      } catch { /* sin sesión válida: cae al login de abajo */ }
+    }
     authNote.textContent = FROM_FILE
       ? 'Conectado con la base de datos ✓ Regístrate (o mejor: abre http://127.0.0.1:8000).'
       : 'Regístrate con tu correo y una contraseña para empezar.';
