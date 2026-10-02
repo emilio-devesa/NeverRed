@@ -53,22 +53,15 @@ def mkuser(port, tag):
 
 
 def fixture_series(n=250, start_price=100.0):
-    """Payload TIME_SERIES_DAILY_ADJUSTED con n sesiones terminando hoy."""
+    """Payload TIME_SERIES_DAILY compact con n sesiones terminando hoy."""
     today = datetime.date.today()
     ts = {}
     for i in range(n):
         d = (today - datetime.timedelta(days=i)).isoformat()
         c = start_price + i * 0.1
-        bar = {"1. open": str(c), "2. high": str(c + 1),
-               "3. low": str(c - 1), "4. close": "%.4f" % c,
-               "5. adjusted close": "%.4f" % (c * 0.99),
-               "6. volume": "1000", "7. dividend amount": "0.0000",
-               "8. split coefficient": "1.0"}
-        if i == 30:
-            bar["7. dividend amount"] = "0.5000"
-        if i == 100:
-            bar["8. split coefficient"] = "2.0"
-        ts[d] = bar
+        ts[d] = {"1. open": str(c), "2. high": str(c + 1),
+                 "3. low": str(c - 1), "4. close": "%.4f" % c,
+                 "5. volume": "1000"}
     return {"Meta Data": {"2. Symbol": "TEST"}, "Time Series (Daily)": ts}
 
 
@@ -80,14 +73,15 @@ class ParseCase(unittest.TestCase):
         self.assertTrue(all(d >= cutoff for d in data["dates"]))
         self.assertEqual(len(data["dates"]), len(data["closes"]))
         self.assertGreater(len(data["dates"]), 100)
-        # Cierre ajustado y eventos del periodo.
-        self.assertLess(data["closes"][-1], 200)  # ajustado (< crudo)
-        kinds = {(e["type"], e["date"]) for e in data["events"]}
-        today = datetime.date.today()
-        self.assertIn(("dividend", (today - datetime.timedelta(days=30)).isoformat()),
-                      kinds)
-        self.assertIn(("split", (today - datetime.timedelta(days=100)).isoformat()),
-                      kinds)
+
+    def test_rate_reason(self):
+        self.assertEqual(server.rate_reason(None), "net")
+        self.assertEqual(server.rate_reason(
+            {"Information": "Please consider spreading out (1 request per second)."}),
+            "burst")
+        self.assertEqual(server.rate_reason(
+            {"Information": "Our standard API rate limit is 25 requests per day."}),
+            "daily")
 
     def test_simbolo_invalido(self):
         _, err = server.parse_av_daily({"Error Message": "Invalid API call."})
@@ -264,21 +258,19 @@ class MarketApiCase(unittest.TestCase):
         finally:
             type(self).payload = cls_payload
 
-    def test_ajustado_una_llamada_con_eventos(self):
-        # Serie ajustada en compact: 1 sola llamada, con eventos.
+    def test_daily_compact_una_llamada(self):
+        # Serie diaria en compact: 1 sola llamada por ticker nuevo.
         tok = mkuser(self.port, "mkt6")
         calls = type(self).calls
         calls.clear()
         server._market_last_call = 0
         st, body = call(self.port, "/api/market/tickers", "POST",
-                        {"symbol": "ADJUS"}, token=tok)
+                        {"symbol": "DAILY"}, token=tok)
         self.assertEqual(st, 200, body)
         self.assertEqual(len(calls), 1)
         h = body["history"]
-        self.assertTrue(any(e["type"] == "dividend" for e in h["events"]))
-        self.assertTrue(any(e["type"] == "split" for e in h["events"]))
-        st, body = call(self.port, "/api/market/tickers", token=tok)
-        self.assertEqual(body["tickers"][0]["events"], h["events"])
+        self.assertEqual(len(h["dates"]), len(h["closes"]))
+        self.assertFalse(h["stale"])
 
     def test_usuarios_aislados(self):
         # Los tickers de A jamás aparecen en la lista de B.

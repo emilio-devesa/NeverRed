@@ -1,5 +1,11 @@
 # NeverRed — Historial de cambios
 
+## v2.6.3 — Mercado adaptado al plan gratuito actual
+- Alpha Vantage ha movido la serie ajustada a premium: Mercado vuelve a
+  la serie diaria gratuita (1 petición por ticker) sin cambios visibles
+- Los errores de cuota ahora dicen la verdad: sin conexión, demasiadas
+  peticiones seguidas o cuota diaria agotada, cada uno con su solución
+
 ## v2.6.2 — La sesión sobrevive al refresco
 - Al recargar la página con sesión abierta ya no se vuelve al login:
   la app recupera la sesión de la cookie sin pedir credenciales

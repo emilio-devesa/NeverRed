@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.2';
+const NEVERRED_BUILD = '2.6.3';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -1619,8 +1619,8 @@ function renderMarket() {
         <div class="muted small ticker-readout" data-readout="${esc(t.symbol)}"></div>
         <details class="small muted"><summary>Máximos y mínimos del periodo</summary>
           <table class="table"><tbody>
-            <tr><td>Precio máximo (ajustado)</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
-            <tr><td>Precio mínimo (ajustado)</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
+            <tr><td>Precio máximo</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
+            <tr><td>Precio mínimo</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
             <tr><td>Variación del periodo</td><td class="num" style="color:${c}"><strong>${pct}</strong></td></tr>
             <tr><td>Puntos de cotización</td><td class="num">${t.points}</td></tr>
           </tbody></table>

@@ -41,7 +41,7 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.2")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.6.3")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -669,11 +669,11 @@ def normalize_symbol(raw):
 
 
 def _av_get(symbol, key):
-    """Una llamada a TIME_SERIES_DAILY_ADJUSTED en compact (100 sesiones,
-    cierre ajustado por splits/dividendos). Dict parseado o None (red)."""
+    """Una llamada a TIME_SERIES_DAILY en compact (100 sesiones, cierre de
+    mercado). Dict parseado o None (red)."""
     import urllib.request
     import urllib.parse as _up
-    qs = _up.urlencode({"function": "TIME_SERIES_DAILY_ADJUSTED", "symbol": symbol,
+    qs = _up.urlencode({"function": "TIME_SERIES_DAILY", "symbol": symbol,
                         "outputsize": "compact", "apikey": key})
     req = urllib.request.Request("https://www.alphavantage.co/query?" + qs,
                                  headers={"User-Agent": "NeverRed/" + VERSION})
@@ -694,7 +694,8 @@ def parse_av_daily(payload, days=MARKET_DAYS):
 
     data = {"dates": [...], "closes": [...], "events": [...]} en ventana de
     `days` naturales; si la ventana trae <2 puntos se usa todo lo disponible.
-    closes = cierre ajustado; events = dividendos/splits del periodo.
+    closes = cierre de mercado (sin ajustar: el ajustado es premium);
+    events queda reservado (lista vacía con la cuota gratuita).
     """
     if not isinstance(payload, dict):
         return None, "rate"
@@ -710,17 +711,11 @@ def parse_av_daily(payload, days=MARKET_DAYS):
         if not isinstance(bar, dict):
             continue
         try:
-            c = float(bar.get("5. adjusted close", "") or bar.get("4. close", ""))
+            c = float(bar.get("4. close", ""))
         except (TypeError, ValueError):
             continue
-        if not math.isfinite(c):
-            continue
-        try:
-            div = float(bar.get("7. dividend amount", 0) or 0)
-        except (TypeError, ValueError):
-            div = 0
-        split = str(bar.get("8. split coefficient", "1.0") or "1.0")
-        pts.append((d, c, div, split))
+        if math.isfinite(c):
+            pts.append((d, c))
     if len(pts) < 2:
         return None, "invalid"
     import datetime as _dt
@@ -728,13 +723,31 @@ def parse_av_daily(payload, days=MARKET_DAYS):
     window = [p for p in pts if p[0] >= cutoff]
     if len(window) < 2:
         window = pts[-100:] if len(pts) > 100 else pts
-    return {"dates": [d for d, _, _, _ in window],
-            "closes": [c for _, c, _, _ in window],
-            "events": ([{"date": d, "type": "dividend", "amount": round(div, 4)}
-                        for d, _, div, _ in window if div > 0] +
-                       [{"date": d, "type": "split", "coef": split}
-                        for d, _, _, split in window
-                        if split not in ("1", "1.0", "1.00")])}, None
+    return {"dates": [d for d, _ in window],
+            "closes": [c for _, c in window], "events": []}, None
+
+
+def rate_reason(payload):
+    """Clasifica un fallo con cuota: 'net' (sin respuesta), 'burst'
+    (límite por minuto/segundo: reintentar pronto sirve) o 'daily'."""
+    if not isinstance(payload, dict):
+        return "net"
+    info = str(payload.get("Information", "") or payload.get("Note", "")).lower()
+    if "minute" in info or "second" in info or "sparingly" in info:
+        return "burst"
+    return "daily"
+
+
+def rate_message(payload):
+    reason = rate_reason(payload)
+    if reason == "net":
+        return ("Alpha Vantage no responde (revisa tu conexión a internet "
+                "y prueba de nuevo).")
+    if reason == "burst":
+        return ("Demasiadas peticiones seguidas a Alpha Vantage: "
+                "espera un minuto y prueba de nuevo.")
+    return ("Cuota diaria de Alpha Vantage agotada (25 req/día). "
+            "Prueba mañana o quita algún ticker.")
 
 
 def _market_stats(closes):
@@ -859,8 +872,7 @@ def market_history(symbol, key, force=False):
                "events": cached.get("events", []),
                "cached_at": row["fetched_at"], "stale": True}
         return 200, out
-    return 429, {"error": "Cuota diaria de Alpha Vantage agotada (25 req/día). "
-                          "Prueba mañana o quita algún ticker."}
+    return 429, {"error": rate_message(payload)}
 
 
 # ---------------- Servidor HTTP ----------------
