@@ -1,5 +1,17 @@
 # NeverRed — Historial de cambios
 
+## v2.6.1 — Mercado ajustado, Diario paginado y aviso de copia
+- Mercado con **precios ajustados** por splits y dividendos (adiós a los
+  acantilados falsos) y **marcadores de dividendos y splits** en la
+  gráfica y en el desplegable de cada ticker
+- Las **cuentas archivadas** siguen contando en Balance, Evolución y
+  Comprobación (archivadas se ocultan, el dinero no desaparece)
+- **Diario paginado**: 50 asientos por tanda con botón "Mostrar más"
+- **Aviso de copia**: la app te recuerda exportar si llevas más de
+  30 días sin hacerlo
+- La Demo vuelve a ser efímera: entrar restablece también sus tickers
+- Importaciones y guardados grandes: tope ampliado de 2 a 10 MB
+
 ## v2.6.0 — Herramientas: Mercado y simuladores
 - Nueva pestaña **Herramientas** con tres utilidades
 - **Mercado**: añade tickers (AAPL, GOOG, AIR.MC…) y ve su gráfica de

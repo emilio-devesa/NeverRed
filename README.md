@@ -111,20 +111,22 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 ## Qué incluye
 
 - **Asistente de inicio**: crea tu asiento de apertura (efectivo + banco − deudas = capital inicial).
-- **Libro diario**: asientos con N líneas, validación `Debe = Haber`, edición, borrado, filtros y búsqueda.
+- **Libro diario**: asientos con N líneas, validación `Debe = Haber`, edición, borrado, filtros y búsqueda (paginado de 50 en 50).
 - **Libro mayor**: movimientos y saldo acumulado por cuenta, con naturaleza deudora/acreedora.
-- **Plan de cuentas**: 5 familias (Activo, Pasivo, Patrimonio, Ingreso, Gasto), crear/editar/archivar.
+- **Plan de cuentas**: 5 familias (Activo, Pasivo, Patrimonio, Ingreso, Gasto), crear/editar/archivar (archivar oculta la cuenta pero su saldo sigue contando).
 - **Informes**: balance general y PyG lado a lado, evolución diaria de activos
   y pasivos (con gráficas plegables), balance de comprobación (con CSV).
-- **Herramientas**: Mercado (gráficas de tickers con tu clave gratuita de
-  Alpha Vantage), simulador de préstamos y simulador de rendimientos.
+- **Herramientas**: Mercado (gráficas de tickers con precios ajustados,
+  dividendos/splits marcados y tu clave gratuita de Alpha Vantage),
+  simulador de préstamos y simulador de rendimientos.
 - **Panel**: patrimonio neto, ecuación fundamental en vivo, gráfico ingresos vs gastos 6 meses, accesos rápidos (sueldo, gasto, transferencia).
 - **Presupuestos**: límite mensual por gasto con avisos al 80 % y al superar.
 - **Recurrentes**: plantillas mensuales (nómina, alquiler) con generación sin duplicados.
 - **Importar CSV** del banco (`fecha;descripción;importe`) como asientos cuadrados.
 - **PWA**: instalable y carcasa offline (la API necesita red).
 - **Tus datos**: viven en la base de datos del servidor y se sincronizan con
-  una caché local por usuario. Exporta/importa JSON para copia o traslado.
+  una caché local por usuario. Exporta/importa JSON para copia o traslado
+  (la app te avisa si llevas más de 30 días sin exportar).
 
 ## Capturas
 
@@ -173,7 +175,8 @@ docs/                     — capturas para este README
 | POST | `/api/reset-request` | `{email}` envía enlace de recuperación (1 h, sin filtrar usuarios) |
 | POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
 | DELETE | `/api/account` | Elimina el usuario y todos sus datos |
-| GET | `/api/me` | Usuario de la sesión actual |
+| GET | `/api/me` | Usuario de la sesión actual + `last_export` (última copia) |
+| POST | `/api/export-log` | Marca una exportación manual (para el aviso de copia) |
 | GET | `/api/sessions` | Sesiones propias (sin exponer tokens) |
 | POST | `/api/sessions/rotate` | Cierra todas las sesiones salvo la actual |
 | GET | `/api/data` | Datos contables del usuario |
@@ -184,7 +187,7 @@ docs/                     — capturas para este README
 | GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
 | POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
 | DELETE | `/api/market/tickers?symbol=X` | Quita un ticker (la serie en caché se conserva) |
-| GET | `/api/market/history?symbol=X` | Serie ~100 sesiones + mín/máx/variación (`&refresh=1` fuerza descarga) |
+| GET | `/api/market/history?symbol=X` | Serie ajustada (~100 sesiones) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
 | POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
 
@@ -232,7 +235,7 @@ Exportar JSON manual. Tests:
 
 ```bash
 python3 backend/tests/test_server.py   # backend: 20 tests (solo stdlib)
-python3 backend/tests/test_market.py    # mercado: 15 tests (sin red, con mock)
+python3 backend/tests/test_market.py    # mercado: 17 tests (sin red, con mock)
 python3 backend/tests/test_telemetry_forward.py   # forward: 7 tests
 python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
 node --test frontend/tests/            # frontal: contabilidad, mercado y simuladores (sin dependencias)
