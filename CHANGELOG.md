@@ -1,5 +1,9 @@
 # NeverRed — Historial de cambios
 
+## v2.6.2 — La sesión sobrevive al refresco
+- Al recargar la página con sesión abierta ya no se vuelve al login:
+  la app recupera la sesión de la cookie sin pedir credenciales
+
 ## v2.6.1 — Mercado ajustado, Diario paginado y aviso de copia
 - Mercado con **precios ajustados** por splits y dividendos (adiós a los
   acantilados falsos) y **marcadores de dividendos y splits** en la
