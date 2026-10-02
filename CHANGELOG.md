@@ -1,5 +1,9 @@
 # NeverRed — Historial de cambios
 
+## v2.6.4 — Tickers reordenables
+- Los valores de Mercado se pueden **reordenar arrastrando** (o con los
+  botones ↑/↓ en táctil): el orden es por usuario y se conserva al salir
+
 ## v2.6.3 — Mercado adaptado al plan gratuito actual
 - Alpha Vantage ha movido la serie ajustada a premium: Mercado vuelve a
   la serie diaria gratuita (1 petición por ticker) sin cambios visibles

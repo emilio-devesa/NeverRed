@@ -341,6 +341,42 @@ class MarketApiCase(unittest.TestCase):
         st, body = call(self.port, "/api/me", token=tok)
         self.assertGreaterEqual(body["last_export"], first)
 
+    def test_orden_manual(self):
+        tokA = mkuser(self.port, "mkord1")
+        tokB = mkuser(self.port, "mkord2")
+        for sym in ("ORD1", "ORD2", "ORD3"):
+            server._market_last_call = 0
+            st, _ = call(self.port, "/api/market/tickers", "POST",
+                         {"symbol": sym}, token=tokA)
+            self.assertEqual(st, 200)
+        server._market_last_call = 0
+        st, _ = call(self.port, "/api/market/tickers", "POST",
+                     {"symbol": "OTRO"}, token=tokB)
+        self.assertEqual(st, 200)
+        st, body = call(self.port, "/api/market/tickers", token=tokA)
+        self.assertEqual([t["symbol"] for t in body["tickers"]],
+                         ["ORD1", "ORD2", "ORD3"])
+        # Reordena los suyos.
+        st, _ = call(self.port, "/api/market/order", "PUT",
+                     {"order": ["ORD3", "ORD1", "ORD2"]}, token=tokA)
+        self.assertEqual(st, 200)
+        st, body = call(self.port, "/api/market/tickers", token=tokA)
+        self.assertEqual([t["symbol"] for t in body["tickers"]],
+                         ["ORD3", "ORD1", "ORD2"])
+        # B no se ve afectado.
+        st, body = call(self.port, "/api/market/tickers", token=tokB)
+        self.assertEqual([t["symbol"] for t in body["tickers"]], ["OTRO"])
+        # Órdenes inválidas: vacía, con duplicados, incompleta y con ticker ajeno.
+        for bad in ([], ["ORD3", "ORD3"], ["ORD3", "ORD1"],
+                    ["ORD3", "ORD1", "ORD2", "OTRO"]):
+            st, _ = call(self.port, "/api/market/order", "PUT",
+                         {"order": bad}, token=tokA)
+            self.assertEqual(st, 400, bad)
+        # Tras los rechazos, el orden sigue intacto.
+        st, body = call(self.port, "/api/market/tickers", token=tokA)
+        self.assertEqual([t["symbol"] for t in body["tickers"]],
+                         ["ORD3", "ORD1", "ORD2"])
+
     def test_sin_clave(self):
         tok = mkuser(self.port, "mkt5")
         saved = os.environ.pop("NEVERRED_ALPHA_VANTAGE_KEY")

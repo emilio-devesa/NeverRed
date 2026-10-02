@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.3';
+const NEVERRED_BUILD = '2.6.4';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -1607,11 +1607,14 @@ function renderMarket() {
     cards.map(t => {
       const c = TREND_COLOR[t.trend] || TREND_COLOR.flat;
       const pct = (t.change_pct >= 0 ? '+' : '') + fmtNum(t.change_pct) + ' %';
-      return `<div class="card ticker-card">
-        <div class="ticker-head"><strong><a href="https://es.finance.yahoo.com/quote/${encodeURIComponent(t.symbol)}/" target="_blank" rel="noopener" title="Ver ${esc(t.symbol)} en Yahoo Finanzas">${esc(t.symbol)} ↗</a></strong>
+      const idx = marketTickers.findIndex(x => x.symbol === t.symbol);
+      return `<div class="card ticker-card" draggable="true" data-ticker="${esc(t.symbol)}">
+        <div class="ticker-head"><span class="drag-handle" title="Arrastrar para reordenar">⠿</span><strong><a href="https://es.finance.yahoo.com/quote/${encodeURIComponent(t.symbol)}/" target="_blank" rel="noopener" title="Ver ${esc(t.symbol)} en Yahoo Finanzas">${esc(t.symbol)} ↗</a></strong>
           <span style="color:${c}">${TREND_ARROW[t.trend] || ''} ${pct} (${TREND_WORD[t.trend] || ''})</span>
           <span class="muted small">cierre: ${esc(fmtNum(t.last))} · ${esc(marketWhen(t.cached_at))}${t.stale ? ' · desactualizado' : ''}</span>
           <span class="spacer"></span>
+          <button class="btn ghost small" data-move="up" data-sym="${esc(t.symbol)}" type="button" title="Subir" ${idx <= 0 ? 'disabled' : ''}>↑</button>
+          <button class="btn ghost small" data-move="down" data-sym="${esc(t.symbol)}" type="button" title="Bajar" ${idx >= marketTickers.length - 1 ? 'disabled' : ''}>↓</button>
           <button class="btn ghost small" data-refresh="${esc(t.symbol)}" type="button">Actualizar</button>
           <button class="btn ghost small" data-del="${esc(t.symbol)}" type="button">Quitar</button>
         </div>
@@ -1724,6 +1727,17 @@ document.getElementById('btnMarketAdd').addEventListener('click', async () => {
   } catch (e) { err.textContent = e.message; }
 });
 document.getElementById('marketList').addEventListener('click', async ev => {
+  const mv = ev.target.dataset.move;
+  if (mv) {
+    const sym = ev.target.dataset.sym;
+    const i = marketTickers.findIndex(t => t.symbol === sym);
+    const j = mv === 'up' ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= marketTickers.length) return;
+    const order = marketTickers.map(t => t.symbol);
+    [order[i], order[j]] = [order[j], order[i]];
+    applyMarketOrder(order);
+    return;
+  }
   const del = ev.target.dataset.del;
   const ref = ev.target.dataset.refresh;
   if (del) {
@@ -1747,6 +1761,53 @@ document.getElementById('marketList').addEventListener('click', async ev => {
   }
 });
 function renderTools() { renderMarket(); }
+let dragSymbol = null;
+async function applyMarketOrder(order) {
+  // Reordena en local al instante (las gráficas van con el símbolo, no se repintan)
+  // y persiste en el servidor sin gastar cuota.
+  marketTickers.sort((a, b) => order.indexOf(a.symbol) - order.indexOf(b.symbol));
+  renderMarket();
+  try {
+    await marketFetch('/api/market/order', { method: 'PUT', body: JSON.stringify({ order }) });
+  } catch {}
+}
+const marketListEl = document.getElementById('marketList');
+marketListEl.addEventListener('dragstart', ev => {
+  const card = ev.target.closest ? ev.target.closest('[data-ticker]') : null;
+  if (!card) return;
+  dragSymbol = card.dataset.ticker;
+  try { ev.dataTransfer.setData('text/plain', dragSymbol); } catch {}
+  ev.dataTransfer.effectAllowed = 'move';
+  card.classList.add('dragging');
+});
+marketListEl.addEventListener('dragover', ev => {
+  if (!dragSymbol) return;
+  ev.preventDefault();
+  marketListEl.querySelectorAll('.drop-before,.drop-after')
+    .forEach(el => el.classList.remove('drop-before', 'drop-after'));
+  const card = ev.target.closest ? ev.target.closest('[data-ticker]') : null;
+  if (!card || card.dataset.ticker === dragSymbol) return;
+  const r = card.getBoundingClientRect();
+  card.classList.add(ev.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
+});
+marketListEl.addEventListener('drop', ev => {
+  if (!dragSymbol) return;
+  ev.preventDefault();
+  const card = ev.target.closest ? ev.target.closest('[data-ticker]') : null;
+  const order = marketTickers.map(t => t.symbol).filter(s => s !== dragSymbol);
+  if (card && card.dataset.ticker !== dragSymbol) {
+    const r = card.getBoundingClientRect();
+    const at = order.indexOf(card.dataset.ticker) + (ev.clientY < r.top + r.height / 2 ? 0 : 1);
+    order.splice(at, 0, dragSymbol);
+  } else order.push(dragSymbol);
+  dragSymbol = null;
+  applyMarketOrder(order);
+});
+marketListEl.addEventListener('dragend', () => {
+  dragSymbol = null;
+  marketListEl.querySelectorAll('.dragging,.drop-before,.drop-after')
+    .forEach(el => el.classList.remove('dragging', 'drop-before', 'drop-after'));
+});
 
 // ---------- Herramientas / Simuladores (cálculo local, sin persistencia) ----------
 // Nada se guarda (ni BD, ni localStorage, ni red): al cambiar de usuario basta

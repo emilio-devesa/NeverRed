@@ -227,6 +227,10 @@ canvas { width: 100%; height: auto; background: var(--panel2); border-radius: 10
 .ticker-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ticker-head strong a { color: var(--text); text-decoration: underline dotted; }
 .ticker-head strong a:hover { text-decoration: underline; }
+.drag-handle { cursor: grab; color: var(--muted); user-select: none; }
+.ticker-card.dragging { opacity: .5; }
+.ticker-card.drop-before { box-shadow: 0 -3px 0 var(--green); }
+.ticker-card.drop-after { box-shadow: 0 3px 0 var(--green); }
 .ticker-chart { margin-top: 8px; }
 .ticker-readout { min-height: 1.2em; margin-top: 4px; }
 

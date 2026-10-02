@@ -41,7 +41,7 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.3")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.6.4")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -164,8 +164,7 @@ def init_db():
             symbol TEXT NOT NULL,
             added_at INTEGER NOT NULL,
             PRIMARY KEY (user_id, symbol)
-        );
-        CREATE TABLE IF NOT EXISTS market_cache (
+        );        CREATE TABLE IF NOT EXISTS market_cache (
             symbol TEXT PRIMARY KEY,
             fetched_at INTEGER NOT NULL,
             points TEXT NOT NULL DEFAULT '{}'
@@ -202,6 +201,12 @@ def init_db():
         if col not in cols:
             con.execute("ALTER TABLE telemetry_forward ADD COLUMN %s INTEGER NOT NULL DEFAULT 0" % col)
             con.commit()
+    # Migración: orden manual de tickers (los existentes, por añadido).
+    cols = [r[1] for r in con.execute("PRAGMA table_info(market_tickers)")]
+    if "position" not in cols:
+        con.execute("ALTER TABLE market_tickers ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        con.execute("UPDATE market_tickers SET position = added_at")
+        con.commit()
     con.close()
 
 
@@ -1523,7 +1528,7 @@ class Handler(BaseHTTPRequestHandler):
         rows = con.execute(
             "SELECT t.symbol, t.added_at, c.fetched_at, c.points FROM market_tickers t "
             "LEFT JOIN market_cache c ON c.symbol = t.symbol "
-            "WHERE t.user_id = ? ORDER BY t.added_at", (user["id"],)).fetchall()
+            "WHERE t.user_id = ? ORDER BY t.position, t.added_at", (user["id"],)).fetchall()
         con.close()
         out = []
         for symbol, added_at, fetched_at, points in rows:
@@ -1559,13 +1564,44 @@ class Handler(BaseHTTPRequestHandler):
         if code != 200:
             return self._send_json(code, obj)
         con = db()
-        con.execute("INSERT INTO market_tickers (user_id, symbol, added_at) VALUES (?,?,?) "
+        row = con.execute("SELECT COALESCE(MAX(position), 0) FROM market_tickers "
+                          "WHERE user_id = ?", (user["id"],)).fetchone()
+        con.execute("INSERT INTO market_tickers (user_id, symbol, added_at, position)"
+                    " VALUES (?,?,?,?) "
                     "ON CONFLICT(user_id, symbol) DO NOTHING",
-                    (user["id"], symbol, int(time.time())))
+                    (user["id"], symbol, int(time.time()), (row[0] or 0) + 1))
         con.commit()
         con.close()
         audit("market_add", user["id"], symbol)
         self._send_json(200, {"ok": True, "history": obj})
+
+    def _api_market_order(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        body = self._read_json()
+        order = body.get("order") if isinstance(body, dict) else None
+        if (not isinstance(order, list) or not order
+                or any(not MARKET_SYMBOL_RE.match(normalize_symbol(s)) for s in order)):
+            return self._send_json(400, {"error": "Orden no válido."})
+        symbols = [normalize_symbol(s) for s in order]
+        if len(set(symbols)) != len(symbols):
+            return self._send_json(400, {"error": "Orden no válido."})
+        con = db()
+        mine = {r[0] for r in con.execute(
+            "SELECT symbol FROM market_tickers WHERE user_id = ?", (user["id"],))}
+        con.close()
+        if set(symbols) != mine:
+            # Ni de más (de otro usuario) ni de menos: el orden cubre los míos.
+            return self._send_json(400, {"error": "Orden no válido."})
+        con = db()
+        con.executemany("UPDATE market_tickers SET position = ? "
+                        "WHERE user_id = ? AND symbol = ?",
+                        [(i, user["id"], s) for i, s in enumerate(symbols)])
+        con.commit()
+        con.close()
+        audit("market_order", user["id"], "n=%d" % len(symbols))
+        self._send_json(200, {"ok": True})
 
     def _api_market_del(self):
         user = self._auth_user()
@@ -1661,6 +1697,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/data":
             return self._api_put_data()
+        if path == "/api/market/order":
+            return self._api_market_order()
         if path == "/api/telemetry-consent":
             return self._api_telemetry_consent_put()
         return self._send_json(404, {"error": "Ruta no encontrada."})
