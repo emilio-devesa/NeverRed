@@ -134,9 +134,10 @@ describe('balanceSeries', () => {
   it('ventana, arrastre, relleno y totalActivoMenosPasivo', () => {
     const r = NR.balanceSeries(ACCS, ES, 5, '2026-10-04');
     assert.deepEqual(r.dates, ['2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
-    assert.equal(r.series.length, 2); // archivadas fuera
+    assert.equal(r.series.length, 3); // la archivada también tiene serie (a ceros)
     assert.deepEqual(r.series[0].points, [1000, 1000, 500, 500, 500]);
     assert.deepEqual(r.series[1].points, [-1000, -1000, -500, -500, -500]);
+    assert.deepEqual(r.series[2].points, [0, 0, 0, 0, 0]);
     // total = activos − pasivos: (1000−1000)=0 … (500−500)−40=−40
     assert.deepEqual(r.total, [0, 0, 0, 0, -40]);
   });
@@ -154,7 +155,7 @@ describe('balanceSeries', () => {
   });
   it('grupo por defecto sigue siendo Activo con patrimonio', () => {
     const r = NR.balanceSeries(ACCS, ES, 5, '2026-10-04');
-    assert.equal(r.series.length, 2);
+    assert.equal(r.series.length, 3); // incluye la archivada
     assert.deepEqual(r.total, [0, 0, 0, 0, -40]);
   });
 });
