@@ -37,6 +37,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.3
+
+Mercado adaptado al plan gratuito actual de Alpha Vantage (serie diaria, 1 petición por ticker) y mensajes de error que distinguen entre fallo de conexión, ritmo excesivo y cuota diaria agotada.
+
 ## Novedades en v2.6.1
 
 Mercado con **precios ajustados** (adiós a los saltos falsos por splits) y **dividendos/splits marcados** en gráfica y desplegable; **Diario paginado** (50 por tanda); **aviso de copia** si llevas 30 días sin exportar; las **archivadas siguen contando** en todos los informes.

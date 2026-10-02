@@ -62,7 +62,7 @@ Balance general y PyG lado a lado arriba; debajo, **Evolución de los activos** 
 
 Tres utilidades que no tocan tu contabilidad.
 
-**Mercado**: añade tickers de valores cotizados (AAPL, GOOG, AIR.MC…) y ve su gráfica de los últimos meses en verde (al alza), rojo (a la baja) o blanco (plana), con máximos, mínimos y variación del periodo. Los precios son **ajustados** por splits y dividendos, y ambos eventos se marcan en la gráfica (🔀/💰) y se listan en el desplegable; el nombre de cada ticker enlaza a su ficha de Yahoo Finanzas. Necesita tu **clave gratuita de Alpha Vantage** (25 consultas/día): la pides en un minuto en [alphavantage.co/support](https://www.alphavantage.co/support/) y la pegas al final de la pestaña. Cada usuario guarda la suya propia; la app te muestra cuánta cuota diaria te queda y guarda cada serie en caché 24 h para no gastarla.
+**Mercado**: añade tickers de valores cotizados (AAPL, GOOG, AIR.MC…) y ve su gráfica de los últimos meses en verde (al alza), rojo (a la baja) o blanco (plana), con máximos, mínimos y variación del periodo; el nombre de cada ticker enlaza a su ficha de Yahoo Finanzas. Necesita tu **clave gratuita de Alpha Vantage** (25 consultas/día): la pides en un minuto en [alphavantage.co/support](https://www.alphavantage.co/support/) y la pegas al final de la pestaña. Cada usuario guarda la suya propia; la app te muestra cuánta cuota diaria te queda y guarda cada serie en caché 24 h para no gastarla. Si algo falla, el mensaje te dice si es la conexión, el ritmo de peticiones o la cuota diaria.
 
 **Simulador de préstamos**: importe, TIN anual y años → cuota mensual francesa, total e intereses, con gráfica anual apilada (capital/intereses) y tabla año por año.
 
