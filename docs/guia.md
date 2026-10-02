@@ -38,11 +38,11 @@ Cada movimiento se registra **dos veces** por el mismo importe: un **debe** y un
 
 ## Inicio
 
-Vista general: ecuación fundamental en vivo, patrimonio neto, gráfico de ingresos vs gastos (6 meses), últimos asientos y accesos rápidos (sueldo, gasto, transferencia).
+Vista general: ecuación fundamental en vivo, patrimonio neto, gráfico de ingresos vs gastos (6 meses), últimos asientos y accesos rápidos (sueldo, gasto, transferencia). Si llevas más de 30 días sin exportar copia, verás un recordatorio con botón directo (Exportar cuenta como hecha).
 
 ## Diario
 
-El libro de todos tus asientos: crear (con N líneas), editar, **duplicar**, marcar como **↻ mensual**, borrar y buscar. Se ven mes a mes con **‹ Mes anterior / Mes siguiente ›** encima de la lista. Si eliges un rango de **fechas Desde/Hasta** (aunque cruce meses), la navegación por mes se oculta y el título muestra el rango; **Volver al mes en curso** desactiva el filtro. Botón **Importar CSV** para traer movimientos del banco (`fecha;descripción;importe`).
+El libro de todos tus asientos: crear (con N líneas), editar, **duplicar**, marcar como **↻ mensual**, borrar y buscar. Se ven mes a mes con **‹ Mes anterior / Mes siguiente ›** encima de la lista (50 por tanda, con botón **Mostrar más** si hay más). Si eliges un rango de **fechas Desde/Hasta** (aunque cruce meses), la navegación por mes se oculta y el título muestra el rango; **Volver al mes en curso** desactiva el filtro. Botón **Importar CSV** para traer movimientos del banco (`fecha;descripción;importe`).
 
 Debajo vive **Asientos recurrentes**: plantillas mensuales (nómina, alquiler) y el botón **Generar pendientes del mes**, que crea lo que falte sin duplicar.
 
@@ -52,7 +52,7 @@ Movimientos y saldo acumulado de cada cuenta, con su naturaleza (**deudora**: Ac
 
 ## Cuentas
 
-Tu plan de cuentas en 5 familias. Crea, edita o archiva cuentas.
+Tu plan de cuentas en 5 familias. Crea, edita o archiva cuentas: archivar oculta la cuenta de los desplegables, pero su saldo sigue contando en todos los informes.
 
 ## Informes
 
@@ -62,7 +62,7 @@ Balance general y PyG lado a lado arriba; debajo, **Evolución de los activos** 
 
 Tres utilidades que no tocan tu contabilidad.
 
-**Mercado**: añade tickers de valores cotizados (AAPL, GOOG, AIR.MC…) y ve su gráfica de los últimos meses en verde (al alza), rojo (a la baja) o blanco (plana), con máximos, mínimos y variación del periodo; el nombre de cada ticker enlaza a su ficha de Yahoo Finanzas. Necesita tu **clave gratuita de Alpha Vantage** (25 consultas/día): la pides en un minuto en [alphavantage.co/support](https://www.alphavantage.co/support/) y la pegas al final de la pestaña. Cada usuario guarda la suya propia; la app te muestra cuánta cuota diaria te queda y guarda cada serie en caché 24 h para no gastarla.
+**Mercado**: añade tickers de valores cotizados (AAPL, GOOG, AIR.MC…) y ve su gráfica de los últimos meses en verde (al alza), rojo (a la baja) o blanco (plana), con máximos, mínimos y variación del periodo. Los precios son **ajustados** por splits y dividendos, y ambos eventos se marcan en la gráfica (🔀/💰) y se listan en el desplegable; el nombre de cada ticker enlaza a su ficha de Yahoo Finanzas. Necesita tu **clave gratuita de Alpha Vantage** (25 consultas/día): la pides en un minuto en [alphavantage.co/support](https://www.alphavantage.co/support/) y la pegas al final de la pestaña. Cada usuario guarda la suya propia; la app te muestra cuánta cuota diaria te queda y guarda cada serie en caché 24 h para no gastarla.
 
 **Simulador de préstamos**: importe, TIN anual y años → cuota mensual francesa, total e intereses, con gráfica anual apilada (capital/intereses) y tabla año por año.
 

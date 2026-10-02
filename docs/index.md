@@ -37,6 +37,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.1
+
+Mercado con **precios ajustados** (adiós a los saltos falsos por splits) y **dividendos/splits marcados** en gráfica y desplegable; **Diario paginado** (50 por tanda); **aviso de copia** si llevas 30 días sin exportar; las **archivadas siguen contando** en todos los informes.
+
 ## Novedades en v2.6.0
 
 Nueva pestaña **Herramientas**: **Mercado** (gráficas de tickers como AAPL o AIR.MC, con tu clave gratuita de Alpha Vantage —cada usuario la suya— y cuota diaria visible), **simulador de préstamos** (cuota francesa con gráfica anual) y **simulador de rendimientos** (interés compuesto con aportaciones). Además, **Informes reordenados**: Balance y PyG lado a lado arriba, evoluciones y comprobación plegables.
