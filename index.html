@@ -134,6 +134,11 @@
           <h3>⚠️ Presupuestos al límite</h3>
           <div id="budgetAlerts"></div>
         </div>
+        <div class="card" id="backupCard" hidden>
+          <h3>💾 Copia de seguridad</h3>
+          <p class="muted small" id="backupText"></p>
+          <button class="btn primary small" id="btnBackupNow" type="button">Exportar ahora</button>
+        </div>
       </div>
 
       <div class="grid-2">
@@ -307,7 +312,7 @@
             <button class="btn primary" id="btnMarketAdd" type="button">+ Añadir</button>
           </div>
           <p class="error" id="marketError" role="alert"></p>
-          <p class="muted small">Cada valor guarda su serie en caché 24 h: abrir la pestaña no gasta cuota. La cuota gratuita devuelve las últimas 100 sesiones (~5 meses). Precios en la divisa de cotización.</p>
+          <p class="muted small">Cada valor guarda su serie en caché 24 h: abrir la pestaña no gasta cuota. La cuota gratuita devuelve las últimas 100 sesiones (~5 meses), con precios ajustados por splits y dividendos. Precios en la divisa de cotización.</p>
           <p class="muted small" id="marketQuota"></p>
           <div id="marketList"></div>
         </div>

@@ -194,3 +194,32 @@ describe('mayorMovements', () => {
     assert.deepEqual(r.movs.map(m => m.run), [1000]);
   });
 });
+
+describe('archivadas en balanceSeries', () => {
+  const accs = [
+    { id: 'banco', type: 'Activo' },
+    { id: 'vieja', type: 'Activo', archived: true },
+  ];
+  const es = [{ date: '2026-01-05', lines: [line('banco', 1000, 0)] },
+    { date: '2026-01-06', lines: [line('vieja', 500, 0), line('banco', 0, 500)] }];
+  it('archivar oculta de selectores pero sigue contando en series y total', () => {
+    const d = NR.balanceSeries(accs, es, 10, '2026-01-10', 'Activo');
+    const ids = d.series.map(s => s.accountId);
+    assert.ok(ids.includes('vieja'), 'la archivada tiene serie');
+    const last = d.total.length - 1;
+    assert.equal(d.total[last], 1000, 'total cuenta ambas (500 + 500)');
+  });
+});
+
+describe('paginate', () => {
+  it('corta y cuenta el resto', () => {
+    const r = NR.paginate([1, 2, 3, 4, 5], 2);
+    assert.deepEqual(r.page, [1, 2]);
+    assert.equal(r.rest, 3);
+  });
+  it('sin resto cuando cabe todo', () => {
+    const r = NR.paginate([1, 2], 50);
+    assert.deepEqual(r.page, [1, 2]);
+    assert.equal(r.rest, 0);
+  });
+});

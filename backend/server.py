@@ -174,6 +174,10 @@ def init_db():
             user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
             api_key TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS user_flags (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            last_export INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS market_meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL DEFAULT ''
@@ -610,9 +614,6 @@ def validate_data(body):
 MARKET_DAYS = 180
 MARKET_TTL = 86400
 MARKET_MIN_GAP = 12
-# Pausa antes de reintentar con compact tras un full premium: la API pide
-# ~1 petición/segundo en cuota gratuita y dos llamadas seguidas la disparan.
-MARKET_RETRY_DELAY = 2
 MARKET_SYMBOL_RE = re.compile(r"^[A-Z0-9.\-:]{1,12}$")
 MARKET_KEY_RE = re.compile(r"^[A-Za-z0-9]{8,32}$")
 _market_lock = threading.Lock()
@@ -667,12 +668,13 @@ def normalize_symbol(raw):
     return re.sub(r"\s+", "", str(raw or "")).upper()
 
 
-def _av_get(symbol, key, full):
-    """Una llamada a TIME_SERIES_DAILY. Dict parseado o None (red)."""
+def _av_get(symbol, key):
+    """Una llamada a TIME_SERIES_DAILY_ADJUSTED en compact (100 sesiones,
+    cierre ajustado por splits/dividendos). Dict parseado o None (red)."""
     import urllib.request
     import urllib.parse as _up
-    qs = _up.urlencode({"function": "TIME_SERIES_DAILY", "symbol": symbol,
-                        "outputsize": "full" if full else "compact", "apikey": key})
+    qs = _up.urlencode({"function": "TIME_SERIES_DAILY_ADJUSTED", "symbol": symbol,
+                        "outputsize": "compact", "apikey": key})
     req = urllib.request.Request("https://www.alphavantage.co/query?" + qs,
                                  headers={"User-Agent": "NeverRed/" + VERSION})
     try:
@@ -690,8 +692,9 @@ def _av_get(symbol, key, full):
 def parse_av_daily(payload, days=MARKET_DAYS):
     """Puro y testeable. Devuelve (data, err) con err en None/"invalid"/"rate".
 
-    data = {"dates": [...], "closes": [...]} en ventana de `days` naturales;
-    si la ventana trae <2 puntos se usa todo lo disponible (p. ej. compact).
+    data = {"dates": [...], "closes": [...], "events": [...]} en ventana de
+    `days` naturales; si la ventana trae <2 puntos se usa todo lo disponible.
+    closes = cierre ajustado; events = dividendos/splits del periodo.
     """
     if not isinstance(payload, dict):
         return None, "rate"
@@ -707,11 +710,17 @@ def parse_av_daily(payload, days=MARKET_DAYS):
         if not isinstance(bar, dict):
             continue
         try:
-            c = float(bar.get("4. close", ""))
+            c = float(bar.get("5. adjusted close", "") or bar.get("4. close", ""))
         except (TypeError, ValueError):
             continue
-        if math.isfinite(c):
-            pts.append((d, c))
+        if not math.isfinite(c):
+            continue
+        try:
+            div = float(bar.get("7. dividend amount", 0) or 0)
+        except (TypeError, ValueError):
+            div = 0
+        split = str(bar.get("8. split coefficient", "1.0") or "1.0")
+        pts.append((d, c, div, split))
     if len(pts) < 2:
         return None, "invalid"
     import datetime as _dt
@@ -719,8 +728,13 @@ def parse_av_daily(payload, days=MARKET_DAYS):
     window = [p for p in pts if p[0] >= cutoff]
     if len(window) < 2:
         window = pts[-100:] if len(pts) > 100 else pts
-    return {"dates": [d for d, _ in window],
-            "closes": [c for _, c in window]}, None
+    return {"dates": [d for d, _, _, _ in window],
+            "closes": [c for _, c, _, _ in window],
+            "events": ([{"date": d, "type": "dividend", "amount": round(div, 4)}
+                        for d, _, div, _ in window if div > 0] +
+                       [{"date": d, "type": "split", "coef": split}
+                        for d, _, _, split in window
+                        if split not in ("1", "1.0", "1.00")])}, None
 
 
 def _market_stats(closes):
@@ -770,10 +784,9 @@ AV_DAILY_LIMIT = 25
 
 
 def _av_quota():
-    """(used, limit) de hoy según esta instalación, o (None, None) si la
-    clave parece premium (full funciona: sin tope diario que mostrar)."""
-    if _market_meta("mode") != "compact":
-        return None, None
+    """(used, limit) de hoy según esta instalación. La serie ajustada en
+    compact vale para claves gratuitas y premium: el tope mostrado es el
+    de la cuota gratuita (25/día)."""
     try:
         used = int(_market_meta(_av_today_key()) or 0)
     except ValueError:
@@ -805,6 +818,7 @@ def market_history(symbol, key, force=False):
         con.close()
         out = {"symbol": symbol, **_market_stats(cached["closes"]),
                "dates": cached["dates"], "closes": cached["closes"],
+               "events": cached.get("events", []),
                "cached_at": row["fetched_at"], "stale": False}
         return 200, out
     global _market_last_call
@@ -815,25 +829,14 @@ def market_history(symbol, key, force=False):
             if cached:
                 out = {"symbol": symbol, **_market_stats(cached["closes"]),
                        "dates": cached["dates"], "closes": cached["closes"],
+                       "events": cached.get("events", []),
                        "cached_at": row["fetched_at"], "stale": True}
                 return 200, out
             return 429, {"error": "Cuota de la API: reintenta en %d s." % wait}
         _market_last_call = int(time.time())
-    payload = None
-    if _market_meta("mode") == "compact":
-        _av_count_call()
-        payload = _av_get(symbol, key, full=False)  # clave gratuita: 1 llamada
-    else:
-        _av_count_call()
-        payload = _av_get(symbol, key, full=True)
-        if isinstance(payload, dict) and "Information" in payload \
-                and "premium" in str(payload["Information"]).lower():
-            # El full diario es premium: recordar modo compact para no
-            # repetir el gasto, y pausar antes del reintento (límite 1 req/s).
-            _market_set_meta("mode", "compact")
-            time.sleep(MARKET_RETRY_DELAY)
-            _av_count_call()
-            payload = _av_get(symbol, key, full=False)
+    # Ajustado en compact: 1 llamada siempre, sin sondeo premium.
+    _av_count_call()
+    payload = _av_get(symbol, key)
     data, err = parse_av_daily(payload or {})
     con = db()
     if err is None:
@@ -845,6 +848,7 @@ def market_history(symbol, key, force=False):
         con.close()
         return 200, {"symbol": symbol, **_market_stats(data["closes"]),
                      "dates": data["dates"], "closes": data["closes"],
+                     "events": data.get("events", []),
                      "cached_at": int(time.time()), "stale": False}
     con.close()
     if err == "invalid":
@@ -852,6 +856,7 @@ def market_history(symbol, key, force=False):
     if cached:
         out = {"symbol": symbol, **_market_stats(cached["closes"]),
                "dates": cached["dates"], "closes": cached["closes"],
+               "events": cached.get("events", []),
                "cached_at": row["fetched_at"], "stale": True}
         return 200, out
     return 429, {"error": "Cuota diaria de Alpha Vantage agotada (25 req/día). "
@@ -942,7 +947,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
-        if length <= 0 or length > 2_000_000:
+        if length <= 0 or length > 10_000_000:
             return None
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
@@ -1019,6 +1024,9 @@ class Handler(BaseHTTPRequestHandler):
             "INSERT INTO user_data (user_id, data, updated_at) VALUES (?, '{}', ?)",
             (user_id, int(time.time())),
         )
+        con.execute("INSERT INTO user_flags (user_id, last_export) VALUES (?,?) "
+                    "ON CONFLICT(user_id) DO NOTHING",
+                    (user_id, int(time.time())))
         con.commit()
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
@@ -1103,7 +1111,24 @@ class Handler(BaseHTTPRequestHandler):
         user = self._auth_user()
         if user is None:
             return self._send_json(401, {"error": "Sesión no válida."})
-        self._send_json(200, {"user": public_user(user)})
+        con = db()
+        row = con.execute("SELECT last_export FROM user_flags WHERE user_id = ?",
+                          (user["id"],)).fetchone()
+        con.close()
+        self._send_json(200, {"user": public_user(user),
+                              "last_export": row["last_export"] if row else 0})
+
+    def _api_export_log(self):
+        user = self._auth_user()
+        if user is None:
+            return self._send_json(401, {"error": "Sesión no válida."})
+        con = db()
+        con.execute("INSERT INTO user_flags (user_id, last_export) VALUES (?,?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET last_export=excluded.last_export",
+                    (user["id"], int(time.time())))
+        con.commit()
+        con.close()
+        self._send_json(200, {"ok": True})
 
     def _api_reset_request(self):
         if rate_limited(self.client_ip()):
@@ -1176,6 +1201,7 @@ class Handler(BaseHTTPRequestHandler):
         con.execute("DELETE FROM user_data WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM market_tickers WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM market_keys WHERE user_id = ?", (user["id"],))
+        con.execute("DELETE FROM user_flags WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM telemetry_consent WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
@@ -1381,6 +1407,9 @@ class Handler(BaseHTTPRequestHandler):
             "INSERT INTO user_data (user_id, data, updated_at) VALUES (?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
             (user_id, json.dumps(data, ensure_ascii=False), int(time.time())))
+        # La demo es efímera: ni tickers ni clave sobreviven al restablecido.
+        con.execute("DELETE FROM market_tickers WHERE user_id = ?", (user_id,))
+        con.execute("DELETE FROM market_keys WHERE user_id = ?", (user_id,))
         con.commit()
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
@@ -1493,6 +1522,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(points) if points else None
                 if data and data.get("closes"):
                     item.update(_market_stats(data["closes"]))
+                    item["events"] = data.get("events", [])
                     item["cached_at"] = fetched_at
                     item["stale"] = (int(time.time()) - (fetched_at or 0)) > MARKET_TTL
             except Exception:
@@ -1607,6 +1637,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_forward_now()
         if path == "/api/demo":
             return self._api_demo()
+        if path == "/api/export-log":
+            return self._api_export_log()
         if path == "/api/market/key":
             return self._api_market_key()
         if path == "/api/market/tickers":

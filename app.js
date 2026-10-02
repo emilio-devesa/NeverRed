@@ -448,6 +448,8 @@ function renderDiario() {
   const prevBtn = document.getElementById('diarioPrev'), nextBtn = document.getElementById('diarioNext');
   const labelEl = document.getElementById('diarioMonthLabel'), todayBtn = document.getElementById('diarioToday');
   const from = fromEl.value, to = toEl.value;
+  const sig = diarioMonth + '|' + q + '|' + from + '|' + to;
+  if (sig !== diarioSig) { diarioSig = sig; diarioShown = DIARIO_PAGE; } // filtro nuevo: desde arriba
   // Con rango de fechas: modo propio sobre todo el histórico (puede cruzar
   // meses); la navegación por mes se oculta y el título muestra el rango.
   const rangeActive = !!(from || to);
@@ -459,7 +461,9 @@ function renderDiario() {
   if (to) list = list.filter(e => e.date <= to);
   if (q) list = list.filter(e => e.desc.toLowerCase().includes(q) ||
     e.lines.some(l => (accById(l.accountId)?.name || '').toLowerCase().includes(q)));
-  document.getElementById('diarioList').innerHTML = list.length ? list.map(entryCard).join('')
+  const { page, rest } = NR.paginate(list, diarioShown);
+  document.getElementById('diarioList').innerHTML = list.length ? page.map(entryCard).join('') +
+    (rest ? `<button class="btn ghost" id="btnDiarioMore" type="button">Mostrar más (${rest} restantes)</button>` : '')
     : (base.length
       ? '<p class="muted">Sin resultados. Prueba con otro filtro o crea un asiento nuevo.</p>'
       : (rangeActive
@@ -480,6 +484,9 @@ function renderDiario() {
   renderRecurring();
 }
 let diarioMonth = NR.currentMonth();
+const DIARIO_PAGE = 50;
+let diarioShown = DIARIO_PAGE;
+let diarioSig = '';
 function clearDiarioFilters() {
   document.getElementById('searchDiario').value = '';
   document.getElementById('filterFrom').value = '';
@@ -502,6 +509,7 @@ function dupeEntry(id) {
   });
 }
 document.getElementById('diarioList').addEventListener('click', ev => {
+  if (ev.target.id === 'btnDiarioMore') { diarioShown += DIARIO_PAGE; renderDiario(); return; }
   const ed = ev.target.dataset.edit, del = ev.target.dataset.del, dupe = ev.target.dataset.dupe, mon = ev.target.dataset.monthly;
   if (ed) openEntryModal(null, ed);
   if (dupe) dupeEntry(dupe);
@@ -678,7 +686,7 @@ function assetsSVG(data, H, totalName) {
 }
 function monthEndBalance(monthKey, type) {
   type = type === 'Pasivo' ? 'Pasivo' : 'Activo';
-  const accs = state.accounts.filter(a => !a.archived);
+  const accs = state.accounts; // archivadas incluidas: el saldo no desaparece
   const t = NR.totalsByAccount(accs, state.entries.filter(e => (e.date || '') <= NR.monthEnd(monthKey)));
   let tA = 0, tP = 0;
   for (const a of accs) {
@@ -692,15 +700,16 @@ function monthEndBalance(monthKey, type) {
 }
 function renderEvolution(boxId, readId, type, totalName, emptyMsg, colName) {
   const box = document.getElementById(boxId);
-  const accs = state.accounts.filter(a => !a.archived && a.type === type);
+  const accs = state.accounts.filter(a => a.type === type);
   if (!state.entries.length || !accs.length) {
     box.innerHTML = `<p class="muted">${emptyMsg}</p>`;
     return;
   }
   const data = NR.balanceSeries(state.accounts, state.entries, 180, undefined, type);
   const last = data.dates.length - 1;
-  const chips = data.series.map((se, si) =>
-    `<span class="legend-chip"><i style="background:${ASSET_COLORS[si % ASSET_COLORS.length]}"></i>${esc(se.name)} <strong>${fmt(se.points[last])}</strong></span>`).join('') +
+  const chips = data.series.map((se, si) => {
+    const arch = state.accounts.find(a => a.id === se.accountId)?.archived;
+    return `<span class="legend-chip"><i style="background:${ASSET_COLORS[si % ASSET_COLORS.length]}"></i>${esc(se.name)}${arch ? ' <span class="muted small">(archivada)</span>' : ''} <strong>${fmt(se.points[last])}</strong></span>`; }).join('') +
     `<span class="legend-chip total"><i></i>${esc(totalName)} <strong>${fmt(data.total[last])}</strong></span>`;
   const months = [];
   const now = new Date();
@@ -763,7 +772,7 @@ function renderReports() {
   const t = totalsByAccount();
   let td = 0, th = 0;
   document.getElementById('trialTable').querySelector('tbody').innerHTML = state.accounts
-    .filter(a => !a.archived && ((t[a.id]?.debit || 0) || (t[a.id]?.credit || 0)))
+    .filter(a => ((t[a.id]?.debit || 0) || (t[a.id]?.credit || 0)))
     .map(a => {
       const d = t[a.id].debit, h = t[a.id].credit; td = round2(td + d); th = round2(th + h);
       return `<tr><td>${esc(a.code + ' · ' + a.name)}</td><td>${a.type}</td><td class="num">${fmtNum(d)}</td><td class="num">${fmtNum(h)}</td><td class="num"><strong>${fmt(balanceOf(a, t))}</strong></td></tr>`;
@@ -929,12 +938,40 @@ document.getElementById('btnReset').addEventListener('click', () => {
 });
 
 // ---------- Export / import / wipe ----------
+async function logExport() {
+  // Marca la copia para el recordatorio (silencioso: no bloquea la descarga).
+  try {
+    await fetch(api('/api/export-log'), { method: 'POST', headers: authHeaders() });
+    const card = document.getElementById('backupCard');
+    if (card) card.hidden = true;
+  } catch {}
+}
+async function refreshBackupBanner() {
+  if (!currentUser) return;
+  try {
+    const me = await (await fetch(api('/api/me'), { headers: authHeaders() })).json();
+    renderBackupReminder(me.last_export);
+  } catch {}
+}
+function renderBackupReminder(lastExport) {  const card = document.getElementById('backupCard');
+  if (!card) return;
+  const days = lastExport ? Math.floor((Date.now() / 1000 - lastExport) / 86400) : 999;
+  if (days < 30) { card.hidden = true; return; }
+  document.getElementById('backupText').textContent = lastExport
+    ? `Llevas ${days} días sin exportar copia. Tarda 5 segundos.`
+    : 'Aún no has exportado ninguna copia. Tarda 5 segundos.';
+  card.hidden = false;
+}
+document.getElementById('btnBackupNow').addEventListener('click', () => {
+  document.getElementById('btnExport').click();
+});
 document.getElementById('btnExport').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `neverred-${todayISO()}.json`; a.click();
   URL.revokeObjectURL(a.href);
   track('export_json');
+  logExport();
 });
 document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
 document.getElementById('fileImport').addEventListener('change', ev => {
@@ -1273,6 +1310,7 @@ function enterApp() {
   if (!currentUser) return;
   resetMarket(); // la pestaña recargará los tickers de ESTE usuario al abrirse
   resetSimulators(); // los simuladores no persisten: empiezan limpios
+  refreshBackupBanner(); // aviso de copia según tu última exportación
   authOverlay.hidden = true;
   document.getElementById('userEmail').textContent = currentUser.email;
   state.user.name = currentUser.name;
@@ -1473,9 +1511,11 @@ function resetMarket() {
   marketDrawn = {};
   marketSeries = {};
 }
-function marketSVG(dates, closes, color) {
+function marketSVG(dates, closes, color, events) {
   const W = 640, H = 140, padL = 56, padR = 10, padT = 8, padB = 20;
   const n = dates.length;
+  const idx = {};
+  dates.forEach((d, i) => { idx[d] = i; });
   let lo = Math.min(...closes), hi = Math.max(...closes);
   if (lo === hi) { lo -= 1; hi += 1; }
   const X = i => n < 2 ? padL : padL + (i * (W - padL - padR)) / (n - 1);
@@ -1498,6 +1538,18 @@ function marketSVG(dates, closes, color) {
   s += `<path d="${closes.map((v, i) => `${i ? 'L' : 'M'}${f1(X(i))},${f1(Y(v))}`).join('')}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
   closes.forEach((v, i) => {
     s += `<circle class="pt" cx="${f1(X(i))}" cy="${f1(Y(v))}" r="2" fill="${color}" data-i="${i}"><title>${esc(NR.fmtDateES(dates[i]))} · ${esc(fmtNum(v))}</title></circle>`;
+  });
+  // Eventos: dividendo = rombo azul, split = triángulo dorado (con tooltip).
+  (events || []).forEach(ev => {
+    const i = idx[ev.date];
+    if (i == null) return;
+    const x = f1(X(i));
+    if (ev.type === 'split') {
+      s += `<polygon points="${x},${padT} ${x - 5},${padT + 8} ${x + 5},${padT + 8}" fill="#facc15"><title>Split ${esc(ev.date)} · coeficiente ${esc(ev.coef)}</title></polygon>`;
+    } else {
+      const cy = f1(Y(closes[i]));
+      s += `<rect x="${x - 3}" y="${cy - 3}" width="6" height="6" transform="rotate(45 ${x} ${cy})" fill="#38bdf8"><title>Dividendo ${esc(ev.date)} · ${esc(fmtNum(ev.amount))}</title></rect>`;
+    }
   });
   return s + '</svg>';
 }
@@ -1567,11 +1619,14 @@ function renderMarket() {
         <div class="muted small ticker-readout" data-readout="${esc(t.symbol)}"></div>
         <details class="small muted"><summary>Máximos y mínimos del periodo</summary>
           <table class="table"><tbody>
-            <tr><td>Precio máximo</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
-            <tr><td>Precio mínimo</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
+            <tr><td>Precio máximo (ajustado)</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
+            <tr><td>Precio mínimo (ajustado)</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
             <tr><td>Variación del periodo</td><td class="num" style="color:${c}"><strong>${pct}</strong></td></tr>
             <tr><td>Puntos de cotización</td><td class="num">${t.points}</td></tr>
           </tbody></table>
+          ${(t.events && t.events.length) ? `<table class="table"><thead><tr><th>Fecha</th><th>Evento</th><th class="num">Detalle</th></tr></thead><tbody>` +
+            t.events.map(ev => `<tr><td>${esc(NR.fmtDateES(ev.date))}</td><td>${ev.type === 'split' ? '🔀 Split' : '💰 Dividendo'}</td><td class="num">${ev.type === 'split' ? esc(ev.coef) : esc(fmtNum(ev.amount))}</td></tr>`).join('') +
+            `</tbody></table>` : ''}
         </details>
       </div>`;
     }).join('');
@@ -1589,7 +1644,7 @@ function paintTickerChart(symbol, h) {
   const slot = document.querySelector(`[data-chart="${symbol}"]`);
   if (!slot || !h) return;
   const c = TREND_COLOR[h.trend] || TREND_COLOR.flat;
-  slot.innerHTML = marketSVG(h.dates, h.closes, c);
+  slot.innerHTML = marketSVG(h.dates, h.closes, c, h.events);
   const readout = document.querySelector(`[data-readout="${symbol}"]`);
   const last = h.dates.length - 1;
   const showLast = () => { if (readout) readout.textContent = `${NR.fmtDateES(h.dates[last])} · cierre: ${fmtNum(h.closes[last])}`; };
@@ -1613,7 +1668,7 @@ async function loadTickerChart(symbol, force) {
     // Refresca la cabecera con los stats recién llegados (p. ej. ticker nuevo).
     const i = marketTickers.findIndex(t => t.symbol === symbol);
     if (i >= 0 && marketTickers[i].last == null) {
-      marketTickers[i] = { ...marketTickers[i], last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, cached_at: h.cached_at, stale: h.stale };
+      marketTickers[i] = { ...marketTickers[i], last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, events: h.events || [], cached_at: h.cached_at, stale: h.stale };
       renderMarket();
     }
   } catch (e) {
@@ -1662,7 +1717,7 @@ document.getElementById('btnMarketAdd').addEventListener('click', async () => {
     marketLoaded = true;
     const h = data.history;
     if (!marketTickers.some(t => t.symbol === h.symbol)) {
-      marketTickers.push({ symbol: h.symbol, added_at: Date.now() / 1000, last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, cached_at: h.cached_at, stale: h.stale });
+      marketTickers.push({ symbol: h.symbol, added_at: Date.now() / 1000, last: h.last, change_pct: h.change_pct, trend: h.trend, min: h.min, max: h.max, points: h.points, events: h.events || [], cached_at: h.cached_at, stale: h.stale });
     }
     updateQuota();
     renderMarket();

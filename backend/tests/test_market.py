@@ -53,15 +53,22 @@ def mkuser(port, tag):
 
 
 def fixture_series(n=250, start_price=100.0):
-    """Payload TIME_SERIES_DAILY con n sesiones terminando hoy."""
+    """Payload TIME_SERIES_DAILY_ADJUSTED con n sesiones terminando hoy."""
     today = datetime.date.today()
     ts = {}
     for i in range(n):
         d = (today - datetime.timedelta(days=i)).isoformat()
         c = start_price + i * 0.1
-        ts[d] = {"1. open": str(c), "2. high": str(c + 1),
-                 "3. low": str(c - 1), "4. close": "%.4f" % c,
-                 "5. volume": "1000"}
+        bar = {"1. open": str(c), "2. high": str(c + 1),
+               "3. low": str(c - 1), "4. close": "%.4f" % c,
+               "5. adjusted close": "%.4f" % (c * 0.99),
+               "6. volume": "1000", "7. dividend amount": "0.0000",
+               "8. split coefficient": "1.0"}
+        if i == 30:
+            bar["7. dividend amount"] = "0.5000"
+        if i == 100:
+            bar["8. split coefficient"] = "2.0"
+        ts[d] = bar
     return {"Meta Data": {"2. Symbol": "TEST"}, "Time Series (Daily)": ts}
 
 
@@ -73,6 +80,14 @@ class ParseCase(unittest.TestCase):
         self.assertTrue(all(d >= cutoff for d in data["dates"]))
         self.assertEqual(len(data["dates"]), len(data["closes"]))
         self.assertGreater(len(data["dates"]), 100)
+        # Cierre ajustado y eventos del periodo.
+        self.assertLess(data["closes"][-1], 200)  # ajustado (< crudo)
+        kinds = {(e["type"], e["date"]) for e in data["events"]}
+        today = datetime.date.today()
+        self.assertIn(("dividend", (today - datetime.timedelta(days=30)).isoformat()),
+                      kinds)
+        self.assertIn(("split", (today - datetime.timedelta(days=100)).isoformat()),
+                      kinds)
 
     def test_simbolo_invalido(self):
         _, err = server.parse_av_daily({"Error Message": "Invalid API call."})
@@ -114,8 +129,8 @@ class MarketApiCase(unittest.TestCase):
         cls.calls = []
         cls.payload = fixture_series()
 
-        def fake_av(symbol, key, full):
-            cls.calls.append((symbol, full))
+        def fake_av(symbol, key):
+            cls.calls.append((symbol,))
             assert key, "la llamada saliente necesita clave del servidor"
             return cls.payload
 
@@ -249,33 +264,21 @@ class MarketApiCase(unittest.TestCase):
         finally:
             type(self).payload = cls_payload
 
-    def test_modo_compact_recordado(self):
-        # full premium una sola vez: luego va directo a compact (1 llamada).
-        server._market_set_meta("mode", "")  # modo desconocido: como instalación nueva
+    def test_ajustado_una_llamada_con_eventos(self):
+        # Serie ajustada en compact: 1 sola llamada, con eventos.
         tok = mkuser(self.port, "mkt6")
         calls = type(self).calls
-        orig = server._av_get
-        server.MARKET_RETRY_DELAY = 0
-        try:
-            def fake_premium(symbol, key, full):
-                calls.append((symbol, full))
-                if full:
-                    return {"Information": "The outputsize=full parameter value "
-                                           "is a premium feature"}
-                return type(self).payload
-            server._av_get = fake_premium
-            st, body = call(self.port, "/api/market/tickers", "POST",
-                            {"symbol": "MODEA"}, token=tok)
-            self.assertEqual(st, 200, body)
-            self.assertEqual([c[1] for c in calls], [True, False])
-            calls.clear()
-            server._market_last_call = 0  # el guard de cuota no pinta aquí
-            st, body = call(self.port, "/api/market/tickers", "POST",
-                            {"symbol": "MODEB"}, token=tok)
-            self.assertEqual(st, 200, body)
-            self.assertEqual([c[1] for c in calls], [False])  # solo compact
-        finally:
-            server._av_get = orig
+        calls.clear()
+        server._market_last_call = 0
+        st, body = call(self.port, "/api/market/tickers", "POST",
+                        {"symbol": "ADJUS"}, token=tok)
+        self.assertEqual(st, 200, body)
+        self.assertEqual(len(calls), 1)
+        h = body["history"]
+        self.assertTrue(any(e["type"] == "dividend" for e in h["events"]))
+        self.assertTrue(any(e["type"] == "split" for e in h["events"]))
+        st, body = call(self.port, "/api/market/tickers", token=tok)
+        self.assertEqual(body["tickers"][0]["events"], h["events"])
 
     def test_usuarios_aislados(self):
         # Los tickers de A jamás aparecen en la lista de B.
@@ -293,8 +296,7 @@ class MarketApiCase(unittest.TestCase):
         self.assertEqual(body["tickers"], 1)
 
     def test_cuota_contador(self):
-        # Autosuficiente: simula clave gratuita detectada y gasta 2 llamadas.
-        server._market_set_meta("mode", "compact")
+        # Autosuficiente: resetea el contador y gasta 2 llamadas.
         server._market_set_meta(server._av_today_key(), "0")
         tok = mkuser(self.port, "mktq")
         for sym in ("QUOTA", "QUOTB"):
@@ -305,12 +307,47 @@ class MarketApiCase(unittest.TestCase):
         st, body = call(self.port, "/api/market/status", token=tok)
         q = body["quota"]
         self.assertEqual((q["used"], q["limit"]), (2, 25))
-        # Clave premium (full funciona): sin tope diario que mostrar.
-        server._market_set_meta("mode", "full")
+
+    def test_demo_limpia_mercado(self):
+        # La demo es efímera: entrar restablece tickers y clave.
+        tok = mkuser(self.port, "mkdemo")
+        server._market_last_call = 0
+        st, _ = call(self.port, "/api/market/tickers", "POST",
+                     {"symbol": "DEMOT"}, token=tok)
+        self.assertEqual(st, 200)
+        st, _ = call(self.port, "/api/market/key", "POST",
+                     {"key": "ClaveDemo1234567"}, token=tok)
+        self.assertEqual(st, 200)
+        con = server.db()
+        uid = con.execute("SELECT id FROM users WHERE email = ?",
+                          ("mkdemo@m.local",)).fetchone()["id"]
+        con.execute("UPDATE users SET email = ? WHERE id = ?",
+                    (server.DEMO_EMAIL, uid))
+        con.commit()
+        con.close()
+        st, _ = call(self.port, "/api/demo", "POST")
+        self.assertEqual(st, 200)
+        con = server.db()
         try:
-            self.assertEqual(server._av_quota(), (None, None))
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM market_tickers WHERE user_id = ?",
+                (uid,)).fetchone()[0], 0)
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM market_keys WHERE user_id = ?",
+                (uid,)).fetchone()[0], 0)
         finally:
-            server._market_set_meta("mode", "compact")
+            con.close()
+
+    def test_export_log(self):
+        tok = mkuser(self.port, "mkexp")
+        st, body = call(self.port, "/api/me", token=tok)
+        self.assertEqual(st, 200)
+        first = body["last_export"]
+        self.assertGreater(first, 0)  # al registrar empieza el reloj
+        st, _ = call(self.port, "/api/export-log", "POST", {}, token=tok)
+        self.assertEqual(st, 200)
+        st, body = call(self.port, "/api/me", token=tok)
+        self.assertGreaterEqual(body["last_export"], first)
 
     def test_sin_clave(self):
         tok = mkuser(self.port, "mkt5")
