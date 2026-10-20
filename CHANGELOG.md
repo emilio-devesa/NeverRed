@@ -1,5 +1,37 @@
 # NeverRed — Historial de cambios
 
+## v2.6.8 — Cuarta iteración de la auditoría (P3)
+- **Backend modular:** `server.py` baja de 2.163 a ~1.400 líneas. Separados
+  `config.py` (rutas/versión), `schema.py` (BD y migraciones), `auth.py`
+  (contraseñas y validación), `static.py` (lista blanca/ETag/gzip),
+  `market.py` (Alpha Vantage) y `telemetry.py` (store/forward/relay). Los
+  empaquetados macOS/Linux copian los módulos nuevos.
+- **Monitor de telemetría:** el dashboard escapa también comillas y atributos
+  (además de `<`, `>` y `&`) en versiones, plataformas, IDs y leyendas SVG.
+  Cierra el vector de XSS almacenado por una BD manipulada.
+- **Limpieza:** fuera imports muertos, re-exports históricos de telemetría,
+  el envoltorio `build_aggregates`, CSS `.demo-row`, una variable sin usar y
+  la migración de `market.key` global.
+- **Sesiones:** el error al cargar la lista usa el hueco reservado
+  `#sessionsError`; solo cambia el estado de error, no el diseño normal.
+- **Modo archivo:** `file://` usa siempre `http://127.0.0.1:8000`; se elimina
+  la clave oculta `neverred_api` de `localStorage`.
+- **Métricas:** con `NEVERRED_METRICS=1` (o log a fichero) cada petición deja
+  una línea JSON con método, ruta, estado, latencia y `user_id`; sin cuerpos y
+  sin los latidos `/api/ping`.
+- **Forward automático:** el hilo periódico pasaba a `forward_once` sin el
+  directorio de la clave de emparejamiento; el `TypeError` se tragaba el
+  `except` y el envío no ocurría. Ahora lo recibe y hay test de regresión.
+- **Tests:** nueva suite de integración HTTP (login → guardar → recargar →
+  409 y persistencia tras logout/login); CI ejecuta 5 suites de backend.
+- **Operación:** copias redactadas de telemetría y releases en `docs/ops/`.
+- **Empaquetado:** `NEVERRED_BUILD_SINK=` (vacío) ahora deja la telemetría
+  local; antes el `:=` de los scripts lo sustituía por el destino por defecto.
+- **S-04 documentado:** `NEVERRED_TRUST_PROXY=1` sigue siendo una decisión de
+  despliegue; no se cambia el comportamiento.
+- Service worker `v8`; 115 tests en verde (32 backend + 19 mercado + 9 forward
+  + 11 emparejamiento + 2 integración + 42 frontal).
+
 ## v2.6.7 — Tercera iteración de la auditoría (P2)
 - **HTTP/1.1 de verdad:** keep-alive, `HEAD` con `Content-Length` y sin cuerpo,
   `OPTIONS` 204 sin cuerpo, gzip para estáticos y `ETag`/`Last-Modified` con

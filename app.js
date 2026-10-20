@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.7';
+const NEVERRED_BUILD = '2.6.8';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -1175,8 +1175,7 @@ document.getElementById('btnStartWelcome').addEventListener('click', () => {
 // Si la página se abrió como archivo local (file://), la API vive en el servidor local.
 function apiBase() {
   if (location.protocol !== 'file:') return '';
-  try { return localStorage.getItem('neverred_api') || 'http://127.0.0.1:8000'; }
-  catch { return 'http://127.0.0.1:8000'; }
+  return 'http://127.0.0.1:8000';
 }
 const API_BASE = apiBase();
 const api = p => API_BASE + p;
@@ -1607,6 +1606,8 @@ document.getElementById('btnConfirmReset').addEventListener('click', async () =>
 const sessionsModal = document.getElementById('sessionsModal');
 async function loadSessions() {
   const box = document.getElementById('sessionsList');
+  const err = document.getElementById('sessionsError');
+  err.textContent = '';
   box.innerHTML = '<p class="muted small">Cargando…</p>';
   try {
     const res = await fetch(api('/api/sessions'), { headers: authHeaders() });
@@ -1618,7 +1619,10 @@ async function loadSessions() {
         <span>${s.current ? 'Este dispositivo ✓' : 'Otro dispositivo'}</span>
         <span class="bal muted small">hasta ${until}</span></div>`;
     }).join('') || '<p class="muted">Sin sesiones.</p>';
-  } catch { box.innerHTML = '<p class="error">No se pudieron cargar.</p>'; }
+  } catch {
+    box.innerHTML = '';
+    err.textContent = 'No se pudieron cargar las sesiones.';
+  }
 }
 document.getElementById('btnSessions').addEventListener('click', () => { sessionsModal.hidden = false; loadSessions(); document.getElementById('btnCloseSessions').focus(); });
 document.getElementById('btnCloseSessions').addEventListener('click', () => sessionsModal.hidden = true);

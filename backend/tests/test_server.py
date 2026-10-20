@@ -650,6 +650,18 @@ class ServerCase(unittest.TestCase):
                            (".webp", "image/webp"), (".woff2", "font/woff2")):
             self.assertEqual(server.MIME[ext], ctype)
 
+    def test_metricas_latencia(self):
+        seen = []
+        with unittest.mock.patch.object(server, "METRICS", True), \
+                unittest.mock.patch.object(
+                    server, "log_metric",
+                    side_effect=lambda *args: seen.append(args)):
+            st, _, _ = call(self.port, "/api/health")
+            self.assertEqual(st, 200)
+            time.sleep(0.05)
+        self.assertTrue(any(a[0] == "GET" and a[1] == "/api/health" and a[2] == 200
+                            and a[3] >= 0 for a in seen), seen)
+
     def test_keep_alive_no_filtra_cookie_ni_etag(self):
         mkuser(self.port, "keep")
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)

@@ -13,7 +13,7 @@ SUFFIX="${2:-}"
 DMG="NeverRed-macOS-$VERSION$SUFFIX.dmg"
 # Destino de telemetría por defecto en los paquetes. El token sigue siendo
 # solo vía entorno (pendiente de análisis); aquí solo va la dirección.
-: "${NEVERRED_BUILD_SINK:=https://neverred-dev.tail2f2ed4.ts.net}"
+: "${NEVERRED_BUILD_SINK=https://neverred-dev.tail2f2ed4.ts.net}"
 
 STAGE="$ROOT/dist/macos"
 APP="$STAGE/NeverRed.app"
@@ -25,7 +25,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$RES/backend" "$RES/li
 cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$RES/"
 cp -R assets "$RES/assets"
 cp lib/contabilidad.js "$RES/lib/"
-cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
+cp backend/server.py backend/auth.py backend/config.py backend/market.py \
+  backend/schema.py backend/static.py backend/telemetry.py \
+  backend/telemetry_common.py backend/telemetry_forward.py "$RES/backend/"
 cp packaging/macos/Launcher.sh "$APP/Contents/MacOS/NeverRed"
 # Destino de telemetría del build (vacío = local pura). El coordinador lo
 # rellena con NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN para builds beta.

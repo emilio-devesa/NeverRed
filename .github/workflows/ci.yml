@@ -18,6 +18,7 @@ jobs:
       - run: python3 backend/tests/test_market.py
       - run: python3 backend/tests/test_telemetry_forward.py
       - run: python3 backend/tests/test_telemetry_pairing.py
+      - run: python3 backend/tests/test_integration.py
 
   frontend:
     runs-on: ubuntu-latest

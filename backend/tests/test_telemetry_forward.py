@@ -26,6 +26,8 @@ os.environ["NEVERRED_RATE_MAX"] = "1000"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402
+import telemetry  # noqa: E402
+import telemetry_forward  # noqa: E402
 import telemetry_sink as sink  # noqa: E402
 
 
@@ -58,9 +60,36 @@ class ForwardCase(unittest.TestCase):
         time.sleep(0.3)
 
     def test_backoff(self):
-        self.assertEqual(server.backoff_delay(0), 60)
-        self.assertEqual(server.backoff_delay(1), 120)
-        self.assertEqual(server.backoff_delay(10), 3600)  # tope
+        self.assertEqual(telemetry.backoff_delay(0), 60)
+        self.assertEqual(telemetry.backoff_delay(1), 120)
+        self.assertEqual(telemetry.backoff_delay(10), 3600)  # tope
+
+    def test_forward_loop_pasa_key_dir(self):
+        calls = []
+
+        class Cfg:
+            sink = "http://127.0.0.1:1"
+
+        class Con:
+            def close(self):
+                pass
+
+        def fake_forward(con, iid, version, cfg, key_dir, force=False):
+            calls.append(key_dir)
+            raise KeyboardInterrupt  # corta el bucle infinito sin simular un fallo
+
+        orig_sleep, orig_forward = telemetry_forward.time.sleep, telemetry_forward.forward_once
+        telemetry_forward.time.sleep = lambda _: None
+        telemetry_forward.forward_once = fake_forward
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                telemetry_forward.forward_loop(
+                    lambda: Con(), lambda: "iid", "2.6.8", lambda: Cfg(),
+                    lambda: "/tmp/keydir")
+        finally:
+            telemetry_forward.time.sleep = orig_sleep
+            telemetry_forward.forward_once = orig_forward
+        self.assertEqual(calls, ["/tmp/keydir"])
 
     def test_sink_auth_y_allowlist(self):
         st, _ = sink_call(self.port, "/api/telemetry-ingest",
@@ -79,8 +108,8 @@ class ForwardCase(unittest.TestCase):
         self.assertEqual(st, 400)
 
     def test_ida_y_vuelta_idempotente(self):
-        server.TELEMETRY_SINK = "http://127.0.0.1:%d" % self.port
-        server.TELEMETRY_TOKEN = "tok-secreto-test"
+        telemetry.TELEMETRY_SINK = "http://127.0.0.1:%d" % self.port
+        telemetry.TELEMETRY_TOKEN = "tok-secreto-test"
         try:
             con = sqlite3.connect(_tmp.name)
             now = int(time.time())
@@ -95,7 +124,7 @@ class ForwardCase(unittest.TestCase):
                         " next_retry = 0 WHERE id = 1")
             con.commit()
             con.close()
-            st = server.forward_once(force=True)
+            st = telemetry.forward_once(force=True)
             self.assertEqual(st.get("pending"), 0)
             st, body = sink_call(self.port, "/api/sink-summary")
             got = {(b["event"], b["count"]) for b in body["batches"]}
@@ -104,35 +133,35 @@ class ForwardCase(unittest.TestCase):
             # hora, plataforma y stats viajan con el lote
             b0 = body["batches"][0]
             self.assertIn("hour", b0)
-            self.assertEqual(b0["platform"], server.TELEMETRY_PLATFORM)
+            self.assertEqual(b0["platform"], telemetry.TELEMETRY_PLATFORM)
             self.assertTrue(any(s["total_sends"] >= 1 for s in body["stats"]))
             # reintento: idempotente, sin duplicados
             con = sqlite3.connect(_tmp.name)
             con.execute("UPDATE telemetry_forward SET watermark = 0 WHERE id = 1")
             con.commit()
             con.close()
-            server.forward_once(force=True)
+            telemetry.forward_once(force=True)
             st, body = sink_call(self.port, "/api/sink-summary")
             mine = [b for b in body["batches"]
-                    if b["install_id"] == server.get_install_id()]
+                    if b["install_id"] == telemetry.get_install_id()]
             self.assertEqual(sum(b["count"] for b in mine), 3)
             # token malo con trabajo pendiente: falla y programa backoff
             con = sqlite3.connect(_tmp.name)
             con.execute("UPDATE telemetry_forward SET watermark = 0 WHERE id = 1")
             con.commit()
             con.close()
-            server.TELEMETRY_TOKEN = "otro"
-            st = server.forward_once(force=True)
+            telemetry.TELEMETRY_TOKEN = "otro"
+            st = telemetry.forward_once(force=True)
             self.assertGreater(st["fails"], 0)
             self.assertGreater(st["next_retry_in"], 0)
         finally:
-            server.TELEMETRY_SINK = ""
-            server.TELEMETRY_TOKEN = ""
+            telemetry.TELEMETRY_SINK = ""
+            telemetry.TELEMETRY_TOKEN = ""
 
     def test_sin_receptor(self):
-        server.TELEMETRY_SINK = ""
+        telemetry.TELEMETRY_SINK = ""
         try:
-            st = server.forward_once(force=True)
+            st = telemetry.forward_once(force=True)
             self.assertEqual(st["configured"], False)
         finally:
             pass
@@ -150,6 +179,33 @@ class ForwardCase(unittest.TestCase):
                        "fallos medios por envío", "Funciones más empleadas",
                        "Versiones", "Plataformas", "<svg"):
             self.assertIn(needle, html)
+
+    def test_dashboard_escapa_html_y_atributos(self):
+        self.assertEqual(sink._esc("a'b\"c<&"),
+                         "a&#x27;b&quot;c&lt;&amp;")
+        iid = "x' onmouseover='alert(1)"
+        version = '<img src=x onerror=alert(1)>'
+        con = sink.db()
+        con.execute(
+            "INSERT OR REPLACE INTO sink_batches (install_id, day, hour, event, count,"
+            " version, platform, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (iid, "2026-10-20", "10", "vista_diario", 1, version, "macOS",
+             int(time.time())))
+        con.execute(
+            "INSERT OR REPLACE INTO sink_identities (install_id, pubkey, status,"
+            " first_seen, updated_at) VALUES (?,?,?,?,?)",
+            (iid, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest", "pending",
+             int(time.time()), int(time.time())))
+        con.commit()
+        con.close()
+        import urllib.request
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%d/" % self.port) as r:
+            html = r.read().decode()
+        self.assertNotIn(version, html)
+        self.assertNotIn(iid, html)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
+        self.assertIn("x&#x27; onmouseover=&#x27;alert(1)", html)
 
 
 class RelayCase(unittest.TestCase):

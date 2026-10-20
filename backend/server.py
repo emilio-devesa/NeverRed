@@ -4,43 +4,62 @@
 - Sirve la app estatica (index.html, styles.css, app.js).
 - API JSON con registro/login de usuarios, sesiones con token y
   persistencia de los datos contables por usuario en SQLite.
+- La configuración, el esquema, la autenticación, los estáticos, el mercado y
+  la telemetría viven en módulos hermanos; este archivo es el punto de entrada.
 
 Uso:
     python3 backend/server.py [--port 8000]
 
 La base de datos se crea automaticamente en backend/neverred.db.
 """
-import gzip
 import hashlib
-import hmac
 import json
-import math
 import os
-import re
 import secrets
-import sqlite3
-import sys
+import sqlite3  # re-export histórico para tests
 import threading
 import time
 import traceback
-from datetime import date as _date
-from email.utils import formatdate, mktime_tz, parsedate_tz
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, unquote, parse_qs
+from urllib.parse import urlparse, parse_qs
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Ruta de la BD configurable (imprescindible para Docker/volúmenes)
-DB_PATH = os.environ.get(
-    "NEVERRED_DB",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "neverred.db"),
+from auth import (
+    EMAIL_RE,
+    PBKDF2_ITERATIONS,
+    _DUMMY_HASH,
+    hash_password,
+    password_ok,
+    public_user,
+    validate_data,
+    verify_password,
+)
+from config import BASE_DIR, DB_PATH, VERSION  # BASE_DIR se re-exporta para tests
+from market import (
+    MARKET_SYMBOL_RE,
+    MARKET_TTL,
+    _av_quota,
+    _market_stats,
+    clear_user_market_key,
+    market_history,
+    normalize_symbol,
+    set_user_market_key,
+    user_market_key,
+)
+from schema import db, init_db
+from static import MIME, StaticMixin  # MIME se re-exporta para tests
+from telemetry import (
+    SINK_LOCAL,
+    TELEMETRY_DAYS,
+    TELEMETRY_SINK,
+    TELEMETRY_TOKEN,
+    _validate_telemetry,
+    forward_loop,
+    forward_once,
+    forward_state,
+    identity_status,
+    relay_ingest,
 )
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
-# Los IDs acaban en atributos `data-*` del HTML: se restringen a un alfabeto
-# seguro para que ni un backup manipulado pueda inyectar marcado.
-ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
-MIN_PASSWORD_LEN = 8
-MAX_PASSWORD_LEN = 256
 AUDIT_DAYS = 90
 SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # Caducidad por inactividad: el token muere si no se usa en este plazo,
@@ -51,8 +70,6 @@ SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 # cada petición autenticada). La lectura sigue comprobando la caducidad exacta.
 SESSION_TOUCH_SECONDS = 300
 SESSION_CLEANUP_SECONDS = 300
-PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.7")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -126,251 +143,6 @@ _tabs = {}
 _tabs_lock = threading.Lock()
 _had_tabs = False
 _start_ts = int(time.time())
-
-MIME = {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".webmanifest": "application/manifest+json",
-    ".md": "text/markdown; charset=utf-8",
-    ".txt": "text/plain; charset=utf-8",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2",
-}
-
-# Caché de estáticos: se relee solo si cambia (mtime+tamaño). El gzip se
-# calcula una vez por versión del archivo y se guarda junto al original.
-_STATIC_CACHE = {}
-_STATIC_CACHE_LOCK = threading.Lock()
-GZIP_MIN_BYTES = 1024
-
-
-def _compressible(ctype):
-    return (ctype.startswith("text/") or
-            ctype.startswith("application/javascript") or
-            ctype.startswith("application/json") or
-            ctype.startswith("application/manifest") or
-            ctype.startswith("image/svg"))
-
-
-def _static_asset(rel):
-    """Entrada cacheada de un estático: bytes, gzip perezoso, ETag y fecha."""
-    full = os.path.join(BASE_DIR, rel)
-    st = os.stat(full)
-    key = (st.st_mtime_ns, st.st_size)
-    with _STATIC_CACHE_LOCK:
-        entry = _STATIC_CACHE.get(rel)
-        if entry and entry["key"] == key:
-            return entry
-        with open(full, "rb") as f:
-            raw = f.read()
-        ext = os.path.splitext(full)[1].lower()
-        entry = {
-            "key": key,
-            "raw": raw,
-            "gzip": None,
-            "etag": '"' + hashlib.sha256(raw).hexdigest()[:32] + '"',
-            "last_modified": formatdate(st.st_mtime, usegmt=True),
-            "mtime": int(st.st_mtime),
-            "ctype": MIME.get(ext, "application/octet-stream"),
-        }
-        _STATIC_CACHE[rel] = entry
-        return entry
-
-
-# ---------------- Base de datos ----------------
-def db():
-    con = sqlite3.connect(DB_PATH, timeout=10)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA busy_timeout=5000")
-    # Las FK del esquema (CASCADE) solo se aplican si se activan por conexión.
-    con.execute("PRAGMA foreign_keys=ON")
-    return con
-
-
-def init_db():
-    con = db()
-    con.execute("PRAGMA journal_mode=WAL")
-    con.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS sessions (
-            token TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            created_at INTEGER NOT NULL,
-            expires_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS user_data (
-            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            data TEXT NOT NULL DEFAULT '{}',
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS password_resets (
-            token_hash TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            created_at INTEGER NOT NULL,
-            expires_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts INTEGER NOT NULL,
-            user_id INTEGER,
-            action TEXT NOT NULL,
-            detail TEXT NOT NULL DEFAULT ''
-        );
-        CREATE TABLE IF NOT EXISTS telemetry_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts INTEGER NOT NULL,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            event TEXT NOT NULL,
-            props TEXT NOT NULL DEFAULT '{}'
-        );
-        CREATE TABLE IF NOT EXISTS telemetry_consent (
-            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            enabled INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS telemetry_forward (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            watermark INTEGER NOT NULL DEFAULT 0,
-            last_ok INTEGER NOT NULL DEFAULT 0,
-            fails INTEGER NOT NULL DEFAULT 0,
-            next_retry INTEGER NOT NULL DEFAULT 0,
-            total_sends INTEGER NOT NULL DEFAULT 0,
-            total_fails INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS telemetry_identity (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            status TEXT NOT NULL DEFAULT 'none',
-            updated_at INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-        CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
-        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
-        CREATE INDEX IF NOT EXISTS idx_telemetry_user ON telemetry_events(user_id);
-        CREATE INDEX IF NOT EXISTS idx_telemetry_event ON telemetry_events(event, ts);
-        CREATE TABLE IF NOT EXISTS market_tickers (
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            symbol TEXT NOT NULL,
-            added_at INTEGER NOT NULL,
-            PRIMARY KEY (user_id, symbol)
-        );        CREATE TABLE IF NOT EXISTS market_cache (
-            symbol TEXT PRIMARY KEY,
-            fetched_at INTEGER NOT NULL,
-            points TEXT NOT NULL DEFAULT '{}'
-        );
-        CREATE TABLE IF NOT EXISTS market_keys (
-            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            api_key TEXT NOT NULL DEFAULT ''
-        );
-        CREATE TABLE IF NOT EXISTS user_flags (
-            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            last_export INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS market_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL DEFAULT ''
-        );
-        """
-    )
-    con.commit()
-    # Migración: actividad de sesión para la caducidad por inactividad.
-    cols = [r[1] for r in con.execute("PRAGMA table_info(sessions)")]
-    if "last_seen" not in cols:
-        con.execute("ALTER TABLE sessions ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0")
-        con.execute("UPDATE sessions SET last_seen = created_at WHERE last_seen = 0")
-        con.commit()
-    # Migración: saber si al usuario ya se le preguntó por la telemetría.
-    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_consent)")]
-    if "asked" not in cols:
-        con.execute("ALTER TABLE telemetry_consent ADD COLUMN asked INTEGER NOT NULL DEFAULT 0")
-        con.commit()
-    # Migración: contadores acumulados de envíos para la media de reintentos.
-    cols = [r[1] for r in con.execute("PRAGMA table_info(telemetry_forward)")]
-    for col in ("total_sends", "total_fails"):
-        if col not in cols:
-            con.execute("ALTER TABLE telemetry_forward ADD COLUMN %s INTEGER NOT NULL DEFAULT 0" % col)
-            con.commit()
-    # Migración: orden manual de tickers (los existentes, por añadido).
-    cols = [r[1] for r in con.execute("PRAGMA table_info(market_tickers)")]
-    if "position" not in cols:
-        con.execute("ALTER TABLE market_tickers ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
-        con.execute("UPDATE market_tickers SET position = added_at")
-        con.commit()
-    con.close()
-
-
-# ---------------- Contrasenas ----------------
-def hash_password(password, salt=None):
-    """PBKDF2-HMAC-SHA256. Formato: pbkdf2$iter$salt_hex$hash_hex. Nunca texto plano."""
-    if salt is None:
-        salt = secrets.token_bytes(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return "pbkdf2${}${}${}".format(PBKDF2_ITERATIONS, salt.hex(), dk.hex())
-
-
-def verify_password(password, stored):
-    try:
-        _, iters, salt_hex, hash_hex = stored.split("$")
-        dk = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), int(iters)
-        )
-        return hmac.compare_digest(dk.hex(), hash_hex)
-    except Exception:
-        return False
-
-
-# Hash ficticio para igualar tiempos en el login: si el correo no existe se
-# verifica igualmente contra esto, para no filtrar usuarios por temporización.
-_DUMMY_HASH = hash_password("neverred-usuario-inexistente")
-
-
-def public_user(row):
-    return {"id": row["id"], "name": row["name"], "email": row["email"]}
-
-
-def password_ok(pw):
-    return isinstance(pw, str) and MIN_PASSWORD_LEN <= len(pw) <= MAX_PASSWORD_LEN
-
-
-# ---------------- Telemetría: store (App) ----------------
-# El catálogo y los validadores viven en telemetry_common (contrato con el
-# Monitor); el forward/relay en telemetry_forward (infraestructura). Aquí
-# solo queda el store: datos del usuario, con su consentimiento y borrado.
-# (Import namespaced a propósito: `from ... import` en cascada pierde
-# nombres en el Python del sistema.)
-import telemetry_common as _tc
-import telemetry_forward as _fwd
-
-TELEMETRY_EVENTS = _tc.TELEMETRY_EVENTS  # re-export histórico
-TELEMETRY_DAYS = _tc.TELEMETRY_DAYS
-TELEMETRY_MAX_BATCH = _tc.TELEMETRY_MAX_BATCH
-_validate_telemetry = _tc.validate_telemetry  # compatibilidad histórica
-
-# Destino del forward: entorno primero, telemetry.conf junto a la BD después.
-# Sin ninguno: modo local puro, nada sale de este servidor.
-_CONF_PATH = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "telemetry.conf")
-TELEMETRY_SINK, TELEMETRY_TOKEN = _tc.resolve_sink(os.environ, _CONF_PATH)
-FORWARD_EVERY = int(os.environ.get("NEVERRED_FORWARD_EVERY", "900"))
-FORWARD_MAX_DELAY = 3600
-SINK_LOCAL = os.environ.get("NEVERRED_SINK_LOCAL", "http://127.0.0.1:8140").rstrip("/")
-# Plataforma de ESTA instalación (solo SO, nada identificable).
-TELEMETRY_PLATFORM = {"darwin": "macOS", "linux": "Linux",
-                      "win32": "Windows"}.get(sys.platform, sys.platform)
-
 
 # Usuario de demostración (credenciales públicas y documentadas)
 DEMO_EMAIL = "demo@neverred.local"
@@ -457,6 +229,25 @@ def demo_data():
 
 
 _log = None
+# Métricas por petición: activas con NEVERRED_METRICS=1 o, por defecto, cuando
+# hay log a fichero. Son una línea JSON por request; nunca incluyen el cuerpo.
+METRICS = os.environ.get(
+    "NEVERRED_METRICS", "1" if os.environ.get("NEVERRED_LOG_FILE") else "0") == "1"
+
+
+def log_metric(method, path, status, elapsed_ms, user_id=None):
+    line = json.dumps({
+        "event": "http",
+        "method": method,
+        "path": path,
+        "status": status,
+        "ms": round(elapsed_ms, 1),
+        "user_id": user_id,
+    }, ensure_ascii=False, sort_keys=True)
+    if _log:
+        _log.info(line)
+    else:
+        print(line, flush=True)
 
 
 def setup_logging():
@@ -534,75 +325,6 @@ def prune_tabs(now=None):
         return len(_tabs)
 
 
-def get_install_id():
-    """ID seudónimo de esta instalación (contar betas + idempotencia).
-    Se genera una vez junto a la BD; no identifica a ninguna persona."""
-    path = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "install.id")
-    try:
-        with open(path) as f:
-            iid = f.read().strip()
-        if iid:
-            return iid
-    except OSError:
-        pass
-    iid = secrets.token_hex(16)
-    try:
-        with open(path, "w") as f:
-            f.write(iid)
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
-    return iid
-
-
-def _forward_cfg():
-    """Config del forward con los valores efectivos de esta instalación."""
-    return _fwd.ForwardConfig(sink=TELEMETRY_SINK, token=TELEMETRY_TOKEN,
-                              platform=TELEMETRY_PLATFORM, every=FORWARD_EVERY,
-                              max_delay=FORWARD_MAX_DELAY, sink_local=SINK_LOCAL)
-
-
-def backoff_delay(fails):
-    return _fwd.backoff_delay(fails, FORWARD_MAX_DELAY)
-
-
-def build_aggregates(since_ts):
-    """Agregados pendientes: [{event, date, hour, count}]. Solo conteos."""
-    con = db()
-    try:
-        return _fwd.build_aggregates(con, since_ts)
-    finally:
-        con.close()
-
-
-def forward_state():
-    con = db()
-    try:
-        return _fwd.forward_state(con)
-    finally:
-        con.close()
-
-
-def _key_dir():
-    """Directorio de la clave de emparejamiento (junto a la BD)."""
-    return os.path.dirname(os.path.abspath(DB_PATH))
-
-
-def forward_once(force=False):
-    """Intenta un envío al receptor. Devuelve dict de estado (siempre)."""
-    con = db()
-    try:
-        return _fwd.forward_once(con, get_install_id(), VERSION, _forward_cfg(),
-                                 _key_dir(), force)
-    finally:
-        con.close()
-
-
-def forward_loop():
-    """Hilo: envía agregados cada FORWARD_EVERY s; ante fallo, backoff."""
-    _fwd.forward_loop(db, get_install_id, VERSION, _forward_cfg)
-
-
 def idle_sweep(server):
     """Hilo vigilante: apaga el servidor si hubo pestañas y ya no queda ninguna."""
     while True:
@@ -661,371 +383,8 @@ def _send_reset_email(to, link):
         s.send_message(msg)
 
 
-VALID_TYPES = ("Activo", "Pasivo", "Patrimonio", "Ingreso", "Gasto")
-
-
-def _num(x):
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
-
-
-def _validate_lines(lines, ids):
-    """Devuelve (debe, haber, error)."""
-    if not isinstance(lines, list) or len(lines) < 2:
-        return 0, 0, "Todo asiento necesita al menos 2 líneas."
-    d = h = 0.0
-    for l in lines:
-        if not isinstance(l, dict):
-            return 0, 0, "Línea de asiento inválida."
-        if l.get("accountId") not in ids:
-            return 0, 0, "Línea con cuenta desconocida."
-        db, cr = l.get("debit", 0), l.get("credit", 0)
-        if not _num(db) or not _num(cr) or db < 0 or cr < 0:
-            return 0, 0, "Importes inválidos en un asiento."
-        if db > 0 and cr > 0:
-            return 0, 0, "Una línea no puede tener debe y haber."
-        if db == 0 and cr == 0:
-            return 0, 0, "Línea sin importe."
-        d, h = d + db, h + cr
-    if round(d, 2) != round(h, 2) or d <= 0:
-        return 0, 0, "Asiento descuadrado: debe ≠ haber."
-    return d, h, None
-
-
-def validate_data(body):
-    """Valida la contabilidad antes de guardarla. None = válido, str = error."""
-    if not isinstance(body, dict):
-        return "Cuerpo JSON inválido."
-    accounts = body.get("accounts", [])
-    entries = body.get("entries", [])
-    if not isinstance(accounts, list) or not isinstance(entries, list):
-        return "Formato de datos inválido."
-    ids = set()
-    for a in accounts:
-        if not isinstance(a, dict):
-            return "Cuenta inválida."
-        if not isinstance(a.get("id"), str) or not a["id"]:
-            return "Cuenta sin identificador."
-        if not ID_RE.match(a["id"]):
-            return "Identificador de cuenta inválido: %r." % (a["id"],)
-        if a.get("type") not in VALID_TYPES:
-            return "Tipo de cuenta inválido: %r." % (a.get("type"),)
-        if not isinstance(a.get("name"), str) or not a["name"].strip():
-            return "Cuenta sin nombre."
-        if "code" in a and not isinstance(a["code"], str):
-            return "Código de cuenta inválido."
-        ids.add(a["id"])
-    for e in entries:
-        if not isinstance(e, dict):
-            return "Asiento inválido."
-        if not isinstance(e.get("id"), str) or not ID_RE.match(e["id"]):
-            return "Asiento sin identificador válido."
-        if not isinstance(e.get("date"), str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", e["date"]):
-            return "Fecha inválida en un asiento."
-        try:
-            _date(*map(int, e["date"].split("-")))
-        except ValueError:
-            return "Fecha inexistente en un asiento."
-        _, _, err = _validate_lines(e.get("lines"), ids)
-        if err:
-            return err
-    budgets = body.get("budgets", {})
-    if not isinstance(budgets, dict):
-        return "Presupuestos inválidos."
-    for k, v in budgets.items():
-        if not isinstance(k, str) or not _num(v) or v < 0:
-            return "Presupuesto inválido."
-    rec = body.get("recurring", [])
-    if not isinstance(rec, list):
-        return "Recurrentes inválidos."
-    for r in rec:
-        if not isinstance(r, dict):
-            return "Plantilla recurrente inválida."
-        if "id" in r and (not isinstance(r["id"], str) or not ID_RE.match(r["id"])):
-            return "Identificador de plantilla inválido."
-        if not isinstance(r.get("desc"), str) or not r["desc"].strip():
-            return "Plantilla recurrente sin descripción."
-        if not isinstance(r.get("day"), int) or not 1 <= r["day"] <= 28:
-            return "Día inválido en plantilla recurrente."
-        if "lastRun" in r and (not isinstance(r["lastRun"], str) or
-                               not re.match(r"^\d{4}-\d{2}$", r["lastRun"])):
-            return "Marca de generación inválida."
-        _, _, err = _validate_lines(r.get("lines"), ids)
-        if err:
-            return err
-    return None
-
-
-# ---------------- Mercado (Herramientas): proxy Alpha Vantage ----------------
-# La clave API NUNCA viaja al frontal ni al export: vive solo en este
-# servidor (variable de entorno o fichero 600 junto a la BD) y se usa para
-# las llamadas salientes. Cuota gratuita: 25 req/día, 5/min → caché de 24 h
-# por símbolo y separación mínima de 12 s entre llamadas a la API.
-MARKET_DAYS = 180
-MARKET_TTL = 86400
-MARKET_MIN_GAP = 12
-MARKET_SYMBOL_RE = re.compile(r"^[A-Z0-9.\-:]{1,12}$")
-MARKET_KEY_RE = re.compile(r"^[A-Za-z0-9]{8,32}$")
-_market_lock = threading.Lock()
-_market_last_call = 0
-
-
-def _market_key_path():
-    # Legado (clave global compartida): ya no se usa; se elimina al arrancar.
-    return os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "market.key")
-
-
-def user_market_key(user_id):
-    """Clave efectiva del usuario: la suya propia; si no tiene, el valor por
-    defecto de la instalación (entorno, normalmente vacío). '' = sin clave."""
-    con = db()
-    try:
-        row = con.execute("SELECT api_key FROM market_keys WHERE user_id = ?",
-                          (user_id,)).fetchone()
-    finally:
-        con.close()
-    if row and row["api_key"]:
-        return row["api_key"]
-    return (os.environ.get("NEVERRED_ALPHA_VANTAGE_KEY") or "").strip()
-
-
-def set_user_market_key(user_id, key):
-    """Guarda la clave propia del usuario. None = formato inválido."""
-    key = (key or "").strip()
-    if not MARKET_KEY_RE.match(key):
-        return None
-    con = db()
-    try:
-        con.execute("INSERT INTO market_keys (user_id, api_key) VALUES (?,?) "
-                    "ON CONFLICT(user_id) DO UPDATE SET api_key=excluded.api_key",
-                    (user_id, key))
-        con.commit()
-    finally:
-        con.close()
-    return True
-
-
-def clear_user_market_key(user_id):
-    con = db()
-    try:
-        con.execute("DELETE FROM market_keys WHERE user_id = ?", (user_id,))
-        con.commit()
-    finally:
-        con.close()
-
-
-def normalize_symbol(raw):
-    return re.sub(r"\s+", "", str(raw or "")).upper()
-
-
-def _av_get(symbol, key):
-    """Una llamada a TIME_SERIES_DAILY en compact (100 sesiones, cierre de
-    mercado). Dict parseado o None (red)."""
-    import urllib.request
-    import urllib.parse as _up
-    qs = _up.urlencode({"function": "TIME_SERIES_DAILY", "symbol": symbol,
-                        "outputsize": "compact", "apikey": key})
-    req = urllib.request.Request("https://www.alphavantage.co/query?" + qs,
-                                 headers={"User-Agent": "NeverRed/" + VERSION})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            raw = r.read(15_000_000)
-    except Exception:
-        return None
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def parse_av_daily(payload, days=MARKET_DAYS):
-    """Puro y testeable. Devuelve (data, err) con err en None/"invalid"/"rate".
-
-    data = {"dates": [...], "closes": [...], "events": [...]} en ventana de
-    `days` naturales; si la ventana trae <2 puntos se usa todo lo disponible.
-    closes = cierre de mercado (sin ajustar: el ajustado es premium);
-    events queda reservado (lista vacía con la cuota gratuita).
-    """
-    if not isinstance(payload, dict):
-        return None, "rate"
-    if "Error Message" in payload:
-        return None, "invalid"
-    if "Information" in payload or "Note" in payload:
-        return None, "rate"
-    ts = payload.get("Time Series (Daily)")
-    if not isinstance(ts, dict) or not ts:
-        return None, "invalid"
-    pts = []
-    for d, bar in sorted(ts.items()):
-        if not isinstance(bar, dict):
-            continue
-        try:
-            c = float(bar.get("4. close", ""))
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(c):
-            pts.append((d, c))
-    if len(pts) < 2:
-        return None, "invalid"
-    import datetime as _dt
-    cutoff = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
-    window = [p for p in pts if p[0] >= cutoff]
-    if len(window) < 2:
-        window = pts[-100:] if len(pts) > 100 else pts
-    return {"dates": [d for d, _ in window],
-            "closes": [c for _, c in window], "events": []}, None
-
-
-def rate_reason(payload):
-    """Clasifica un fallo con cuota: 'net' (sin respuesta), 'burst'
-    (límite por minuto/segundo: reintentar pronto sirve) o 'daily'."""
-    if not isinstance(payload, dict):
-        return "net"
-    info = str(payload.get("Information", "") or payload.get("Note", "")).lower()
-    if "minute" in info or "second" in info or "sparingly" in info:
-        return "burst"
-    return "daily"
-
-
-def rate_message(payload):
-    reason = rate_reason(payload)
-    if reason == "net":
-        return ("Alpha Vantage no responde (revisa tu conexión a internet "
-                "y prueba de nuevo).")
-    if reason == "burst":
-        return ("Demasiadas peticiones seguidas a Alpha Vantage: "
-                "espera un minuto y prueba de nuevo.")
-    return ("Cuota diaria de Alpha Vantage agotada (25 req/día). "
-            "Prueba mañana o quita algún ticker.")
-
-
-def _market_stats(closes):
-    first, last = closes[0], closes[-1]
-    lo, hi = min(closes), max(closes)
-    pct = round((last - first) / first * 100, 2) if first else 0.0
-    trend = "up" if pct > 0.1 else ("down" if pct < -0.1 else "flat")
-    return {"first": first, "last": last, "min": lo, "max": hi,
-            "change_pct": pct, "trend": trend, "points": len(closes)}
-
-
-def _market_meta(key):
-    con = db()
-    try:
-        row = con.execute("SELECT value FROM market_meta WHERE key = ?", (key,)).fetchone()
-        return row["value"] if row else ""
-    finally:
-        con.close()
-
-
-def _market_set_meta(key, value):
-    con = db()
-    try:
-        con.execute("INSERT INTO market_meta (key, value) VALUES (?,?) "
-                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                    (key, value))
-        con.commit()
-    finally:
-        con.close()
-
-
-def _av_today_key():
-    import datetime as _dt
-    return "av_used_" + _dt.datetime.utcnow().strftime("%Y-%m-%d")
-
-
-def _av_count_call():
-    """Suma 1 al contador diario de llamadas (solo llamadas reales salientes)."""
-    try:
-        n = int(_market_meta(_av_today_key()) or 0)
-    except ValueError:
-        n = 0
-    _market_set_meta(_av_today_key(), str(n + 1))
-
-
-AV_DAILY_LIMIT = 25
-
-
-def _av_quota():
-    """(used, limit) de hoy según esta instalación. La serie ajustada en
-    compact vale para claves gratuitas y premium: el tope mostrado es el
-    de la cuota gratuita (25/día)."""
-    try:
-        used = int(_market_meta(_av_today_key()) or 0)
-    except ValueError:
-        used = 0
-    return used, AV_DAILY_LIMIT
-
-
-def market_history(symbol, key, force=False):
-    """Serie de un símbolo. (code, obj) con code 200/404/429/502.
-
-    Usa caché de 24 h; `force` la salta (respetando el guard de cuota).
-    Ante cuota agotada sirve caché caducada marcada stale:true.
-    """
-    symbol = normalize_symbol(symbol)
-    if not MARKET_SYMBOL_RE.match(symbol):
-        return 400, {"error": "Símbolo no válido (letras, cifras y . - :)."}
-    now = int(time.time())
-    con = db()
-    row = con.execute("SELECT fetched_at, points FROM market_cache WHERE symbol = ?",
-                      (symbol,)).fetchone()
-    cached = None
-    if row:
-        try:
-            cached = json.loads(row["points"])
-        except Exception:
-            cached = None
-    fresh = bool(row and cached and now - row["fetched_at"] < MARKET_TTL)
-    if cached and fresh and not force:
-        con.close()
-        out = {"symbol": symbol, **_market_stats(cached["closes"]),
-               "dates": cached["dates"], "closes": cached["closes"],
-               "events": cached.get("events", []),
-               "cached_at": row["fetched_at"], "stale": False}
-        return 200, out
-    global _market_last_call
-    with _market_lock:
-        wait = MARKET_MIN_GAP - (now - _market_last_call)
-        if wait > 0:
-            con.close()
-            if cached:
-                out = {"symbol": symbol, **_market_stats(cached["closes"]),
-                       "dates": cached["dates"], "closes": cached["closes"],
-                       "events": cached.get("events", []),
-                       "cached_at": row["fetched_at"], "stale": True}
-                return 200, out
-            return 429, {"error": "Cuota de la API: reintenta en %d s." % wait}
-        _market_last_call = int(time.time())
-    # Ajustado en compact: 1 llamada siempre, sin sondeo premium.
-    _av_count_call()
-    payload = _av_get(symbol, key)
-    data, err = parse_av_daily(payload or {})
-    con = db()
-    if err is None:
-        con.execute("INSERT INTO market_cache (symbol, fetched_at, points) VALUES (?,?,?) "
-                    "ON CONFLICT(symbol) DO UPDATE SET fetched_at=excluded.fetched_at,"
-                    " points=excluded.points",
-                    (symbol, int(time.time()), json.dumps(data)))
-        con.commit()
-        con.close()
-        return 200, {"symbol": symbol, **_market_stats(data["closes"]),
-                     "dates": data["dates"], "closes": data["closes"],
-                     "events": data.get("events", []),
-                     "cached_at": int(time.time()), "stale": False}
-    con.close()
-    if err == "invalid":
-        return 404, {"error": "No se encontró el ticker %s en Alpha Vantage." % symbol}
-    if cached:
-        out = {"symbol": symbol, **_market_stats(cached["closes"]),
-               "dates": cached["dates"], "closes": cached["closes"],
-               "events": cached.get("events", []),
-               "cached_at": row["fetched_at"], "stale": True}
-        return 200, out
-    return 429, {"error": rate_message(payload)}
-
-
 # ---------------- Servidor HTTP ----------------
-class Handler(BaseHTTPRequestHandler):
+class Handler(StaticMixin, BaseHTTPRequestHandler):
     server_version = "NeverRed/" + VERSION
     # HTTP/1.1 permite keep-alive; todas las respuestas van con Content-Length
     # (o son 204/304 sin cuerpo) para que el framing sea inequívoco.
@@ -1040,7 +399,7 @@ class Handler(BaseHTTPRequestHandler):
         if _log:
             _log.info(line)
         else:
-            print(line)
+            print(line, flush=True)
 
     def handle_one_request(self):
         # La instancia se reutiliza en keep-alive: el estado de una respuesta
@@ -1050,6 +409,9 @@ class Handler(BaseHTTPRequestHandler):
         self._head = False
         self._body_read = False
         self._headers_started = False
+        self._status_code = 0
+        self._user_id = None
+        started = time.perf_counter()
         try:
             super().handle_one_request()
         except (BrokenPipeError, ConnectionResetError):
@@ -1068,11 +430,19 @@ class Handler(BaseHTTPRequestHandler):
                     self.close_connection = True
             else:
                 self.close_connection = True
+        finally:
+            if METRICS and self.command and self.path and self._status_code:
+                path = urlparse(self.path).path
+                if path != "/api/ping":
+                    log_metric(self.command, path, self._status_code,
+                               (time.perf_counter() - started) * 1000,
+                               self._user_id)
 
     def send_response_only(self, code, message=None):
         # Marca el punto de no retorno: a partir de aquí no se puede sustituir
         # la respuesta por un 500 sin corromper el framing.
         self._headers_started = True
+        self._status_code = code
         super().send_response_only(code, message)
 
     def _accepts_gzip(self):
@@ -1237,6 +607,7 @@ class Handler(BaseHTTPRequestHandler):
             (token, now, now - SESSION_IDLE_DAYS * 86400),
         ).fetchone()
         if row is not None:
+            self._user_id = row["id"]
             changed = False
             if now - row["session_last_seen"] >= SESSION_TOUCH_SECONDS:
                 con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?", (now, token))
@@ -1592,11 +963,7 @@ class Handler(BaseHTTPRequestHandler):
         st = forward_state()
         now = int(time.time())
         sends, fails = st["total_sends"], st["total_fails"]
-        con = db()
-        try:
-            ident = _fwd.identity_status(con)
-        finally:
-            con.close()
+        ident = identity_status()
         self._send_json(200, {"configured": bool(TELEMETRY_SINK),
                               "last_ok": st["last_ok"], "fails": st["fails"],
                               "next_retry_in": max(0, st["next_retry"] - now),
@@ -1623,7 +990,7 @@ class Handler(BaseHTTPRequestHandler):
             json.loads(raw.decode("utf-8"))
         except Exception:
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
-        code, resp = _fwd.relay_ingest(
+        code, resp = relay_ingest(
             raw, self.headers.get("Authorization") or "",
             os.environ.get("NEVERRED_SINK_LOCAL", "").rstrip("/") or SINK_LOCAL,
             endpoint)
@@ -1994,111 +1361,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
         self.end_headers()
 
-    # -- estaticos --
-    # Lista blanca: solo se sirve lo que la app necesita. Todo lo demás
-    # (markdown, informes, scripts de empaquetado, CI, tests…) queda fuera por
-    # defecto, aunque esté en el árbol o dentro de la imagen Docker.
-    STATIC_FILES = {
-        "index.html", "styles.css", "app.js", "sw.js",
-        "icon.svg", "manifest.webmanifest",
-    }
-    STATIC_DIRS = ("lib/", "assets/")
-    STATIC_EXT = {".css", ".js", ".json", ".svg", ".png", ".ico", ".webmanifest",
-                  ".jpg", ".jpeg", ".webp", ".woff", ".woff2"}
-
-    def _static_rel(self, path):
-        """Ruta relativa servible, o None si no está en la lista blanca."""
-        rel = "index.html" if path in ("/", "") else unquote(path).lstrip("/")
-        if not rel or ".." in rel.split("/") or "\\" in rel:
-            return None
-        if os.path.basename(rel).startswith("."):
-            return None
-        if rel in self.STATIC_FILES:
-            return rel
-        if rel.startswith(self.STATIC_DIRS) and \
-                os.path.splitext(rel)[1].lower() in self.STATIC_EXT:
-            return rel
-        return None
-
-    def _serve_static(self, path):
-        rel = self._static_rel(path)
-        if rel is None:
-            raw = unquote(path).lstrip("/")
-            if ".." in raw or raw.startswith(("backend/", ".git/")):
-                return self._send_json(403, {"error": "Acceso denegado."})
-            return self._send_json(404, {"error": "No encontrado."})
-        full = os.path.join(BASE_DIR, rel)
-        if not os.path.isfile(full):
-            return self._send_json(404, {"error": "No encontrado."})
-        try:
-            entry = _static_asset(rel)
-        except OSError:
-            return self._send_json(404, {"error": "No encontrado."})
-        ctype = entry["ctype"]
-        etag = entry["etag"]
-        compressible = _compressible(ctype)
-        is_html = ctype.startswith("text/html")
-
-        def common_headers():
-            self.send_header("Content-Type", ctype)
-            self.send_header("ETag", etag)
-            self.send_header("Last-Modified", entry["last_modified"])
-            # Revalidar siempre: el ETag abarata el 304, pero nunca se sirve
-            # una carcasa vieja sin preguntar (el SW y ensureFreshShell ayudan).
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("X-Frame-Options", "SAMEORIGIN")
-            if compressible:
-                self.send_header("Vary", "Accept-Encoding")
-            if is_html:
-                self.send_header("Content-Security-Policy",
-                                 "default-src 'self'; script-src 'self'; style-src 'self'; "
-                                 "img-src 'self' data:; object-src 'none'; "
-                                 "base-uri 'self'; frame-ancestors 'self'")
-            if self.close_connection:
-                self.send_header("Connection", "close")
-
-        # Un GET con cuerpo (raro) no debe dejar bytes que se interpreten como
-        # la siguiente petición keep-alive.
-        self._discard_body()
-
-        not_modified = False
-        inm = self.headers.get("If-None-Match")
-        if inm:
-            not_modified = self._etag_matches(inm, etag)
-        else:
-            ims = self.headers.get("If-Modified-Since")
-            if ims:
-                parsed = parsedate_tz(ims)
-                if parsed:
-                    try:
-                        not_modified = entry["mtime"] <= int(mktime_tz(parsed))
-                    except (ValueError, OverflowError):
-                        not_modified = False
-        if not_modified:
-            self.send_response(304)
-            common_headers()
-            self.end_headers()  # 304 no lleva cuerpo ni Content-Length
-            return
-
-        body = entry["raw"]
-        gzipped = False
-        if compressible and len(body) >= GZIP_MIN_BYTES and self._accepts_gzip():
-            with _STATIC_CACHE_LOCK:
-                if entry["gzip"] is None:
-                    entry["gzip"] = gzip.compress(body, 9)
-                body = entry["gzip"]
-            gzipped = True
-        self.send_response(200)
-        common_headers()
-        if gzipped:
-            self.send_header("Content-Encoding", "gzip")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if not getattr(self, "_head", False):
-            self.wfile.write(body)
-
-
 class Server(ThreadingHTTPServer):
     # Cada conexión tiene su hilo; daemon para que un cliente lento no impida
     # cerrar el proceso (el timeout de Handler corta la conexión a los 15 s).
@@ -2115,13 +1377,6 @@ def main():
     # (BD, -wal, logs) nace solo-legible por el dueño.
     os.umask(0o077)
     init_db()
-    # Legado: la clave global compartida ya no se usa (ahora es por usuario).
-    try:
-        if os.path.isfile(_market_key_path()):
-            os.remove(_market_key_path())
-            print("[neverred] market.key global eliminado (las claves son por usuario).")
-    except OSError:
-        pass
     for p in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
         try:
             if os.path.isfile(p):

@@ -29,6 +29,7 @@ os.environ["NEVERRED_RATE_MAX"] = "1000"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402
+import telemetry  # noqa: E402
 import telemetry_sink as sink  # noqa: E402
 import telemetry_forward as fwd  # noqa: E402
 import telemetry_common as common  # noqa: E402
@@ -175,17 +176,17 @@ class ForwardPairingCase(unittest.TestCase):
         con.commit()
         con.close()
         # 1) sin aprobar: enrola en pendiente, no envía, no avanza watermark
-        st = server.forward_once(force=True)
+        st = telemetry.forward_once(force=True)
         self.assertTrue(st["configured"])
         self.assertEqual(st["enroll"], "pending")
         self.assertFalse(st["sent"])
         # 2) el coordinador aprueba (viaja el install_id real de este equipo)
-        iid = server.get_install_id()
+        iid = telemetry.get_install_id()
         st2, body = call(8161, "/api/sink-identity",
                          {"install_id": iid, "action": "approve"})
         self.assertEqual(body.get("enroll"), "approved")
         # 3) reintento: envía firmado y avanza
-        st = server.forward_once(force=True)
+        st = telemetry.forward_once(force=True)
         self.assertTrue(st["sent"])
         self.assertEqual(st["enroll"], "approved")
         con = sqlite3.connect(_sink.name)

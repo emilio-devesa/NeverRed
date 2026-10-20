@@ -41,13 +41,14 @@ jobs:
       - name: Humo del backend (registro + login + datos)
         run: |
           python3 backend/tests/test_server.py 2>&1 | tail -3
+          python3 backend/tests/test_integration.py 2>&1 | tail -3
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
 
       - name: Tests del frontal (lógica contable)
-        run: node --test frontend/tests/
+        run: node --test frontend/tests/*.test.js
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:

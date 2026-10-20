@@ -99,6 +99,9 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   Tras un proxy (Caddy, Docker) todos los clientes se ven como una sola IP:
   activa `NEVERRED_TRUST_PROXY=1` **solo** si el proxy es de tu confianza
   (Caddy ya envía `X-Forwarded-For`) para que el límite distinga clientes.
+  El servidor toma el **primer** valor de `X-Forwarded-For`; no lo actives si
+  tu proxy añade la cadena en lugar de reemplazarla, porque un cliente podría
+  inyectar una IP y saltarse el límite. Es una decisión de despliegue (S-04).
 - **CORS restringido** al mismo origen y al modo archivo local.
 - **HTTP/1.1 con keep-alive**: los estáticos van comprimidos con gzip, con
   `ETag`/`Last-Modified` y `304`; `HEAD` responde con las mismas cabeceras y
@@ -107,6 +110,9 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   controlado responde `500` JSON con `Content-Length` y cierra la conexión.
 - **CSP estricta** (sin `unsafe-inline`) y service worker con caché acotada:
   la carcasa sigue disponible sin conexión y la API nunca se cachea.
+- **Métricas de latencia**: con `NEVERRED_METRICS=1` (o `NEVERRED_LOG_FILE`)
+  cada petición deja una línea JSON con método, ruta, estado, milisegundos e
+  `user_id`; nunca incluye cuerpos. Los latidos `/api/ping` se omiten.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, sírvelo siempre por HTTPS (directo o tras Caddy; ver `Caddyfile`).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se borran el estado en memoria y su copia local, y nadie hereda los datos de otro usuario. Los tickers de Mercado y la clave de Alpha Vantage también son por usuario.
@@ -160,17 +166,23 @@ app.js                    — estado, render y sincronización (sin librerías)
 lib/contabilidad.js       — lógica contable pura (navegador y tests node)
 icon.svg                  — icono pixelado estilo panel de bolsa
 manifest.webmanifest, sw.js — PWA instalable con carcasa offline
-backend/server.py         — API + SQLite + estáticos (solo stdlib)
+backend/server.py         — API HTTP, rutas y arranque (solo stdlib)
+backend/config.py         — rutas, versión y configuración compartida
+backend/schema.py         — conexión SQLite, esquema y migraciones
+backend/auth.py           — contraseñas, usuarios públicos y validación
+backend/market.py         — proxy Alpha Vantage y caché por símbolo
+backend/static.py         — lista blanca, ETag/gzip y estáticos
+backend/telemetry.py      — store, forward y relay de telemetría
 backend/backup.py         — copias de la BD con retención
 backend/seed_demo.py      — usuario demo con 6 meses de movimientos
-backend/tests/            — suites unittest (server, market, telemetry…)
+backend/tests/            — suites unittest (server, market, telemetry, integración…)
 backend/neverred.db       — base de datos (se crea al arrancar; no se versiona)
 frontend/tests/           — tests node de la lógica pura (contabilidad, mercado, simuladores)
 packaging/macos/          — Launcher.sh + build.sh (.app + .dmg sin dependencias)
 packaging/update-common.sh — firma, descarga y versiones comunes a macOS/Linux
 Dockerfile, compose.yaml, Caddyfile — despliegue
-.github/workflows/       — ci (push/PR: backend + market + node), release + packaging-macos/-linux (tags v*)
-docs/                     — capturas para este README
+.github/workflows/       — CI (5 suites + node), release + packaging-macos/-linux (tags v*)
+docs/                     — capturas y notas de operación redactadas
 ```
 
 ## API
@@ -246,12 +258,15 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 31 tests (solo stdlib)
+python3 backend/tests/test_server.py   # backend: 32 tests (solo stdlib)
 python3 backend/tests/test_market.py    # mercado: 19 tests (sin red, con mock)
-python3 backend/tests/test_telemetry_forward.py   # forward: 7 tests
+python3 backend/tests/test_telemetry_forward.py   # forward: 9 tests
 python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
+python3 backend/tests/test_integration.py   # integración HTTP: 2 tests
 node --test frontend/tests/*.test.js    # frontal: 42 tests (contabilidad, mercado, simuladores y SW; sin dependencias)
 ```
+
+Total: **115** (73 backend + 42 frontal).
 
 ## Releases (automáticas con GitHub Actions)
 
@@ -265,9 +280,11 @@ git tag -a v1.3.0 -m "NeverRed v1.3.0" && git push origin v1.3.0
 ```
 
 Antes del tag: deja el árbol limpio (`git status`) y actualiza este README si
-hay cambios visibles. Al subir versión, actualiza **los dos sitios**:
-`VERSION` en `backend/server.py` y `NEVERRED_BUILD` en `app.js` (si no
-coinciden, el frontal se autorrefresca en bucle).
+hay cambios visibles. Al subir versión, actualiza **los tres sitios**:
+`VERSION` en `backend/config.py`, `NEVERRED_BUILD` en `app.js` y
+`styles.css?v=X.Y.Z` en `index.html` (si no coinciden, el frontal se
+autorrefresca en bucle o sirve CSS viejo). Si cambia la carcasa o el service
+worker, sube también `CACHE` en `sw.js`.
 
 ### Telemetría de uso (beta, opcional)
 
@@ -283,3 +300,8 @@ importes, textos, nombres ni ningún dato personal o contable.
 donde puedes activar o desactivar el envío. Al desactivarlo, se borra el
 historial acumulado; también se borra al eliminar la cuenta. Los datos se
 guardan en tu propio servidor con purga automática a los 90 días.
+
+La operación del receptor y el procedimiento de release están en
+[`docs/ops/telemetry.md`](docs/ops/telemetry.md) y
+[`docs/ops/releases.md`](docs/ops/releases.md) (copias redactadas, sin
+secretos).

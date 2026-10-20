@@ -5,9 +5,9 @@ Mueve los agregados de telemetría desde la BD de la App hasta el Monitor,
 con reintentos exponenciales y upsert idempotente en destino.
 
 NO importa `server`: todas las dependencias de la App (conexión a BD, ID
-de instalación, versión) se inyectan como parámetros. `server.py` lo usa
-a través de envoltorios finos que mantienen la API histórica
-(`forward_state`, `forward_once`, `backoff_delay`, `build_aggregates`).
+de instalación, versión, directorio de claves) se inyectan como parámetros.
+`telemetry.py` lo usa a través de envoltorios finos que mantienen la API
+histórica (`forward_state`, `forward_once`, `backoff_delay`).
 """
 
 import json
@@ -295,7 +295,7 @@ def forward_once(con, install_id, version, cfg, key_dir, force=False):
     return status
 
 
-def forward_loop(db_fn, install_id_fn, version, cfg_fn):
+def forward_loop(db_fn, install_id_fn, version, cfg_fn, key_dir_fn):
     """Hilo: envía agregados cada `every` s; ante fallo, backoff."""
     while True:
         time.sleep(60)
@@ -303,7 +303,8 @@ def forward_loop(db_fn, install_id_fn, version, cfg_fn):
             if cfg_fn().sink:
                 con = db_fn()
                 try:
-                    forward_once(con, install_id_fn(), version, cfg_fn())
+                    forward_once(con, install_id_fn(), version, cfg_fn(),
+                                 key_dir_fn())
                 finally:
                     con.close()
         except Exception:

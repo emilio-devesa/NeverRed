@@ -14,12 +14,10 @@ En cada beta, configura:
 
 Panel: http://localhost:8140/ (totales, picos, tartas y medias de reintentos).
 """
-import hashlib
 import hmac
 import json
 import math
 import os
-import re
 import shutil
 import sqlite3
 import subprocess
@@ -110,7 +108,9 @@ def init_db():
 
 
 def _esc(s):
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """Escapa texto y atributos HTML (incluidas comillas)."""
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#x27;"))
 
 
 def _norm_platform(platform):
@@ -185,17 +185,18 @@ def pie_svg(pairs, size=180):
         color = PALETTE[i % len(PALETTE)]
         if frac >= 1:
             out.append("<circle cx=%d cy=%d r=%d fill='%s'><title>%s: %d (%.1f%%)</title></circle>"
-                       % (cx, cy, r, color, label, v, frac * 100))
+                       % (cx, cy, r, color, _esc(label), v, frac * 100))
         elif frac > 0:
             out.append("<path d='M%d,%d L%.1f,%.1f A%d,%d 0 %d 1 %.1f,%.1f Z' fill='%s'>"
                        "<title>%s: %d (%.1f%%)</title></path>"
-                       % (cx, cy, x0, y0, r, r, large, x1, y1, color, label, v, frac * 100))
+                       % (cx, cy, x0, y0, r, r, large, x1, y1, color,
+                          _esc(label), v, frac * 100))
         angle += frac * 360
     out.append("</svg>")
     legend = "".join(
         "<li><span style='display:inline-block;width:12px;height:12px;background:%s'></span> "
         "%s: <strong>%d</strong> (%.1f%%)</li>"
-        % (PALETTE[i % len(PALETTE)], lab, v, 100 * v / total)
+        % (PALETTE[i % len(PALETTE)], _esc(lab), v, 100 * v / total)
         for i, (lab, v) in enumerate(pairs))
     return "\n".join(out) + "<ul>%s</ul>" % legend
 
@@ -376,18 +377,19 @@ class Handler(BaseHTTPRequestHandler):
 
         def section(title, pairs):
             if not pairs:
-                return "<section><h2>%s</h2><p class=muted>Sin datos todavía.</p></section>" % title
+                return ("<section><h2>%s</h2><p class=muted>Sin datos todavía.</p>"
+                        "</section>" % _esc(title))
             top = pairs[0][1] or 1
             rows = "".join(
                 "<div class=row><span class=name>%s</span>"
                 "<span class=bar><i style='width:%.1f%%;background:%s'></i></span>"
                 "<span class=num>%d</span><span class=pct muted>%.1f%%</span></div>"
-                % (lab, 100 * v / top, PALETTE[i % len(PALETTE)], v,
+                % (_esc(lab), 100 * v / top, PALETTE[i % len(PALETTE)], v,
                    100 * v / (sum(v for _, v in pairs) or 1))
                 for i, (lab, v) in enumerate(pairs))
             return ("<section><h2>%s</h2><div class=cols><div>%s</div>"
                     "<div class=ranking>%s</div></div></section>"
-                    % (title, pie_svg(pairs, 200), rows))
+                    % (_esc(title), pie_svg(pairs, 200), rows))
 
         def ident_section():
             if not identities:
@@ -465,9 +467,9 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
 </body></html>""" % (
             now_s, users,
             peak_day[1] if peak_day else 0,
-            " · %s" % peak_day[0] if peak_day else "",
+            " · %s" % _esc(peak_day[0]) if peak_day else "",
             peak_hour[2] if peak_hour else 0,
-            " · %s %sh" % (peak_hour[0], peak_hour[1]) if peak_hour else "",
+            " · %s %sh" % (_esc(peak_hour[0]), _esc(peak_hour[1])) if peak_hour else "",
             mean, sends, fails,
             section("Funciones más empleadas", [(r[0], r[1]) for r in by_event]),
             section("Versiones", [(r[0] or "?", r[1]) for r in by_version]),
@@ -501,7 +503,6 @@ def main():
     import argparse
     if not TOKEN:
         print("[sink] Sin NEVERRED_SINK_TOKEN: solo ingesta firmada (emparejamiento).")
-    ap = argparse.ArgumentParser(description="Receptor de telemetría NeverRed.")
     ap = argparse.ArgumentParser(description="Receptor de telemetría NeverRed.")
     ap.add_argument("--host", default=os.environ.get("SINK_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("SINK_PORT", "8140")))

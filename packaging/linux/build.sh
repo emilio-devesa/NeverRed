@@ -9,7 +9,7 @@ if [ "${1:-}" != "" ]; then VERSION="$1";
 elif git describe --tags --abbrev=0 >/dev/null 2>&1; then VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')";
 else VERSION="1.7.0"; fi
 # Destino de telemetría por defecto (ver build.sh de macOS).
-: "${NEVERRED_BUILD_SINK:=https://neverred-dev.tail2f2ed4.ts.net}"
+: "${NEVERRED_BUILD_SINK=https://neverred-dev.tail2f2ed4.ts.net}"
 
 DIR="$ROOT/dist/linux/NeverRed.AppDir"
 rm -rf "$DIR"
@@ -17,7 +17,9 @@ mkdir -p "$DIR/app/backend" "$DIR/app/lib"
 cp index.html styles.css app.js icon.svg manifest.webmanifest sw.js "$DIR/app/"
 cp -R assets "$DIR/app/assets"
 cp lib/contabilidad.js "$DIR/app/lib/"
-cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$DIR/app/backend/"
+cp backend/server.py backend/auth.py backend/config.py backend/market.py \
+  backend/schema.py backend/static.py backend/telemetry.py \
+  backend/telemetry_common.py backend/telemetry_forward.py "$DIR/app/backend/"
 cp packaging/linux/AppRun packaging/linux/check-update.sh "$DIR/"
 cp packaging/update-common.sh "$DIR/"
 # Destino de telemetría del build (vacío = local pura; ver build.sh de macOS).

@@ -24,6 +24,7 @@ os.environ["NEVERRED_RATE_MAX"] = "1000"
 os.environ["NEVERRED_ALPHA_VANTAGE_KEY"] = "TESTKEY123456789"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import market  # noqa: E402
 import server  # noqa: E402
 
 
@@ -67,7 +68,7 @@ def fixture_series(n=250, start_price=100.0):
 
 class ParseCase(unittest.TestCase):
     def test_ventana_180_dias(self):
-        data, err = server.parse_av_daily(fixture_series(250))
+        data, err = market.parse_av_daily(fixture_series(250))
         self.assertIsNone(err)
         cutoff = (datetime.date.today() - datetime.timedelta(days=180)).isoformat()
         self.assertTrue(all(d >= cutoff for d in data["dates"]))
@@ -75,25 +76,25 @@ class ParseCase(unittest.TestCase):
         self.assertGreater(len(data["dates"]), 100)
 
     def test_rate_reason(self):
-        self.assertEqual(server.rate_reason(None), "net")
-        self.assertEqual(server.rate_reason(
+        self.assertEqual(market.rate_reason(None), "net")
+        self.assertEqual(market.rate_reason(
             {"Information": "Please consider spreading out (1 request per second)."}),
             "burst")
-        self.assertEqual(server.rate_reason(
+        self.assertEqual(market.rate_reason(
             {"Information": "Our standard API rate limit is 25 requests per day."}),
             "daily")
 
     def test_simbolo_invalido(self):
-        _, err = server.parse_av_daily({"Error Message": "Invalid API call."})
+        _, err = market.parse_av_daily({"Error Message": "Invalid API call."})
         self.assertEqual(err, "invalid")
 
     def test_cuota(self):
-        _, err = server.parse_av_daily(
+        _, err = market.parse_av_daily(
             {"Information": "Thank you... 25 requests per day..."})
         self.assertEqual(err, "rate")
-        _, err = server.parse_av_daily({"Note": "Thank you..."})
+        _, err = market.parse_av_daily({"Note": "Thank you..."})
         self.assertEqual(err, "rate")
-        _, err = server.parse_av_daily(None)
+        _, err = market.parse_av_daily(None)
         self.assertEqual(err, "rate")
 
     def test_pocos_datos_usa_todo(self):
@@ -101,13 +102,13 @@ class ParseCase(unittest.TestCase):
         ts = {d: {"4. close": "10.0"} for d in
               [(datetime.date.fromisoformat(old) - datetime.timedelta(days=i)).isoformat()
                for i in range(60)]}
-        data, err = server.parse_av_daily({"Time Series (Daily)": ts})
+        data, err = market.parse_av_daily({"Time Series (Daily)": ts})
         self.assertIsNone(err)
         self.assertEqual(len(data["dates"]), 60)
 
     def test_normaliza(self):
-        self.assertEqual(server.normalize_symbol(" aapl "), "AAPL")
-        self.assertEqual(server.normalize_symbol("brk.b"), "BRK.B")
+        self.assertEqual(market.normalize_symbol(" aapl "), "AAPL")
+        self.assertEqual(market.normalize_symbol("brk.b"), "BRK.B")
 
 
 class MarketApiCase(unittest.TestCase):
@@ -119,7 +120,7 @@ class MarketApiCase(unittest.TestCase):
         cls.th = threading.Thread(target=cls.srv.serve_forever, daemon=True)
         cls.th.start()
         time.sleep(0.2)
-        cls._orig_av = server._av_get
+        cls._orig_av = market._av_get
         cls.calls = []
         cls.payload = fixture_series()
 
@@ -128,18 +129,18 @@ class MarketApiCase(unittest.TestCase):
             assert key, "la llamada saliente necesita clave del servidor"
             return cls.payload
 
-        server._av_get = fake_av
+        market._av_get = fake_av
 
     @classmethod
     def tearDownClass(cls):
-        server._av_get = cls._orig_av
+        market._av_get = cls._orig_av
         cls.srv.shutdown()
         cls.srv.server_close()
         os.unlink(os.environ["NEVERRED_DB"])
 
     def setUp(self):
         server._rate.clear()
-        server._market_last_call = 0
+        market._market_last_call = 0
         type(self).calls.clear()
 
     def test_sin_sesion(self):
@@ -169,11 +170,11 @@ class MarketApiCase(unittest.TestCase):
             self.assertTrue(sA["configured"])
             self.assertFalse(sB["configured"])
             # B no puede añadir sin clave; A sí.
-            server._market_last_call = 0
+            market._market_last_call = 0
             st, _ = call(self.port, "/api/market/tickers", "POST",
                          {"symbol": "KEYA"}, token=tokB)
             self.assertEqual(st, 400)
-            server._market_last_call = 0
+            market._market_last_call = 0
             st, body = call(self.port, "/api/market/tickers", "POST",
                             {"symbol": "KEYA"}, token=tokA)
             self.assertEqual(st, 200, body)
@@ -187,7 +188,7 @@ class MarketApiCase(unittest.TestCase):
 
     def test_borrado_cuenta_limpia_mercado(self):
         tok = mkuser(self.port, "mkdel")
-        server._market_last_call = 0
+        market._market_last_call = 0
         st, _ = call(self.port, "/api/market/tickers", "POST",
                      {"symbol": "BYE"}, token=tok)
         self.assertEqual(st, 200)
@@ -235,7 +236,7 @@ class MarketApiCase(unittest.TestCase):
         self.assertEqual(st, 200)
         self.assertEqual(len(type(self).calls), n_calls)  # caché fresca: 0 llamadas
         # Refresh forzado con guard activo → sirve caducada marcada stale
-        server._market_last_call = int(time.time())
+        market._market_last_call = int(time.time())
         st, body = call(self.port, "/api/market/history?symbol=AAPL&refresh=1",
                         token=tok)
         self.assertEqual(st, 200)
@@ -263,7 +264,7 @@ class MarketApiCase(unittest.TestCase):
         tok = mkuser(self.port, "mkt6")
         calls = type(self).calls
         calls.clear()
-        server._market_last_call = 0
+        market._market_last_call = 0
         st, body = call(self.port, "/api/market/tickers", "POST",
                         {"symbol": "DAILY"}, token=tok)
         self.assertEqual(st, 200, body)
@@ -289,10 +290,10 @@ class MarketApiCase(unittest.TestCase):
 
     def test_cuota_contador(self):
         # Autosuficiente: resetea el contador y gasta 2 llamadas.
-        server._market_set_meta(server._av_today_key(), "0")
+        market._market_set_meta(market._av_today_key(), "0")
         tok = mkuser(self.port, "mktq")
         for sym in ("QUOTA", "QUOTB"):
-            server._market_last_call = 0  # el guard de cuota no pinta aquí
+            market._market_last_call = 0  # el guard de cuota no pinta aquí
             st, body = call(self.port, "/api/market/tickers", "POST",
                             {"symbol": sym}, token=tok)
             self.assertEqual(st, 200, body)
@@ -303,7 +304,7 @@ class MarketApiCase(unittest.TestCase):
     def test_demo_limpia_mercado(self):
         # La demo es efímera: entrar restablece tickers y clave.
         tok = mkuser(self.port, "mkdemo")
-        server._market_last_call = 0
+        market._market_last_call = 0
         st, _ = call(self.port, "/api/market/tickers", "POST",
                      {"symbol": "DEMOT"}, token=tok)
         self.assertEqual(st, 200)
@@ -345,11 +346,11 @@ class MarketApiCase(unittest.TestCase):
         tokA = mkuser(self.port, "mkord1")
         tokB = mkuser(self.port, "mkord2")
         for sym in ("ORD1", "ORD2", "ORD3"):
-            server._market_last_call = 0
+            market._market_last_call = 0
             st, _ = call(self.port, "/api/market/tickers", "POST",
                          {"symbol": sym}, token=tokA)
             self.assertEqual(st, 200)
-        server._market_last_call = 0
+        market._market_last_call = 0
         st, _ = call(self.port, "/api/market/tickers", "POST",
                      {"symbol": "OTRO"}, token=tokB)
         self.assertEqual(st, 200)
