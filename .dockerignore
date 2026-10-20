@@ -1,4 +1,32 @@
+# Contexto de build mínimo: la imagen solo necesita el servidor y la app.
 .git/
+.github/
+
+# Datos de ejecución (nunca dentro de la imagen)
 *.db
+*-shm
+*-wal
+*-journal
 __pycache__/
 *.pyc
+.DS_Store
+
+# Secretos y documentos privados (el .gitignore no afecta a Docker)
+REPORT.*
+*-OPS.MD
+*.MD
+*.key
+market.key
+backend/install.id
+packaging/release-key
+
+# Material que no se usa en tiempo de ejecución
+docs/
+dist/
+packaging/
+frontend/
+backend/tests/
+README.md
+CHANGELOG.md
+Caddyfile
+compose.yaml

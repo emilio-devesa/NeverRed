@@ -1,5 +1,23 @@
 # NeverRed — Historial de cambios
 
+## v2.6.5 — Endurecimiento tras la auditoría (P0)
+- **Privacidad:** el servidor sirve solo los archivos de la app (lista blanca).
+  Informes privados, documentación, scripts de empaquetado y tests dejan de ser
+  accesibles por HTTP y de viajar dentro de la imagen Docker
+- **CORS:** solo se acepta el origen exacto del servidor (se acabó el
+  `localhost:*`); el modo archivo (`file://`) sigue funcionando, sin cookies
+- **Sin pérdida de datos:** si la carga inicial falla, la app reintenta 3 veces
+  y ofrece trabajar sin conexión. No se sube nada hasta que el usuario decide
+  explícitamente qué copia conservar, y esa decisión sobrevive a un recargado
+- **Seguridad:** IDs escapados en el frontal y validados en el servidor; mapas
+  de rate-limit y de pestañas con poda y tope; rate limit real en `/api/ping`
+- **Actualizador macOS:** copia a un temporal, verifica la versión e instala
+  con respaldo y rollback. Un fallo de copia ya no deja sin aplicación
+- **CI:** se ejecutan las 4 suites de backend (18 tests de telemetría que antes
+  no corrían) y los tests del frontal con un glob compatible con Node 22+
+- **404 real** para recursos que no existen (antes devolvía la app con 200)
+- Código muerto `_seed` eliminado; 99 tests en verde
+
 ## v2.6.4 — Tickers reordenables
 - Los valores de Mercado se pueden **reordenar arrastrando** (o con los
   botones ↑/↓ en táctil): el orden es por usuario y se conserva al salir

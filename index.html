@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NeverRed — Contabilidad personal por partida doble</title>
   <meta name="description" content="NeverRed: empieza y mantén tu contabilidad personal con el sistema de doble partida. Sin números rojos." />
-  <link rel="stylesheet" href="styles.css?v=2.6.4" />
+  <link rel="stylesheet" href="styles.css?v=2.6.5" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0e1116" />
@@ -66,6 +66,7 @@
         (<code>python3 backend/server.py</code>).
       </div>
       <button class="btn ghost" id="btnRetryBackend" type="button" hidden>Reintentar conexión</button>
+      <button class="btn ghost" id="btnWorkOffline" type="button" hidden>Trabajar sin conexión</button>
     </div>
   </div>
 
@@ -98,9 +99,13 @@
 
   <main>
     <div id="conflictBar" class="conflict-bar" hidden>
-      <span>⚠️ Tus datos cambiaron en otro dispositivo o pestaña.</span>
+      <span id="conflictText">⚠️ Tus datos cambiaron en otro dispositivo o pestaña.</span>
       <button class="btn small" id="btnConflictReload">Recargar esos datos</button>
       <button class="btn small primary" id="btnConflictKeep">Mantener los míos</button>
+    </div>
+    <div id="offlineBar" class="conflict-bar" hidden>
+      <span id="offlineText">⚠️ Sin conexión con el servidor: los cambios se guardan solo en este navegador.</span>
+      <button class="btn small" id="btnOfflineRetry">Reintentar conexión</button>
     </div>
     <!-- INICIO / DASHBOARD -->
     <section id="view-inicio" class="view active">

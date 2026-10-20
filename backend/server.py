@@ -33,6 +33,9 @@ DB_PATH = os.environ.get(
 )
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+# Los IDs acaban en atributos `data-*` del HTML: se restringen a un alfabeto
+# seguro para que ni un backup manipulado pueda inyectar marcado.
+ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 MIN_PASSWORD_LEN = 8
 MAX_PASSWORD_LEN = 256
 AUDIT_DAYS = 90
@@ -41,25 +44,69 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.4")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.6.5")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
+# Tope de claves del mapa: sin él, una IP falseada por petición (TRUST_PROXY)
+# hace crecer el diccionario sin límite. Al llenarse se rechazan claves nuevas.
+RATE_MAX_KEYS = int(os.environ.get("NEVERRED_RATE_MAX_KEYS", "10000"))
 _rate = {}  # ip -> [intentos, fin_ventana_ts]
+_rate_lock = threading.Lock()
+_rate_ops = 0
+
+
+def _rate_prune(now):
+    """Elimina ventanas ya caducadas. Debe llamarse con _rate_lock tomado."""
+    for key in [k for k, v in _rate.items() if v[1] < now]:
+        del _rate[key]
 
 
 def rate_limited(ip):
+    global _rate_ops
     now = int(time.time())
-    count, reset = _rate.get(ip, (0, now + RATE_WINDOW))
-    if now > reset:
-        count, reset = 0, now + RATE_WINDOW
-    count += 1
-    _rate[ip] = [count, reset]
-    return count > RATE_MAX
+    with _rate_lock:
+        _rate_ops += 1
+        if _rate_ops >= 256:
+            _rate_ops = 0
+            _rate_prune(now)
+        count, reset = _rate.get(ip, (0, now + RATE_WINDOW))
+        if now > reset:
+            count, reset = 0, now + RATE_WINDOW
+        if ip not in _rate and len(_rate) >= RATE_MAX_KEYS:
+            return True  # tabla llena: fallar cerrado, nunca crecer sin tope
+        count += 1
+        _rate[ip] = [count, reset]
+        return count > RATE_MAX
 
 
 def rate_reset(ip):
-    _rate.pop(ip, None)
+    with _rate_lock:
+        _rate.pop(ip, None)
+
+
+# Rate-limit propio de /api/ping (latido cada 10 s por pestaña). No comparte
+# mapa con el de login para no consumir el cupo anti fuerza bruta.
+PING_MAX = int(os.environ.get("NEVERRED_PING_MAX", "240"))
+PING_WINDOW = 60
+_ping = {}  # ip -> [intentos, fin_ventana_ts]
+_ping_lock = threading.Lock()
+
+
+def ping_limited(ip):
+    now = int(time.time())
+    with _ping_lock:
+        if len(_ping) > RATE_MAX_KEYS:
+            for key in [k for k, v in _ping.items() if v[1] < now]:
+                del _ping[key]
+            if len(_ping) > RATE_MAX_KEYS:
+                _ping.clear()  # cota dura: el cupo de ping no es un control de acceso
+        count, reset = _ping.get(ip, (0, now + PING_WINDOW))
+        if now > reset:
+            count, reset = 0, now + PING_WINDOW
+        count += 1
+        _ping[ip] = [count, reset]
+        return count > PING_MAX
 
 
 # Latidos de pestaña para el autoapagado (lo activa el lanzador de macOS con
@@ -379,11 +426,29 @@ def etag_of(data):
 MAX_SESSIONS = 10
 
 
+MAX_TABS = int(os.environ.get("NEVERRED_MAX_TABS", "64"))
+
+
 def tab_seen(tab):
-    """Registra el latido de una pestaña (id único por sessionStorage)."""
+    """Registra el latido de una pestaña (id único por sessionStorage).
+
+    Solo se guarda si el autoapagado por inactividad está activo: sin él nadie
+    lee el mapa y almacenar cada latido sería memoria sin uso (y sin cota, ya
+    que /api/ping es público). Con autoapagado el uso es local y las pestañas
+    son unas pocas; aun así se poda y se acota por si acaso.
+    """
     global _had_tabs
+    if not QUIT_WHEN_IDLE:
+        _had_tabs = True
+        return
+    now = time.time()
     with _tabs_lock:
-        _tabs[tab] = time.time()
+        if tab not in _tabs and len(_tabs) >= MAX_TABS:
+            for t in [t for t, ts in _tabs.items() if now - ts > IDLE_TIMEOUT]:
+                del _tabs[t]
+            if len(_tabs) >= MAX_TABS:
+                return  # tope duro: se ignora el latido, no se expulsa a nadie
+        _tabs[tab] = now
         _had_tabs = True
 
 
@@ -567,6 +632,8 @@ def validate_data(body):
             return "Cuenta inválida."
         if not isinstance(a.get("id"), str) or not a["id"]:
             return "Cuenta sin identificador."
+        if not ID_RE.match(a["id"]):
+            return "Identificador de cuenta inválido: %r." % (a["id"],)
         if a.get("type") not in VALID_TYPES:
             return "Tipo de cuenta inválido: %r." % (a.get("type"),)
         if not isinstance(a.get("name"), str) or not a["name"].strip():
@@ -577,6 +644,8 @@ def validate_data(body):
     for e in entries:
         if not isinstance(e, dict):
             return "Asiento inválido."
+        if not isinstance(e.get("id"), str) or not ID_RE.match(e["id"]):
+            return "Asiento sin identificador válido."
         if not isinstance(e.get("date"), str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", e["date"]):
             return "Fecha inválida en un asiento."
         try:
@@ -598,6 +667,8 @@ def validate_data(body):
     for r in rec:
         if not isinstance(r, dict):
             return "Plantilla recurrente inválida."
+        if "id" in r and (not isinstance(r["id"], str) or not ID_RE.match(r["id"])):
+            return "Identificador de plantilla inválido."
         if not isinstance(r.get("desc"), str) or not r["desc"].strip():
             return "Plantilla recurrente sin descripción."
         if not isinstance(r.get("day"), int) or not 1 <= r["day"] <= 28:
@@ -901,21 +972,29 @@ class Handler(BaseHTTPRequestHandler):
         return self.client_address[0]
 
     # -- utilidades --
+    def _own_origin(self):
+        """Origen exacto de este servidor (esquema + host + puerto del Host)."""
+        host = (self.headers.get("Host") or "").strip()
+        if not host:
+            return None
+        proto = ""
+        if os.environ.get("NEVERRED_TRUST_PROXY") == "1":
+            proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        if proto not in ("http", "https"):
+            proto = "https" if COOKIE_SECURE else "http"
+        return proto + "://" + host
+
     def _cors_headers(self):
-        # Solo se permite CORS al mismo origen y al modo archivo local
-        # (Origin: null). Cualquier otro sitio no recibe cabeceras.
-        from urllib.parse import urlparse as _up
+        # Solo CORS al propio origen (comparación exacta, puerto incluido) y al
+        # modo archivo local (Origin: null, que usa Bearer y nunca cookies).
+        # Cualquier otro origen no recibe cabeceras y el navegador lo bloquea.
         origin = self.headers.get("Origin") or ""
-        host = (self.headers.get("Host") or "").split(":")[0]
         allowed = None
         if origin == "null":
-            allowed = "*"  # index.html abierto con doble clic
+            allowed = "null"
         elif origin:
-            try:
-                if _up(origin).hostname in (host, "127.0.0.1", "localhost"):
-                    allowed = origin
-            except Exception:
-                allowed = None
+            if origin == self._own_origin():
+                allowed = origin
         if allowed:
             self.send_header("Access-Control-Allow-Origin", allowed)
             self.send_header("Vary", "Origin")
@@ -1394,8 +1473,10 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, status)
 
     def _api_ping(self):
-        # rate-limit (laten cada 10 s). El CORS restringido ya impide el abuso
-        # desde sitios de terceros (petición JSON = preflight).
+        # Latido de pestaña (cada 10 s). Con rate-limit propio y generoso: es
+        # público, así que sin tope sirve para inundar el proceso.
+        if ping_limited(self.client_ip()):
+            return self._send_json(429, {"error": "Demasiados latidos. Espera un momento."})
         body = self._read_json() or {}
         tab = str(body.get("tab") or "")[:64]
         if not tab:
@@ -1406,7 +1487,7 @@ class Handler(BaseHTTPRequestHandler):
     def _api_demo(self):
         # Entrar a probar sin registrarse: crea o restablece el usuario demo
         # (credenciales públicas) con datos de muestra e inicia sesión.
-        if rate_limited(self.client_address[0]):
+        if rate_limited(self.client_ip()):
             return self._send_json(429, {"error": "Demasiados intentos. Espera unos minutos."})
         data = demo_data()
         con = db()
@@ -1719,24 +1800,41 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     # -- estaticos --
-    # Extensiones que jamás se sirven (claves, secretos, volcados de BD…),
-    # aunque alguien las deje en el árbol servido al configurar TLS o backups.
-    BLOCKED_EXT = {".db", ".pem", ".key", ".env"}
-    BLOCKED_SUFFIX = ("-wal", "-shm", "-journal")
+    # Lista blanca: solo se sirve lo que la app necesita. Todo lo demás
+    # (markdown, informes, scripts de empaquetado, CI, tests…) queda fuera por
+    # defecto, aunque esté en el árbol o dentro de la imagen Docker.
+    STATIC_FILES = {
+        "index.html", "styles.css", "app.js", "sw.js",
+        "icon.svg", "manifest.webmanifest",
+    }
+    STATIC_DIRS = ("lib/", "assets/")
+    STATIC_EXT = {".css", ".js", ".json", ".svg", ".png", ".ico", ".webmanifest",
+                  ".woff2"}
+
+    def _static_rel(self, path):
+        """Ruta relativa servible, o None si no está en la lista blanca."""
+        rel = "index.html" if path in ("/", "") else unquote(path).lstrip("/")
+        if not rel or ".." in rel.split("/") or "\\" in rel:
+            return None
+        if os.path.basename(rel).startswith("."):
+            return None
+        if rel in self.STATIC_FILES:
+            return rel
+        if rel.startswith(self.STATIC_DIRS) and \
+                os.path.splitext(rel)[1].lower() in self.STATIC_EXT:
+            return rel
+        return None
 
     def _serve_static(self, path):
-        rel = "index.html" if path in ("/", "") else unquote(path).lstrip("/")
-        _, ext = os.path.splitext(rel)
-        if (".." in rel or rel.startswith("backend/") or rel.startswith(".git/")
-                or ext.lower() in self.BLOCKED_EXT
-                or rel.endswith(self.BLOCKED_SUFFIX)
-                or os.path.basename(rel).startswith(".")):
-            return self._send_json(403, {"error": "Acceso denegado."})
+        rel = self._static_rel(path)
+        if rel is None:
+            raw = unquote(path).lstrip("/")
+            if ".." in raw or raw.startswith(("backend/", ".git/")):
+                return self._send_json(403, {"error": "Acceso denegado."})
+            return self._send_json(404, {"error": "No encontrado."})
         full = os.path.join(BASE_DIR, rel)
-        if os.path.isdir(full):
-            full = os.path.join(full, "index.html")
         if not os.path.isfile(full):
-            full = os.path.join(BASE_DIR, "index.html")
+            return self._send_json(404, {"error": "No encontrado."})
         _, ext = os.path.splitext(full)
         ctype = MIME.get(ext, "application/octet-stream")
         try:

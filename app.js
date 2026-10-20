@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.4';
+const NEVERRED_BUILD = '2.6.5';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -31,20 +31,30 @@ let sessionToken = null;
 try { sessionToken = localStorage.getItem('neverred_session') || null; } catch { sessionToken = null; }
 let state = load() || { user: { name: '', currency: 'EUR' }, accounts: [], entries: [], seq: 1 };
 if (!state.accounts.length && !state.entries.length && !localStorage.getItem(LS_KEY)) {
-  state.accounts = BASE_ACCOUNTS.map((a, i) => ({ id: uid(), ...a, archived: false, _seed: i }));
+  state.accounts = BASE_ACCOUNTS.map((a) => ({ id: uid(), ...a, archived: false }));
 }
 let editingEntryId = null;
 let editingAccountId = null;
 let saveTimer = null;
 let serverEtag = null;
 let conflictData = null;
+// Trabajo sin conexión: no se sube nada hasta conciliar explícitamente con el
+// servidor (al reconectar se pide confirmación antes de reemplazar sus datos).
+let offlineMode = false;
+let pendingConflict = null;
+let lastReconnectTry = 0;
+let warnedRejected = false; // evita repetir el aviso de datos rechazados
 function setSync(s) {
   const b = document.getElementById('syncBadge');
   if (!b) return;
   b.className = 'badge ' + (s === 'ok' ? 'ok' : 'bad');
-  b.textContent = s === 'ok' ? '✓ sincronizado' : (s === 'dirty' ? '● guardando…' : '⚠ revisa sincronización');
+  b.textContent = s === 'ok' ? '✓ sincronizado'
+    : (s === 'dirty' ? '● guardando…'
+    : (s === 'offline' ? '⚠ sin conexión' : '⚠ revisa sincronización'));
   b.title = s === 'ok' ? 'Datos sincronizados con la base de datos'
-    : (s === 'dirty' ? 'Subiendo cambios…' : 'Sin conexión o conflicto: tus cambios están a salvo en este navegador');
+    : (s === 'dirty' ? 'Subiendo cambios…'
+    : (s === 'offline' ? 'Sin conexión: los cambios están solo en este navegador'
+    : 'Sin conexión o conflicto: tus cambios están a salvo en este navegador'));
 }
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -104,17 +114,24 @@ document.getElementById('btnConsentYes').addEventListener('click', () => answerT
 document.getElementById('btnConsentNo').addEventListener('click', () => answerTelemetry(false));
 function save() {
   try { localStorage.setItem(userKey(), JSON.stringify(state)); } catch {}
+  if (offlineMode) markOfflinePending();
   queueSync();
 }
 /** Sube los datos a la base de datos (con anti-rebote para no saturar la API). */
 function queueSync() {
   if (!sessionToken && !currentUser) return;
-  setSync('dirty');
+  setSync(offlineMode ? 'offline' : 'dirty');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(syncToServer, 800);
 }
 async function syncToServer(force) {
   if (!sessionToken && !currentUser) return null;
+  if (offlineMode && !force) {
+    // Sin conflicto resuelto no se escribe: podría pisar la copia del servidor.
+    setSync('offline');
+    maybeReconnect();
+    return 'offline';
+  }
   try {
     const headers = authHeaders();
     if (serverEtag && !force) headers['If-Match'] = serverEtag;
@@ -127,14 +144,26 @@ async function syncToServer(force) {
     if (res.status === 409 && data.server) {
       conflictData = data;
       track('conflicto_409');
-      document.getElementById('conflictBar').hidden = false;
+      showConflict('⚠️ Tus datos cambiaron en otro dispositivo o pestaña.');
       setSync('conflict');
       return false;
     }
     if (res.ok) {
       serverEtag = res.headers.get('ETag') || data.etag || serverEtag;
+      warnedRejected = false;
       setSync('ok');
       return true;
+    }
+    if (res.status === 400) {
+      // El servidor valida IDs y forma: si rechaza, hay que decirlo (el dato
+      // sigue a salvo en este navegador, pero no se está sincronizando).
+      if (!warnedRejected) {
+        warnedRejected = true;
+        alert('El servidor rechazó los datos: ' + (data.error || 'formato inválido') +
+          '\n\nTus cambios siguen guardados en este navegador.');
+      }
+      setSync('conflict');
+      return false;
     }
     setSync('conflict');
     return false;
@@ -151,14 +180,89 @@ document.getElementById('btnConflictReload').addEventListener('click', () => {
   serverEtag = conflictData.etag || null;
   conflictData = null;
   document.getElementById('conflictBar').hidden = true;
+  leaveOffline();
   save(); renderAll();
 });
 document.getElementById('btnConflictKeep').addEventListener('click', async () => {
   conflictData = null;
   document.getElementById('conflictBar').hidden = true;
+  leaveOffline();
   await syncToServer(true); // sobrescribe con lo mío
   renderAll();
 });
+/** Muestra la barra de conflicto con un texto concreto (409 o copia offline). */
+function showConflict(text) {
+  const t = document.getElementById('conflictText');
+  if (t) t.textContent = text;
+  document.getElementById('conflictBar').hidden = false;
+}
+// ---------- Trabajo sin conexión (copia local pendiente de conciliar) ----------
+function offlineKey() { return LS_KEY + ':offline:' + (currentUser ? currentUser.id : 'local'); }
+function markOfflinePending() { try { localStorage.setItem(offlineKey(), '1'); } catch {} }
+function hasOfflinePending() { try { return localStorage.getItem(offlineKey()) === '1'; } catch { return false; } }
+function clearOfflinePending() { try { localStorage.removeItem(offlineKey()); } catch {} }
+function cachedState() {
+  try { const c = JSON.parse(localStorage.getItem(userKey()) || 'null'); return c || null; } catch { return null; }
+}
+function showOfflineBar() {
+  const bar = document.getElementById('offlineBar');
+  const txt = document.getElementById('offlineText');
+  if (txt) txt.textContent = '⚠️ Sin conexión con el servidor: los cambios se guardan solo en este navegador.';
+  if (bar) bar.hidden = false;
+}
+function hideOfflineBar() {
+  const bar = document.getElementById('offlineBar');
+  if (bar) bar.hidden = true;
+}
+function leaveOffline() {
+  offlineMode = false;
+  clearOfflinePending();
+  hideOfflineBar();
+}
+/** Lee la copia del servidor; null si no hay conexión (401 cierra sesión). */
+async function fetchServerData() {
+  try {
+    const res = await fetch(api('/api/data'), { headers: authHeaders() });
+    if (res.status === 401) { endSession(); return null; }
+    if (!res.ok) return null;
+    const data = (await res.json()).data || {};
+    return {
+      data,
+      etag: res.headers.get('ETag'),
+      hasData: !!((data.accounts || []).length || (data.entries || []).length),
+    };
+  } catch { return null; }
+}
+/** Intento silencioso de volver a conectar mientras se trabaja sin conexión. */
+async function maybeReconnect() {
+  if (!offlineMode || navigator.onLine === false) return;
+  const now = Date.now();
+  if (now - lastReconnectTry < 15000) return;
+  lastReconnectTry = now;
+  const info = await fetchServerData();
+  if (!info) return; // sigue sin conexión
+  serverEtag = info.etag;
+  if (!info.hasData) {
+    // Servidor sin datos: no hay nada que pisar, se sube sin preguntar.
+    leaveOffline();
+    await syncToServer(true);
+    renderAll();
+    return;
+  }
+  conflictData = { server: info.data, etag: info.etag };
+  showConflict('Hay conexión, pero tu copia local se hizo sin conexión. Elige qué copia conservar.');
+  setSync('conflict');
+}
+document.getElementById('btnOfflineRetry').addEventListener('click', async () => {
+  lastReconnectTry = 0;
+  await maybeReconnect();
+  if (offlineMode) {
+    const txt = document.getElementById('offlineText');
+    if (txt) txt.textContent = 'Sin conexión con el servidor. Los cambios siguen guardándose solo en este navegador.';
+  }
+});
+window.addEventListener('online', () => { lastReconnectTry = 0; maybeReconnect(); });
+
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmt(n) {
@@ -386,7 +490,7 @@ function renderRecurring() {
     return `<div class="acc-row"><span>↻ día ${r.day}</span><span>${esc(r.desc)}</span>
       <span class="bal">${fmt(t.d)}</span>
       <span class="muted small">${r.lastRun ? 'generado ' + r.lastRun : 'pendiente'}</span>
-      <button class="btn ghost small" data-rec-del="${r.id}">Quitar</button></div>`;
+      <button class="btn ghost small" data-rec-del="${esc(r.id)}">Quitar</button></div>`;
   }).join('') : '<p class="muted small">Sin plantillas. Usa “↻ Mensual” en cualquier asiento.</p>';
 }
 document.getElementById('recurringList').addEventListener('click', ev => {
@@ -436,10 +540,10 @@ function entryCard(e) {
     <div class="entry-head"><time>${esc(e.date)}</time><strong>${esc(e.desc)}</strong><span class="amount">${fmt(d)}</span></div>
     <table class="entry-lines">${lines}</table>
     <div class="entry-actions">
-      <button class="btn ghost small" data-edit="${e.id}">Editar</button>
-      <button class="btn ghost small" data-dupe="${e.id}">Duplicar</button>
-      <button class="btn ghost small" data-monthly="${e.id}" title="Crear plantilla mensual">↻ Mensual</button>
-      <button class="btn ghost small" data-del="${e.id}">Eliminar</button>
+      <button class="btn ghost small" data-edit="${esc(e.id)}">Editar</button>
+      <button class="btn ghost small" data-dupe="${esc(e.id)}">Duplicar</button>
+      <button class="btn ghost small" data-monthly="${esc(e.id)}" title="Crear plantilla mensual">↻ Mensual</button>
+      <button class="btn ghost small" data-del="${esc(e.id)}">Eliminar</button>
     </div></article>`;
 }
 function renderDiario() {
@@ -588,8 +692,8 @@ function renderAccounts() {
       const used = state.entries.some(e => e.lines.some(l => l.accountId === a.id));
       return `<div class="acc-row"><span class="code">${esc(a.code)}</span><span>${esc(a.name)}</span>
         <span class="bal">${fmt(balanceOf(a, t))}</span>
-        <button data-acc-edit="${a.id}" title="Editar">✏️</button>
-        <button data-acc-del="${a.id}" title="${used ? 'Tiene movimientos: se archivará' : 'Eliminar'}" ${a._seed !== undefined && used ? '' : ''}>${used ? '📦' : '🗑️'}</button></div>`;
+        <button data-acc-edit="${esc(a.id)}" title="Editar">✏️</button>
+        <button data-acc-del="${esc(a.id)}" title="${used ? 'Tiene movimientos: se archivará' : 'Eliminar'}">${used ? '📦' : '🗑️'}</button></div>`;
     }).join('') || '<p class="muted small">Sin cuentas.</p>';
     return `<div class="acc-group"><h3>${type}</h3>${rows}</div>`;
   }).join('');
@@ -626,7 +730,7 @@ function renderBudgets() {
     return `<div class="budget-row">
       <span class="budget-name">${esc(a.name)}<br /><span class="muted small">${fmt(s)}${b ? ' de ' + fmt(b) : ''} · ${msg}</span></span>
       <span class="budget-bar"><span class="fill ${cls}" style="width:${pct}%"></span></span>
-      <input type="number" min="0" step="1" placeholder="Límite €" value="${b || ''}" data-budget="${a.id}" title="Límite mensual en €" />
+      <input type="number" min="0" step="1" placeholder="Límite €" value="${b || ''}" data-budget="${esc(a.id)}" title="Límite mensual en €" />
     </div>`;
   }).join('') : '<p class="muted">No hay cuentas de gasto.</p>';
 }
@@ -775,7 +879,7 @@ function renderReports() {
     .filter(a => ((t[a.id]?.debit || 0) || (t[a.id]?.credit || 0)))
     .map(a => {
       const d = t[a.id].debit, h = t[a.id].credit; td = round2(td + d); th = round2(th + h);
-      return `<tr><td>${esc(a.code + ' · ' + a.name)}</td><td>${a.type}</td><td class="num">${fmtNum(d)}</td><td class="num">${fmtNum(h)}</td><td class="num"><strong>${fmt(balanceOf(a, t))}</strong></td></tr>`;
+      return `<tr><td>${esc(a.code + ' · ' + a.name)}</td><td>${esc(a.type)}</td><td class="num">${fmtNum(d)}</td><td class="num">${fmtNum(h)}</td><td class="num"><strong>${fmt(balanceOf(a, t))}</strong></td></tr>`;
     }).join('') || '<tr><td colspan="5" class="muted">Sin movimientos todavía.</td></tr>';
   document.getElementById('trialDebe').textContent = fmtNum(td);
   document.getElementById('trialHaber').textContent = fmtNum(th);
@@ -1231,8 +1335,48 @@ function startSession(token, user) {
   clearDiarioFilters(); diarioMonth = NR.currentMonth(); pnlMonth = NR.currentMonth();
   pnlMonthly = false;
   mayorMonthly = false; mayorMonth = NR.currentMonth();
-  loadUserData().then(enterApp);
+  loadWithRetry().then(entered => { if (entered) enterApp(); });
 }
+/** Tres intentos de carga antes de rendirse (cortes breves de red). */
+async function loadWithRetry() {
+  for (let i = 0; i < 3; i++) {
+    const st = await loadUserData();
+    if (st === 'ok') return true;
+    if (st === 'unauthorized') return false;
+    if (i < 2) await new Promise(r => setTimeout(r, 700 * (i + 1)));
+  }
+  showLoadFailure();
+  return false;
+}
+/** La sesión es válida pero no se pudo leer la contabilidad: se pide reintentar. */
+function showLoadFailure() {
+  authOverlay.hidden = false;
+  authNote.textContent = FROM_FILE
+    ? 'No se pudo cargar tu contabilidad desde http://127.0.0.1:8000. Comprueba que el servidor sigue arrancado y pulsa Reintentar.'
+    : 'No se pudo cargar tu contabilidad del servidor. Comprueba la conexión y pulsa Reintentar.';
+  document.getElementById('btnRetryBackend').hidden = false;
+  document.getElementById('btnWorkOffline').hidden = false;
+}
+document.getElementById('btnWorkOffline').addEventListener('click', () => {
+  if (!currentUser) {
+    authNote.textContent = 'Vuelve a iniciar sesión para continuar.';
+    return;
+  }
+  const ok = confirm('Vas a trabajar sin conexión.\n\nLo que cambies se guardará solo en este navegador. Cuando vuelva la conexión se te preguntará si quieres subir esta copia o conservar la del servidor.\n\n¿Continuar?');
+  if (!ok) return;
+  const cached = cachedState();
+  state = cached || freshState(currentUser.name);
+  if (!state.budgets || typeof state.budgets !== 'object') state.budgets = {};
+  if (!Array.isArray(state.recurring)) state.recurring = [];
+  state.user = { name: currentUser.name, currency: (state.user && state.user.currency) || 'EUR' };
+  offlineMode = true;
+  serverEtag = null;
+  markOfflinePending();
+  document.getElementById('btnWorkOffline').hidden = true;
+  enterApp();
+  showOfflineBar();
+  setSync('offline');
+});
 /** Contabilidad vacía con el plan de cuentas base: cada usuario empieza de cero. */
 function freshState(name) {
   return {
@@ -1248,6 +1392,10 @@ function endSession() {
   // La contabilidad cacheada es tan sensible como la sesión: al salir no queda
   // rastro local (en modo archivo no hay sesión; ahí la caché local ES el dato).
   if (currentUser) { try { localStorage.removeItem(userKey()); } catch {} }
+  clearOfflinePending();
+  offlineMode = false;
+  hideOfflineBar();
+  pendingConflict = null;
   telemetryQueue = []; // los eventos sin enviar de esta sesión se descartan
   sessionToken = null; currentUser = null;
   clearTimeout(saveTimer);
@@ -1263,15 +1411,32 @@ function endSession() {
   renderKnown();
   authOverlay.hidden = false;
 }
-/** Descarga los datos del usuario desde la BD (o migra la copia local antigua). */
+/**
+ * Descarga los datos del usuario desde la BD (o migra la copia local antigua).
+ * Devuelve 'ok' | 'unauthorized' | 'failed'. En 'failed' NO se toca el estado:
+ * caer a la caché local aquí sobrescribiría el servidor en el siguiente PUT.
+ */
 async function loadUserData() {
   let server = null;
   try {
     const res = await fetch(api('/api/data'), { headers: authHeaders() });
-    if (res.status === 401) { endSession(); return; }
+    if (res.status === 401) { endSession(); return 'unauthorized'; }
+    if (!res.ok) return 'failed';
     serverEtag = res.headers.get('ETag');
     server = (await res.json()).data || {};
-  } catch { server = null; }
+  } catch { return 'failed'; }
+  // Cambios hechos sin conexión y aún sin conciliar: la copia local manda y se
+  // pide decisión explícita antes de reemplazar nada en el servidor.
+  if (hasOfflinePending()) {
+    const cached = cachedState();
+    if (cached) {
+      state = cached;
+      state.user = { name: currentUser.name, currency: (state.user && state.user.currency) || 'EUR' };
+      pendingConflict = { server, etag: serverEtag };
+      return 'ok';
+    }
+    clearOfflinePending(); // marca huérfana: no hay copia local que proteger
+  }
   const hasServerData = server && ((server.accounts || []).length || (server.entries || []).length);
   if (hasServerData) {
     state.accounts = server.accounts;
@@ -1305,6 +1470,7 @@ async function loadUserData() {
     await syncToServer();
   }
   try { localStorage.setItem(userKey(), JSON.stringify(state)); } catch {}
+  return 'ok';
 }
 function enterApp() {
   if (!currentUser) return;
@@ -1332,6 +1498,13 @@ function enterApp() {
     document.getElementById('wName').value = currentUser.name === 'contable' ? '' : currentUser.name;
     welcomeModal.hidden = false;
     document.getElementById('wName').focus();
+  }
+  // Copia local hecha sin conexión esperando decisión: se pregunta al entrar.
+  if (pendingConflict) {
+    conflictData = pendingConflict;
+    pendingConflict = null;
+    showConflict('Tienes cambios guardados sin conexión. Elige qué copia conservar.');
+    setSync('conflict');
   }
 }
 
@@ -1994,6 +2167,7 @@ async function boot() {
     if (h.version) document.getElementById('appVersion').textContent = 'v' + h.version;
   } catch {}
   document.getElementById('btnRetryBackend').hidden = true;
+  document.getElementById('btnWorkOffline').hidden = true;
   const fileWarn = document.getElementById('authFileWarn');
   fileWarn.hidden = !FROM_FILE;
   if (FROM_FILE) {
@@ -2027,7 +2201,7 @@ async function boot() {
         if (!res.ok) throw new Error('sin sesión');
         const { user } = await res.json();
         currentUser = user;
-        await loadUserData();
+        if (!(await loadWithRetry())) return;
         enterApp();
         return;
       } catch { /* sin sesión válida: cae al login de abajo */ }
@@ -2047,7 +2221,7 @@ async function boot() {
       sessionToken = null;
       try { localStorage.removeItem('neverred_session'); } catch {}
     }
-    await loadUserData();
+    if (!(await loadWithRetry())) return;
     enterApp();
   } catch {
     endSession();

@@ -16,6 +16,8 @@ jobs:
           python-version: "3.12"
       - run: python3 backend/tests/test_server.py
       - run: python3 backend/tests/test_market.py
+      - run: python3 backend/tests/test_telemetry_forward.py
+      - run: python3 backend/tests/test_telemetry_pairing.py
 
   frontend:
     runs-on: ubuntu-latest
@@ -24,4 +26,5 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
-      - run: node --test frontend/tests/
+      # Glob explícito: `node --test frontend/tests/` falla en Node ≥ 22.
+      - run: node --test frontend/tests/*.test.js

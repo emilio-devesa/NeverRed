@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.request
 import urllib.error
 
@@ -43,6 +44,16 @@ def call(port, path, method="GET", payload=None, token=None, origin=None, cookie
         except Exception:
             body = {}
         return e.code, dict(e.headers), body
+
+
+def get_raw(port, path):
+    """GET sin interpretar el cuerpo (para estáticos HTML/JS/SVG)."""
+    req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path))
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
 
 
 def mkuser(port, tag):
@@ -181,12 +192,65 @@ class ServerCase(unittest.TestCase):
         self.assertEqual(st, 200)
 
     def test_cors(self):
-        _, h, _ = call(self.port, "/api/health", origin="null")
-        self.assertEqual(h.get("Access-Control-Allow-Origin"), "*")
+        # Origen propio (mismo host y puerto): se refleja.
+        own = "http://127.0.0.1:%d" % self.port
+        _, h, _ = call(self.port, "/api/health", origin=own)
+        self.assertEqual(h.get("Access-Control-Allow-Origin"), own)
+        self.assertEqual(h.get("Vary"), "Origin")
+        # Otro puerto del mismo host: ya NO se permite (antes sí).
         _, h, _ = call(self.port, "/api/health", origin="http://127.0.0.1:9999")
-        self.assertEqual(h.get("Access-Control-Allow-Origin"), "http://127.0.0.1:9999")
+        self.assertIsNone(h.get("Access-Control-Allow-Origin"))
+        _, h, _ = call(self.port, "/api/health", origin="http://localhost:%d" % self.port)
+        self.assertIsNone(h.get("Access-Control-Allow-Origin"))
+        # Modo archivo local: respuesta literal "null" (nunca "*").
+        _, h, _ = call(self.port, "/api/health", origin="null")
+        self.assertEqual(h.get("Access-Control-Allow-Origin"), "null")
         _, h, _ = call(self.port, "/api/health", origin="https://maligno.example")
         self.assertIsNone(h.get("Access-Control-Allow-Origin"))
+
+    def test_estaticos_lista_blanca(self):
+        # Lo que la app necesita se sirve…
+        for path, ctype in (("/", "text/html"), ("/app.js", "javascript"),
+                            ("/styles.css", "text/css"), ("/sw.js", "javascript"),
+                            ("/lib/contabilidad.js", "javascript"),
+                            ("/assets/avatars/a.svg", "image/svg+xml"),
+                            ("/manifest.webmanifest", "manifest+json")):
+            st, h, body = get_raw(self.port, path)
+            self.assertEqual(st, 200, path)
+            self.assertIn(ctype, h.get("Content-Type", ""), path)
+            self.assertGreater(len(body), 0, path)
+        # …y lo que no está en la lista blanca no se expone.
+        for path in ("/REPORT.MD", "/README.md", "/Dockerfile", "/.dockerignore",
+                     "/packaging/linux/build.sh", "/frontend/tests/market.test.js",
+                     "/docs/NeverRed-Inicio.jpeg"):
+            st, _, _ = get_raw(self.port, path)
+            self.assertEqual(st, 404, path)
+        # Salidas del árbol y backend: prohibido explícito.
+        for path in ("/backend/server.py", "/../../etc/passwd", "/.git/config"):
+            st, _, _ = get_raw(self.port, path)
+            self.assertIn(st, (403, 404), path)
+        # Archivo inexistente con extensión: 404 real, no index.html con 200.
+        st, h, body = get_raw(self.port, "/no-existe.js")
+        self.assertEqual(st, 404)
+        self.assertNotIn(b"<!doctype html", body.lower())
+
+    def test_ids_peligrosos_rechazados(self):
+        tok = mkuser(self.port, "ids")
+        malo = json.loads(json.dumps(VALID_DATA))
+        malo["accounts"][0]["id"] = "\" onmouseover=\"alert(1)"
+        st, _, _ = call(self.port, "/api/data", "PUT", malo, token=tok)
+        self.assertEqual(st, 400)
+        malo = json.loads(json.dumps(VALID_DATA))
+        malo["entries"][0]["id"] = "e1'><script>alert(1)</script>"
+        st, _, _ = call(self.port, "/api/data", "PUT", malo, token=tok)
+        self.assertEqual(st, 400)
+        # Los IDs normales (uid() del frontal) siguen valiendo.
+        ok = json.loads(json.dumps(VALID_DATA))
+        ok["accounts"][0]["id"] = "a-1_b.2:c"
+        ok["entries"][0]["lines"][0]["accountId"] = "a-1_b.2:c"
+        ok["entries"][0]["lines"][1]["accountId"] = "a-1_b.2:c"
+        st, _, _ = call(self.port, "/api/data", "PUT", ok, token=tok)
+        self.assertEqual(st, 200)
 
     def test_sesiones_y_auditoria(self):
         import server as srv
@@ -304,12 +368,40 @@ class ServerCase(unittest.TestCase):
         self.assertIn("Max-Age=2592000", h.get("Set-Cookie", ""))  # 30 días
 
     def test_ping_y_poda(self):
-        st, _, _ = call(self.port, "/api/ping", "POST", {"tab": "abc"})
-        self.assertEqual(st, 200)
-        st, _, _ = call(self.port, "/api/ping", "POST", {})
-        self.assertEqual(st, 400)
-        self.assertGreaterEqual(server.prune_tabs(), 1)
-        self.assertEqual(server.prune_tabs(now=time.time() + 3600), 0)
+        # El mapa de pestañas solo se usa con autoapagado; el test lo activa.
+        with unittest.mock.patch.object(server, "QUIT_WHEN_IDLE", True):
+            with server._tabs_lock:
+                server._tabs.clear()
+            st, _, _ = call(self.port, "/api/ping", "POST", {"tab": "abc"})
+            self.assertEqual(st, 200)
+            st, _, _ = call(self.port, "/api/ping", "POST", {})
+            self.assertEqual(st, 400)
+            self.assertGreaterEqual(server.prune_tabs(), 1)
+            self.assertEqual(server.prune_tabs(now=time.time() + 3600), 0)
+
+    def test_ping_sin_autopagado_no_acumula(self):
+        # Sin autoapagado (Docker), los latidos no deben ocupar memoria.
+        with unittest.mock.patch.object(server, "QUIT_WHEN_IDLE", False):
+            with server._tabs_lock:
+                server._tabs.clear()
+            for i in range(5):
+                call(self.port, "/api/ping", "POST", {"tab": "t%d" % i})
+            self.assertEqual(server.prune_tabs(), 0)
+
+    def test_mapa_rate_acotado(self):
+        server._rate.clear()
+        try:
+            with unittest.mock.patch.object(server, "RATE_MAX_KEYS", 2):
+                self.assertFalse(server.rate_limited("ip-a"))
+                self.assertFalse(server.rate_limited("ip-b"))
+                # Tabla llena y la clave es nueva: falla cerrado.
+                self.assertTrue(server.rate_limited("ip-c"))
+                self.assertNotIn("ip-c", server._rate)
+                # Una clave ya registrada sigue su curso normal.
+                self.assertFalse(server.rate_limited("ip-a"))
+        finally:
+            server._rate.clear()
+            server.rate_reset("ip-a")
 
     def test_logout(self):
         tok = mkuser(self.port, "salir")

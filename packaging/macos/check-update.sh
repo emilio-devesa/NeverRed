@@ -143,8 +143,45 @@ MNT="$(hdiutil attach -nobrowse -readonly "$DMG" 2>/dev/null | awk -F'\t' '/Volu
 # Destino: el bundle que ejecuta este actualizador (respeta dónde lo puso
 # el usuario en su día; antes iba fijo a /Applications).
 TARGET="$(cd "$MACOS_DIR/../.." && pwd)"
-rm -rf "$TARGET"
-cp -R "$MNT/NeverRed.app" "$TARGET"
+PARENT="$(dirname "$TARGET")"
+BASE="$(basename "$TARGET")"
+STAGE="$PARENT/.$BASE.nuevo.$$"
+OLD="$PARENT/.$BASE.viejo.$$"
+
+# 1) Copia aparte y verificada. Si algo falla aquí, la app actual no se toca:
+#    antes un `rm -rf` previo dejaba al usuario sin aplicación.
+rm -rf "$STAGE"
+if ! cp -R "$MNT/NeverRed.app" "$STAGE" 2>/dev/null; then
+  rm -rf "$STAGE"
+  hdiutil detach "$MNT" >/dev/null 2>&1
+  rm -f "$DMG"
+  ulog "copia fallida (destino=$PARENT); se conserva la versión actual"
+  exit 0
+fi
+STAGED="$(defaults read "$STAGE/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo ?)"
+hdiutil detach "$MNT" >/dev/null 2>&1
+rm -f "$DMG"
+if [ "${REMOTE#v}" != "$STAGED" ]; then
+  rm -rf "$STAGE"
+  ulog "copia no verificada (copiado=$STAGED remoto=$REMOTE); se conserva la actual"
+  exit 0
+fi
+
+# 2) Intercambio con vuelta atrás: apartar la vieja, poner la nueva y solo
+#    entonces borrar la vieja. Si el segundo paso falla, se restaura.
+rm -rf "$OLD"
+if ! mv "$TARGET" "$OLD" 2>/dev/null; then
+  rm -rf "$STAGE"
+  ulog "no se pudo apartar la app actual (¿permisos en $PARENT?)"
+  exit 0
+fi
+if ! mv "$STAGE" "$TARGET" 2>/dev/null; then
+  mv "$OLD" "$TARGET" 2>/dev/null
+  rm -rf "$STAGE"
+  ulog "intercambio fallido; restaurada la versión anterior"
+  exit 0
+fi
+rm -rf "$OLD"
 # Refresca Launch Services: sin esto el Finder sigue mostrando la versión
 # vieja (misma ruta + mismo identificador = metadatos cacheados).
 touch "$TARGET" 2>/dev/null
@@ -153,8 +190,6 @@ if /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.f
 else
   ulog "aviso: lsregister falló"
 fi
-hdiutil detach "$MNT" >/dev/null 2>&1
-rm -f "$DMG"
 # Solo se marca y reabre si la copia instalada trae la versión esperada
 # (si se ejecutaba desde el DMG u otro sitio no escribible, no se finge éxito).
 INSTALLED="$(defaults read "$TARGET/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo ?)"
