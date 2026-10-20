@@ -100,6 +100,13 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   activa `NEVERRED_TRUST_PROXY=1` **solo** si el proxy es de tu confianza
   (Caddy ya envía `X-Forwarded-For`) para que el límite distinga clientes.
 - **CORS restringido** al mismo origen y al modo archivo local.
+- **HTTP/1.1 con keep-alive**: los estáticos van comprimidos con gzip, con
+  `ETag`/`Last-Modified` y `304`; `HEAD` responde con las mismas cabeceras y
+  sin cuerpo. Los estáticos usan `Cache-Control: no-cache` (revalidan siempre)
+  y la API `no-store`. Cada conexión tiene un timeout de 15 s; un fallo no
+  controlado responde `500` JSON con `Content-Length` y cierra la conexión.
+- **CSP estricta** (sin `unsafe-inline`) y service worker con caché acotada:
+  la carcasa sigue disponible sin conexión y la API nunca se cachea.
 - **HTTPS**: con `NEVERRED_TLS_CERT` + `NEVERRED_TLS_KEY` el servidor habla TLS. En producción, sírvelo siempre por HTTPS (directo o tras Caddy; ver `Caddyfile`).
 - Cada guardado en la app se sincroniza con la BD (con copia local por usuario como caché).
 - **Cada usuario tiene su propia contabilidad aislada**: al registrar una cuenta nueva se parte del plan base vacío; al cerrar sesión se borran el estado en memoria y su copia local, y nadie hereda los datos de otro usuario. Los tickers de Mercado y la clave de Alpha Vantage también son por usuario.
@@ -160,6 +167,7 @@ backend/tests/            — suites unittest (server, market, telemetry…)
 backend/neverred.db       — base de datos (se crea al arrancar; no se versiona)
 frontend/tests/           — tests node de la lógica pura (contabilidad, mercado, simuladores)
 packaging/macos/          — Launcher.sh + build.sh (.app + .dmg sin dependencias)
+packaging/update-common.sh — firma, descarga y versiones comunes a macOS/Linux
 Dockerfile, compose.yaml, Caddyfile — despliegue
 .github/workflows/       — ci (push/PR: backend + market + node), release + packaging-macos/-linux (tags v*)
 docs/                     — capturas para este README
@@ -238,11 +246,11 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 26 tests (solo stdlib)
+python3 backend/tests/test_server.py   # backend: 31 tests (solo stdlib)
 python3 backend/tests/test_market.py    # mercado: 19 tests (sin red, con mock)
 python3 backend/tests/test_telemetry_forward.py   # forward: 7 tests
 python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
-node --test frontend/tests/*.test.js    # frontal: contabilidad, mercado y simuladores (sin dependencias)
+node --test frontend/tests/*.test.js    # frontal: 42 tests (contabilidad, mercado, simuladores y SW; sin dependencias)
 ```
 
 ## Releases (automáticas con GitHub Actions)

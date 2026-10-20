@@ -36,6 +36,7 @@ _telemetry_sub() {
 }
 _telemetry_sub "$APP/Contents/MacOS/NeverRed"
 cp packaging/macos/check-update.sh "$APP/Contents/MacOS/check-update.sh"
+cp packaging/update-common.sh "$APP/Contents/MacOS/update-common.sh"
 cp packaging/update-dialog.py "$APP/Contents/MacOS/update-dialog.py"
 chmod +x "$APP/Contents/MacOS/NeverRed" "$APP/Contents/MacOS/check-update.sh"
 

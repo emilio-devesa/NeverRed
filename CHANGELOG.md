@@ -1,5 +1,24 @@
 # NeverRed — Historial de cambios
 
+## v2.6.7 — Tercera iteración de la auditoría (P2)
+- **HTTP/1.1 de verdad:** keep-alive, `HEAD` con `Content-Length` y sin cuerpo,
+  `OPTIONS` 204 sin cuerpo, gzip para estáticos y `ETag`/`Last-Modified` con
+  `304`; los estáticos usan `no-cache` y la API `no-store`. Matriz de códigos
+  (200/304/401/404/409/429/500) con framing correcto.
+- **Errores controlados:** un fallo no controlado responde `500 JSON` con
+  `Content-Length`; si ocurre después de enviar cabeceras, se cierra la conexión.
+- **Timeouts:** 15 s por conexión (slowloris) y `daemon_threads`.
+- **CSP estricta:** fuera `style-src 'unsafe-inline'`; los 7 estilos inline pasan
+  a clases o CSSOM. **Sin cambios visuales:** 8 capturas antes/después idénticas.
+- **Service worker:** caché `v7` acotada a 40 entradas, carcasa protegida, sin
+  cachear `no-store` ni errores, CSS en red-primero y fallback con `ignoreSearch`.
+- **Actualizadores:** lógica común en `packaging/update-common.sh` para macOS y
+  Linux (firma, descarga, versiones, log). Corregido el camino Tk «Instalar» de
+  Linux, que terminaba en «descárgala a mano».
+- **MIME** ampliado (jpg/jpeg/webp/woff/woff2/txt/md).
+- 110 tests en verde (31 backend + 19 mercado + 7 forward + 11 emparejamiento +
+  42 frontal).
+
 ## v2.6.6 — Segunda iteración de la auditoría (P1)
 - **Guardado más barato:** el ETag se calcula y serializa una sola vez por
   `PUT`, y la sesión se escribe como mucho cada 5 min (antes, 4 escrituras y

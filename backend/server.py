@@ -10,6 +10,7 @@ Uso:
 
 La base de datos se crea automaticamente en backend/neverred.db.
 """
+import gzip
 import hashlib
 import hmac
 import json
@@ -21,7 +22,9 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 from datetime import date as _date
+from email.utils import formatdate, mktime_tz, parsedate_tz
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, parse_qs
 
@@ -49,7 +52,7 @@ SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
 SESSION_TOUCH_SECONDS = 300
 SESSION_CLEANUP_SECONDS = 300
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.6")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.6.7")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -130,10 +133,56 @@ MIME = {
     ".js": "application/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8",
     ".webmanifest": "application/manifest+json",
+    ".md": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
 }
+
+# Caché de estáticos: se relee solo si cambia (mtime+tamaño). El gzip se
+# calcula una vez por versión del archivo y se guarda junto al original.
+_STATIC_CACHE = {}
+_STATIC_CACHE_LOCK = threading.Lock()
+GZIP_MIN_BYTES = 1024
+
+
+def _compressible(ctype):
+    return (ctype.startswith("text/") or
+            ctype.startswith("application/javascript") or
+            ctype.startswith("application/json") or
+            ctype.startswith("application/manifest") or
+            ctype.startswith("image/svg"))
+
+
+def _static_asset(rel):
+    """Entrada cacheada de un estático: bytes, gzip perezoso, ETag y fecha."""
+    full = os.path.join(BASE_DIR, rel)
+    st = os.stat(full)
+    key = (st.st_mtime_ns, st.st_size)
+    with _STATIC_CACHE_LOCK:
+        entry = _STATIC_CACHE.get(rel)
+        if entry and entry["key"] == key:
+            return entry
+        with open(full, "rb") as f:
+            raw = f.read()
+        ext = os.path.splitext(full)[1].lower()
+        entry = {
+            "key": key,
+            "raw": raw,
+            "gzip": None,
+            "etag": '"' + hashlib.sha256(raw).hexdigest()[:32] + '"',
+            "last_modified": formatdate(st.st_mtime, usegmt=True),
+            "mtime": int(st.st_mtime),
+            "ctype": MIME.get(ext, "application/octet-stream"),
+        }
+        _STATIC_CACHE[rel] = entry
+        return entry
 
 
 # ---------------- Base de datos ----------------
@@ -978,6 +1027,11 @@ def market_history(symbol, key, force=False):
 # ---------------- Servidor HTTP ----------------
 class Handler(BaseHTTPRequestHandler):
     server_version = "NeverRed/" + VERSION
+    # HTTP/1.1 permite keep-alive; todas las respuestas van con Content-Length
+    # (o son 204/304 sin cuerpo) para que el framing sea inequívoco.
+    protocol_version = "HTTP/1.1"
+    # Corta clientes que no terminan de enviar cabeceras/cuerpo (slowloris).
+    timeout = 15
 
     def log_message(self, fmt, *args):  # noqa: A002 - firma de la stdlib
         if args and "/api/ping" in str(args[0]):
@@ -987,6 +1041,90 @@ class Handler(BaseHTTPRequestHandler):
             _log.info(line)
         else:
             print(line)
+
+    def handle_one_request(self):
+        # La instancia se reutiliza en keep-alive: el estado de una respuesta
+        # (cookie, ETag extra, HEAD) no debe filtrarse a la siguiente.
+        self._cookie = None
+        self._extra = None
+        self._head = False
+        self._body_read = False
+        self._headers_started = False
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except Exception:
+            # Un fallo no controlado no debe dejar una respuesta a medias: si
+            # aún no se enviaron cabeceras, devolvemos un 500 JSON con framing;
+            # si ya empezaron, lo único seguro es cerrar la conexión.
+            traceback.print_exc()
+            if not getattr(self, "_headers_started", False):
+                self._body_read = True
+                self.close_connection = True
+                try:
+                    self._send_json(500, {"error": "Error interno."})
+                except Exception:
+                    self.close_connection = True
+            else:
+                self.close_connection = True
+
+    def send_response_only(self, code, message=None):
+        # Marca el punto de no retorno: a partir de aquí no se puede sustituir
+        # la respuesta por un 500 sin corromper el framing.
+        self._headers_started = True
+        super().send_response_only(code, message)
+
+    def _accepts_gzip(self):
+        for part in (self.headers.get("Accept-Encoding") or "").split(","):
+            name, _, params = part.strip().partition(";")
+            if name.strip().lower() not in ("gzip", "*"):
+                continue
+            q = 1.0
+            for p in params.split(";"):
+                p = p.strip()
+                if p.startswith("q="):
+                    try:
+                        q = float(p[2:])
+                    except ValueError:
+                        q = 0.0
+            if q > 0:
+                return True
+        return False
+
+    @staticmethod
+    def _etag_matches(header, etag):
+        for tag in (header or "").split(","):
+            tag = tag.strip()
+            if tag == "*" or tag == etag or tag == "W/" + etag or tag.lstrip("W/") == etag:
+                return True
+        return False
+
+    def _discard_body(self):
+        """Consume un cuerpo pequeño que el handler no llegó a leer.
+
+        Sin esto, en keep-alive el cuerpo pendiente se interpretaría como la
+        siguiente petición. Los cuerpos enormes no se drenan: se cierra.
+        """
+        if self._body_read:
+            return
+        try:
+            pending = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            pending = 0
+        if pending <= 0:
+            self._body_read = True
+            return
+        if pending > 1_000_000:
+            self.close_connection = True
+            return
+        remaining = pending
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+        self._body_read = True
 
     def client_ip(self):
         if os.environ.get("NEVERRED_TRUST_PROXY") == "1":
@@ -1023,21 +1161,27 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", allowed)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
 
     def _send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self._cors_headers()
         for k, v in (getattr(self, "_extra", None) or {}).items():
             self.send_header(k, v)
         if getattr(self, "_cookie", None):
             self.send_header("Set-Cookie", self._cookie)
+        if not self._body_read:
+            self._discard_body()
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(body)
+        if not getattr(self, "_head", False):
+            self.wfile.write(body)
 
     def _set_session_cookie(self, token, days):
         parts = ["%s=%s" % (SESSION_COOKIE, token), "Path=/", "HttpOnly", "SameSite=Lax"]
@@ -1067,11 +1211,17 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
-        if length <= 0 or length > 10_000_000:
+        if length <= 0:
+            self._body_read = True
+            return None
+        if length > 10_000_000:
             return None
         try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
+            raw = self.rfile.read(length)
+            self._body_read = True
+            return json.loads(raw.decode("utf-8"))
         except Exception:
+            self._body_read = True
             return None
 
     def _auth_user(self):
@@ -1469,6 +1619,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(400, {"error": "Cuerpo inválido."})
         try:
             raw = self.rfile.read(length)
+            self._body_read = True
             json.loads(raw.decode("utf-8"))
         except Exception:
             return self._send_json(400, {"error": "Cuerpo JSON inválido."})
@@ -1771,6 +1922,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(404, {"error": "Ruta no encontrada."})
         return self._serve_static(path)
 
+    def do_HEAD(self):  # noqa: N802 - firma de la stdlib
+        # HEAD = GET sin cuerpo, pero con las mismas cabeceras (incluido
+        # Content-Length). _send_json y _serve_static respetan self._head.
+        self._head = True
+        try:
+            self.do_GET()
+        finally:
+            self._head = False
+
     def do_POST(self):  # noqa: N802 - firma de la stdlib
         path = urlparse(self.path).path
         if path == "/api/register":
@@ -1827,9 +1987,11 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(404, {"error": "Ruta no encontrada."})
 
     def do_OPTIONS(self):  # noqa: N802 - firma de la stdlib
+        # 204 no lleva cuerpo ni Content-Length (RFC 9110 §8.6).
         self.send_response(204)
         self._cors_headers()
-        self.send_header("Content-Length", "0")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
 
     # -- estaticos --
@@ -1842,7 +2004,7 @@ class Handler(BaseHTTPRequestHandler):
     }
     STATIC_DIRS = ("lib/", "assets/")
     STATIC_EXT = {".css", ".js", ".json", ".svg", ".png", ".ico", ".webmanifest",
-                  ".woff2"}
+                  ".jpg", ".jpeg", ".webp", ".woff", ".woff2"}
 
     def _static_rel(self, path):
         """Ruta relativa servible, o None si no está en la lista blanca."""
@@ -1868,32 +2030,83 @@ class Handler(BaseHTTPRequestHandler):
         full = os.path.join(BASE_DIR, rel)
         if not os.path.isfile(full):
             return self._send_json(404, {"error": "No encontrado."})
-        _, ext = os.path.splitext(full)
-        ctype = MIME.get(ext, "application/octet-stream")
         try:
-            with open(full, "rb") as f:
-                content = f.read()
+            entry = _static_asset(rel)
         except OSError:
             return self._send_json(404, {"error": "No encontrado."})
+        ctype = entry["ctype"]
+        etag = entry["etag"]
+        compressible = _compressible(ctype)
+        is_html = ctype.startswith("text/html")
+
+        def common_headers():
+            self.send_header("Content-Type", ctype)
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", entry["last_modified"])
+            # Revalidar siempre: el ETag abarata el 304, pero nunca se sirve
+            # una carcasa vieja sin preguntar (el SW y ensureFreshShell ayudan).
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
+            if compressible:
+                self.send_header("Vary", "Accept-Encoding")
+            if is_html:
+                self.send_header("Content-Security-Policy",
+                                 "default-src 'self'; script-src 'self'; style-src 'self'; "
+                                 "img-src 'self' data:; object-src 'none'; "
+                                 "base-uri 'self'; frame-ancestors 'self'")
+            if self.close_connection:
+                self.send_header("Connection", "close")
+
+        # Un GET con cuerpo (raro) no debe dejar bytes que se interpreten como
+        # la siguiente petición keep-alive.
+        self._discard_body()
+
+        not_modified = False
+        inm = self.headers.get("If-None-Match")
+        if inm:
+            not_modified = self._etag_matches(inm, etag)
+        else:
+            ims = self.headers.get("If-Modified-Since")
+            if ims:
+                parsed = parsedate_tz(ims)
+                if parsed:
+                    try:
+                        not_modified = entry["mtime"] <= int(mktime_tz(parsed))
+                    except (ValueError, OverflowError):
+                        not_modified = False
+        if not_modified:
+            self.send_response(304)
+            common_headers()
+            self.end_headers()  # 304 no lleva cuerpo ni Content-Length
+            return
+
+        body = entry["raw"]
+        gzipped = False
+        if compressible and len(body) >= GZIP_MIN_BYTES and self._accepts_gzip():
+            with _STATIC_CACHE_LOCK:
+                if entry["gzip"] is None:
+                    entry["gzip"] = gzip.compress(body, 9)
+                body = entry["gzip"]
+            gzipped = True
         self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(content)))
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "SAMEORIGIN")
-        if ext == ".html":
-            self.send_header("Content-Security-Policy",
-                             "default-src 'self'; script-src 'self'; style-src 'self' "
-                             "'unsafe-inline'; img-src 'self' data:; object-src 'none'; "
-                             "base-uri 'self'; frame-ancestors 'self'")
-        # La BD y el estado de sesion nunca deben cachearse
-        self.send_header("Cache-Control", "no-store")
+        common_headers()
+        if gzipped:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(content)
+        if not getattr(self, "_head", False):
+            self.wfile.write(body)
+
+
+class Server(ThreadingHTTPServer):
+    # Cada conexión tiene su hilo; daemon para que un cliente lento no impida
+    # cerrar el proceso (el timeout de Handler corta la conexión a los 15 s).
+    daemon_threads = True
 
 
 def main():
     import argparse
-
     parser = argparse.ArgumentParser(description="Servidor de NeverRed (API + SQLite).")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
@@ -1922,7 +2135,7 @@ def main():
             os.chmod(os.environ["NEVERRED_LOG_FILE"], 0o600)
     except OSError:
         pass
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    srv = Server((args.host, args.port), Handler)
     cert, key = os.environ.get("NEVERRED_TLS_CERT"), os.environ.get("NEVERRED_TLS_KEY")
     scheme = "http"
     if cert and key and os.path.isfile(cert) and os.path.isfile(key):

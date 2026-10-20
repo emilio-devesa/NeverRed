@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.6';
+const NEVERRED_BUILD = '2.6.7';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -756,10 +756,11 @@ function renderBudgets() {
       : (s > b ? `⚠️ superado por ${fmt(s - b)}` : (pct >= 80 ? `⚠️ ${pct} % usado` : `${pct} % usado`));
     return `<div class="budget-row">
       <span class="budget-name">${esc(a.name)}<br /><span class="muted small">${fmt(s)}${b ? ' de ' + fmt(b) : ''} · ${msg}</span></span>
-      <span class="budget-bar"><span class="fill ${cls}" style="width:${pct}%"></span></span>
+      <span class="budget-bar"><span class="fill ${cls}" data-w="${pct}"></span></span>
       <input type="number" min="0" step="1" placeholder="Límite €" value="${b || ''}" data-budget="${esc(a.id)}" title="Límite mensual en €" />
     </div>`;
   }).join('') : '<p class="muted">No hay cuentas de gasto.</p>';
+  applyDynamicStyles(document.getElementById('budgetsBox'));
 }
 document.getElementById('budgetsBox').addEventListener('change', ev => {
   const id = ev.target.dataset.budget;
@@ -840,7 +841,7 @@ function renderEvolution(boxId, readId, type, totalName, emptyMsg, colName) {
   const last = data.dates.length - 1;
   const chips = data.series.map((se, si) => {
     const arch = state.accounts.find(a => a.id === se.accountId)?.archived;
-    return `<span class="legend-chip"><i style="background:${ASSET_COLORS[si % ASSET_COLORS.length]}"></i>${esc(se.name)}${arch ? ' <span class="muted small">(archivada)</span>' : ''} <strong>${fmt(se.points[last])}</strong></span>`; }).join('') +
+    return `<span class="legend-chip"><i class="c${si % ASSET_COLORS.length}"></i>${esc(se.name)}${arch ? ' <span class="muted small">(archivada)</span>' : ''} <strong>${fmt(se.points[last])}</strong></span>`; }).join('') +
     `<span class="legend-chip total"><i></i>${esc(totalName)} <strong>${fmt(data.total[last])}</strong></span>`;
   const months = [];
   const now = new Date();
@@ -889,7 +890,7 @@ function pnlHTML(t) {
     <table class="table"><tbody>
     <tr><td>Total ingresos</td><td class="num">${fmt(t.Ingreso)}</td></tr>
     <tr><td>Total gastos</td><td class="num">${fmt(t.Gasto)}</td></tr>
-    <tr><td><strong>Resultado</strong></td><td class="num"><strong style="color:${res < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(res)}</strong></td></tr>
+    <tr><td><strong>Resultado</strong></td><td class="num"><strong class="${res < 0 ? 'amount-neg' : 'amount-pos'}">${fmt(res)}</strong></td></tr>
     </tbody></table>
     <p class="muted small">${res >= 0 ? '🟢 Ganas más de lo que gastas. Sigue así.' : '🔴 Gastas más de lo que ingresas: revisa tus gastos.'}</p>`;
 }
@@ -1695,6 +1696,16 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
 
 // ---------- Herramientas / Mercado ----------
 const TREND_COLOR = { up: '#22c55e', down: '#ef4444', flat: '#e5e7eb' };
+const TREND_CLASS = { up: 'trend-up', down: 'trend-down', flat: 'trend-flat' };
+// El ancho de las barras de presupuesto es dinámico: se aplica por CSSOM
+// (permitido con style-src 'self') en lugar de un atributo style inline.
+function applyDynamicStyles(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-w]').forEach(el => {
+    el.style.width = el.dataset.w + '%';
+    el.removeAttribute('data-w');
+  });
+}
 const TREND_ARROW = { up: '▲', down: '▼', flat: '●' };
 const TREND_WORD = { up: 'al alza', down: 'a la baja', flat: 'plana' };
 let marketTickers = [];
@@ -1805,12 +1816,12 @@ function renderMarket() {
     : (!marketTickers.length ? '<p class="muted">Sin valores. Añade tu primer ticker arriba (p. ej. AAPL).</p>' : '')) +
     pending.map(t => `<div class="card ticker-card"><div class="ticker-head"><strong>${esc(t.symbol)}</strong><span class="muted small">cargando serie…</span></div><div class="ticker-chart" data-chart="${esc(t.symbol)}"></div></div>`).join('') +
     cards.map(t => {
-      const c = TREND_COLOR[t.trend] || TREND_COLOR.flat;
+      const tcls = TREND_CLASS[t.trend] || TREND_CLASS.flat;
       const pct = (t.change_pct >= 0 ? '+' : '') + fmtNum(t.change_pct) + ' %';
       const idx = marketTickers.findIndex(x => x.symbol === t.symbol);
       return `<div class="card ticker-card" draggable="true" data-ticker="${esc(t.symbol)}">
         <div class="ticker-head"><span class="drag-handle" title="Arrastrar para reordenar">⠿</span><strong><a href="https://es.finance.yahoo.com/quote/${encodeURIComponent(t.symbol)}/" target="_blank" rel="noopener" title="Ver ${esc(t.symbol)} en Yahoo Finanzas">${esc(t.symbol)} ↗</a></strong>
-          <span style="color:${c}">${TREND_ARROW[t.trend] || ''} ${pct} (${TREND_WORD[t.trend] || ''})</span>
+          <span class="${tcls}">${TREND_ARROW[t.trend] || ''} ${pct} (${TREND_WORD[t.trend] || ''})</span>
           <span class="muted small">cierre: ${esc(fmtNum(t.last))} · ${esc(marketWhen(t.cached_at))}${t.stale ? ' · desactualizado' : ''}</span>
           <span class="spacer"></span>
           <button class="btn ghost small" data-move="up" data-sym="${esc(t.symbol)}" type="button" title="Subir" ${idx <= 0 ? 'disabled' : ''}>↑</button>
@@ -1824,7 +1835,7 @@ function renderMarket() {
           <table class="table"><tbody>
             <tr><td>Precio máximo</td><td class="num">${esc(fmtNum(t.max))}</td></tr>
             <tr><td>Precio mínimo</td><td class="num">${esc(fmtNum(t.min))}</td></tr>
-            <tr><td>Variación del periodo</td><td class="num" style="color:${c}"><strong>${pct}</strong></td></tr>
+            <tr><td>Variación del periodo</td><td class="num ${tcls}"><strong>${pct}</strong></td></tr>
             <tr><td>Puntos de cotización</td><td class="num">${t.points}</td></tr>
           </tbody></table>
           ${(t.events && t.events.length) ? `<table class="table"><thead><tr><th>Fecha</th><th>Evento</th><th class="num">Detalle</th></tr></thead><tbody>` +
@@ -2102,7 +2113,7 @@ document.getElementById('btnLoanCalc').addEventListener('click', () => {
   box.innerHTML = `<table class="table"><tbody>
     <tr><td>Cuota mensual</td><td class="num"><strong>${fmt(q.monthly)}</strong></td></tr>
     <tr><td>Total pagado</td><td class="num">${fmt(q.total)}</td></tr>
-    <tr><td>Intereses totales</td><td class="num" style="color:var(--red)">${fmt(q.interest)}</td></tr>
+    <tr><td>Intereses totales</td><td class="num amount-neg">${fmt(q.interest)}</td></tr>
     </tbody></table>`;
   drawStackedBars('loanChart', q.schedule.map(s => ({ year: s.year, a: s.capital, b: s.interest })),
     '#22c55e', '#ef4444', 'Capital', 'Intereses');
@@ -2129,7 +2140,7 @@ document.getElementById('btnYieldCalc').addEventListener('click', () => {
   box.innerHTML = `<table class="table"><tbody>
     <tr><td>Total aportado</td><td class="num">${fmt(g.invested)}</td></tr>
     <tr><td>Valor final</td><td class="num"><strong>${fmt(g.final)}</strong></td></tr>
-    <tr><td>Ganancia</td><td class="num" style="color:${g.gain < 0 ? 'var(--red)' : 'var(--green)'}"><strong>${fmt(g.gain)}</strong></td></tr>
+    <tr><td>Ganancia</td><td class="num ${g.gain < 0 ? 'amount-neg' : 'amount-pos'}"><strong>${fmt(g.gain)}</strong></td></tr>
     </tbody></table>`;
   drawStackedBars('yieldChart', g.yearly.map(y => ({ year: y.year, a: y.invested, b: round2(y.value - y.invested) })),
     '#38bdf8', '#22c55e', 'Aportado', 'Ganancia');

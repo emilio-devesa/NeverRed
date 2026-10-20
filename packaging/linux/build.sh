@@ -19,6 +19,7 @@ cp -R assets "$DIR/app/assets"
 cp lib/contabilidad.js "$DIR/app/lib/"
 cp backend/server.py backend/telemetry_common.py backend/telemetry_forward.py "$DIR/app/backend/"
 cp packaging/linux/AppRun packaging/linux/check-update.sh "$DIR/"
+cp packaging/update-common.sh "$DIR/"
 # Destino de telemetría del build (vacío = local pura; ver build.sh de macOS).
 _telemetry_sub() {
   _esc() { printf '%s' "$1" | sed 's/[&\\|]/\\&/g'; }

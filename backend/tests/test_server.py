@@ -14,6 +14,8 @@ import unittest
 import unittest.mock
 import urllib.request
 import urllib.error
+import gzip
+import http.client
 
 # BD temporal ANTES de importar el servidor (lee el entorno al importar)
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -95,6 +97,19 @@ class ServerCase(unittest.TestCase):
         st, _, body = call(self.port, "/api/health")
         self.assertEqual(st, 200)
         self.assertTrue(body["ok"])
+
+    def test_500_framing(self):
+        orig = server.Handler.do_GET
+        def boom(self):
+            raise RuntimeError("fallo de prueba")
+        server.Handler.do_GET = boom
+        try:
+            st, headers, raw = get_raw(self.port, "/api/health")
+        finally:
+            server.Handler.do_GET = orig
+        self.assertEqual(st, 500)
+        self.assertEqual(int(headers["Content-Length"]), len(raw))
+        self.assertEqual(json.loads(raw.decode())["error"], "Error interno.")
 
     def test_register_login_datos(self):
         tok = mkuser(self.port, "flujo")
@@ -548,6 +563,202 @@ class ServerCase(unittest.TestCase):
         m = con.execute("SELECT COUNT(*) FROM telemetry_consent").fetchone()[0]
         con.close()
         self.assertEqual((n, m), (0, 0))
+
+
+    def test_estaticos_gzip_etag_304(self):
+        app_js = os.path.join(server.BASE_DIR, "app.js")
+        with open(app_js, "rb") as f:
+            raw = f.read()
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            c.request("GET", "/app.js", headers={"Accept-Encoding": "gzip"})
+            r = c.getresponse()
+            body = r.read()
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.version, 11)
+            self.assertFalse(r.will_close)
+            self.assertEqual(r.getheader("Content-Encoding"), "gzip")
+            self.assertIn("Accept-Encoding", r.getheader("Vary") or "")
+            self.assertEqual(r.getheader("Cache-Control"), "no-cache")
+            self.assertEqual(gzip.decompress(body), raw)
+            etag = r.getheader("ETag")
+            lm = r.getheader("Last-Modified")
+            self.assertTrue(etag and lm)
+
+            # If-None-Match: 304 sin cuerpo, reutilizando la conexión.
+            c.request("GET", "/app.js", headers={"If-None-Match": etag})
+            r = c.getresponse()
+            self.assertEqual(r.status, 304)
+            self.assertEqual(r.read(), b"")
+            self.assertEqual(r.getheader("ETag"), etag)
+            self.assertFalse(r.will_close)
+
+            # If-Modified-Since como alternativa.
+            c.request("GET", "/app.js", headers={"If-Modified-Since": lm})
+            r = c.getresponse()
+            self.assertEqual(r.status, 304)
+            self.assertEqual(r.read(), b"")
+
+            # q=0 no debe comprimir.
+            c.request("GET", "/app.js", headers={"Accept-Encoding": "gzip;q=0"})
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertIsNone(r.getheader("Content-Encoding"))
+            self.assertEqual(r.read(), raw)
+        finally:
+            c.close()
+
+    def test_head_http11_y_mime(self):
+        styles = os.path.join(server.BASE_DIR, "styles.css")
+        with open(styles, "rb") as f:
+            raw = f.read()
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            c.request("HEAD", "/api/health")
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.read(), b"")
+            cl = int(r.getheader("Content-Length") or 0)
+            self.assertGreater(cl, 0)
+
+            c.request("HEAD", "/styles.css")
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.read(), b"")
+            self.assertEqual(int(r.getheader("Content-Length") or 0), len(raw))
+
+            c.request("HEAD", "/no-existe.js")
+            r = c.getresponse()
+            self.assertEqual(r.status, 404)
+            self.assertEqual(r.read(), b"")
+
+            c.request("HEAD", "/app.js")
+            r = c.getresponse()
+            r.read()
+            etag = r.getheader("ETag")
+            self.assertTrue(etag)
+            c.request("HEAD", "/app.js", headers={"If-None-Match": etag})
+            r = c.getresponse()
+            self.assertEqual(r.status, 304)
+            self.assertEqual(r.read(), b"")
+        finally:
+            c.close()
+        self.assertEqual(server.Handler.protocol_version, "HTTP/1.1")
+        self.assertEqual(server.Handler.timeout, 15)
+        self.assertTrue(server.Server.daemon_threads)
+        for ext, ctype in ((".jpg", "image/jpeg"), (".jpeg", "image/jpeg"),
+                           (".webp", "image/webp"), (".woff2", "font/woff2")):
+            self.assertEqual(server.MIME[ext], ctype)
+
+    def test_keep_alive_no_filtra_cookie_ni_etag(self):
+        mkuser(self.port, "keep")
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            c.request("POST", "/api/login",
+                      json.dumps({"email": "keep@t.local", "password": "secreta123"}),
+                      {"Content-Type": "application/json"})
+            r = c.getresponse()
+            data = json.loads(r.read())
+            tok = data["token"]
+            self.assertTrue(r.getheader("Set-Cookie"))
+            self.assertFalse(r.will_close)
+
+            # La cookie de login no debe repetirse en la siguiente respuesta.
+            c.request("GET", "/api/health")
+            r = c.getresponse()
+            r.read()
+            self.assertIsNone(r.getheader("Set-Cookie"))
+
+            # El ETag del PUT tampoco debe filtrarse.
+            c.request("PUT", "/api/data", json.dumps(VALID_DATA),
+                      {"Content-Type": "application/json",
+                       "Authorization": "Bearer " + tok})
+            r = c.getresponse()
+            r.read()
+            self.assertEqual(r.status, 200)
+            self.assertTrue(r.getheader("ETag"))
+
+            c.request("GET", "/api/health")
+            r = c.getresponse()
+            r.read()
+            self.assertIsNone(r.getheader("ETag"))
+            self.assertIsNone(r.getheader("Set-Cookie"))
+        finally:
+            c.close()
+
+
+    def test_http11_matriz_codigos(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            # 401 sin cuerpo de petición
+            c.request("GET", "/api/data")
+            r = c.getresponse()
+            self.assertEqual(r.status, 401)
+            self.assertGreater(int(r.getheader("Content-Length") or 0), 0)
+            self.assertIn("error", json.loads(r.read()))
+            self.assertFalse(r.will_close)
+
+            # 404 de API y de estático
+            c.request("GET", "/api/no-existe")
+            r = c.getresponse()
+            self.assertEqual(r.status, 404)
+            self.assertGreater(int(r.getheader("Content-Length") or 0), 0)
+            r.read()
+
+            # 204 de preflight: sin cuerpo ni Content-Length.
+            c.request("OPTIONS", "/api/data", headers={
+                "Origin": "http://127.0.0.1:%d" % self.port,
+                "Access-Control-Request-Method": "PUT",
+            })
+            r = c.getresponse()
+            self.assertEqual(r.status, 204)
+            self.assertIsNone(r.getheader("Content-Length"))
+            self.assertEqual(r.read(), b"")
+            self.assertFalse(r.will_close)
+
+            # 200 y reutilización
+            c.request("GET", "/api/health")
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            r.read()
+
+            # 409 con ETag
+            tok = mkuser(self.port, "matriz")
+            c.request("PUT", "/api/data", json.dumps(VALID_DATA),
+                      {"Content-Type": "application/json",
+                       "Authorization": "Bearer " + tok})
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            r.read()
+            self.assertTrue(r.getheader("ETag"))
+            c.request("PUT", "/api/data", json.dumps(VALID_DATA),
+                      {"Content-Type": "application/json",
+                       "Authorization": "Bearer " + tok,
+                       "If-Match": '"no-coincide"'})
+            r = c.getresponse()
+            self.assertEqual(r.status, 409)
+            self.assertGreater(int(r.getheader("Content-Length") or 0), 0)
+            self.assertTrue(r.getheader("ETag"))
+            self.assertIn("error", json.loads(r.read()))
+            self.assertFalse(r.will_close)
+
+            # 429 con cuerpo: se drena para no romper la conexión.
+            server._rate["127.0.0.1"] = [server.RATE_MAX, int(time.time()) + 600]
+            c.request("POST", "/api/login",
+                      json.dumps({"email": "nadie@t.local", "password": "secreta123"}),
+                      {"Content-Type": "application/json"})
+            r = c.getresponse()
+            self.assertEqual(r.status, 429)
+            self.assertGreater(int(r.getheader("Content-Length") or 0), 0)
+            self.assertIn("error", json.loads(r.read()))
+            self.assertFalse(r.will_close)
+
+            c.request("GET", "/api/health")
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            r.read()
+        finally:
+            c.close()
 
 
 if __name__ == "__main__":

@@ -194,6 +194,20 @@ label.check input { width: auto; padding: 0; background: none; border: none; acc
 .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 8px; font-size: 13px; }
 .legend-chip { white-space: nowrap; }
 .legend-chip i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; }
+/* Paleta de activos/pasivos: mismas 8 muestras que ASSET_COLORS (app.js). */
+.legend-chip i.c0 { background: #38bdf8; }
+.legend-chip i.c1 { background: #22c55e; }
+.legend-chip i.c2 { background: #f59e0b; }
+.legend-chip i.c3 { background: #f472b6; }
+.legend-chip i.c4 { background: #a78bfa; }
+.legend-chip i.c5 { background: #2dd4bf; }
+.legend-chip i.c6 { background: #facc15; }
+.legend-chip i.c7 { background: #ef4444; }
+.amount-pos { color: var(--green); }
+.amount-neg { color: var(--red); }
+.trend-up { color: #22c55e; }
+.trend-down { color: #ef4444; }
+.trend-flat { color: #e5e7eb; }
 .legend-chip.total i { background: transparent; border: 2px dashed var(--muted); width: 8px; height: 6px; }
 .assets-readout { min-height: 20px; margin: 6px 0 2px; }
 circle.pt { cursor: pointer; }
