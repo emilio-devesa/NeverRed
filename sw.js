@@ -1,6 +1,6 @@
 /* NeverRed service worker: la carcasa funciona sin conexión; la API siempre va a red.
  * HTML/JS en red-primero para recibir actualizaciones; el resto, caché-primero. */
-const CACHE = 'neverred-v4';
+const CACHE = 'neverred-v5';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'lib/contabilidad.js', 'icon.svg', 'manifest.webmanifest'];
 const NET_FIRST = /(\.html|\.js|\.webmanifest|\/)$/;
 function stash(cache, req, res) {

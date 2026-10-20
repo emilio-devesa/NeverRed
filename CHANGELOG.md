@@ -1,5 +1,24 @@
 # NeverRed — Historial de cambios
 
+## v2.6.6 — Segunda iteración de la auditoría (P1)
+- **Guardado más barato:** el ETag se calcula y serializa una sola vez por
+  `PUT`, y la sesión se escribe como mucho cada 5 min (antes, 4 escrituras y
+  un `COMMIT` por petición)
+- **Integridad:** `PRAGMA foreign_keys=ON`; los `CASCADE` del esquema ahora se
+  aplican de verdad
+- **Fecha correcta:** `todayISO()` usa la fecha local; entre las 00:00 y las
+  02:00 ya no propone el día anterior ni crea asientos en el mes equivocado
+- **Rendimiento del frontal:** `Intl` memoizado, render solo de la vista activa
+  y una sola descarga en vuelo por ticker de Mercado
+- **Cambio de pestaña:** al entrar en otra pestaña la página empieza arriba,
+  sin heredar el scroll de la anterior
+- **Documentación veraz:** el pie dice que los datos viven en el servidor (con
+  copia local), la serie de Mercado es «cierre diario sin ajustar», tests
+  26/19/7/11, aviso TLS en Docker y consola invisible sin SMTP
+- **Cadena de suministro:** `appimagetool` fijado a 1.9.1 y verificado con
+  SHA-256; el binario descargado no se versiona
+- 101 tests en verde
+
 ## v2.6.5 — Endurecimiento tras la auditoría (P0)
 - **Privacidad:** el servidor sirve solo los archivos de la app (lista blanca).
   Informes privados, documentación, scripts de empaquetado y tests dejan de ser

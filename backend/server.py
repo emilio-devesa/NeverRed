@@ -43,8 +43,13 @@ SESSION_DAYS = int(os.environ.get("NEVERRED_SESSION_DAYS", "30"))
 # Caducidad por inactividad: el token muere si no se usa en este plazo,
 # aunque no haya llegado a SESSION_DAYS (un token robado vale menos tiempo).
 SESSION_IDLE_DAYS = int(os.environ.get("NEVERRED_SESSION_IDLE_DAYS", "7"))
+# Amortización de escrituras de sesión: `last_seen` se reescribe como mucho
+# cada 5 min y la limpieza global cada 5 min (antes: 4 escrituras + COMMIT en
+# cada petición autenticada). La lectura sigue comprobando la caducidad exacta.
+SESSION_TOUCH_SECONDS = 300
+SESSION_CLEANUP_SECONDS = 300
 PBKDF2_ITERATIONS = 200_000 if os.environ.get("NEVERRED_FAST_HASH") == "1" else 600_000
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.5")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.6.6")
 # Rate-limit anti fuerza bruta (en memoria): intentos por IP y ventana
 RATE_MAX = int(os.environ.get("NEVERRED_RATE_MAX", "10"))
 RATE_WINDOW = int(os.environ.get("NEVERRED_RATE_WINDOW", "600"))
@@ -136,6 +141,8 @@ def db():
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=5000")
+    # Las FK del esquema (CASCADE) solo se aplican si se activan por conexión.
+    con.execute("PRAGMA foreign_keys=ON")
     return con
 
 
@@ -424,6 +431,23 @@ def etag_of(data):
 
 
 MAX_SESSIONS = 10
+
+# Limpieza global de sesiones caducadas y auditoría vieja, como mucho cada
+# SESSION_CLEANUP_SECONDS. Devuelve True si esta llamada hizo trabajo.
+_last_session_cleanup = 0.0
+_session_cleanup_lock = threading.Lock()
+
+
+def cleanup_sessions(con, now):
+    global _last_session_cleanup
+    with _session_cleanup_lock:
+        if now - _last_session_cleanup < SESSION_CLEANUP_SECONDS:
+            return False
+        _last_session_cleanup = now
+    con.execute("DELETE FROM sessions WHERE expires_at <= ? OR last_seen <= ?",
+                (now, now - SESSION_IDLE_DAYS * 86400))
+    con.execute("DELETE FROM audit_log WHERE ts <= ?", (now - AUDIT_DAYS * 86400,))
+    return True
 
 
 MAX_TABS = int(os.environ.get("NEVERRED_MAX_TABS", "64"))
@@ -1057,16 +1081,20 @@ class Handler(BaseHTTPRequestHandler):
         now = int(time.time())
         con = db()
         row = con.execute(
-            "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id "
+            "SELECT u.*, s.last_seen AS session_last_seen "
+            "FROM sessions s JOIN users u ON u.id = s.user_id "
             "WHERE s.token = ? AND s.expires_at > ? AND s.last_seen > ?",
             (token, now, now - SESSION_IDLE_DAYS * 86400),
         ).fetchone()
         if row is not None:
-            con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?", (now, token))
-            con.execute("DELETE FROM sessions WHERE expires_at <= ? OR last_seen <= ?",
-                        (now, now - SESSION_IDLE_DAYS * 86400))
-            con.execute("DELETE FROM audit_log WHERE ts <= ?", (now - AUDIT_DAYS * 86400,))
-            con.commit()
+            changed = False
+            if now - row["session_last_seen"] >= SESSION_TOUCH_SECONDS:
+                con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?", (now, token))
+                changed = True
+            if cleanup_sessions(con, now):
+                changed = True
+            if changed:
+                con.commit()
         con.close()
         return row
 
@@ -1548,22 +1576,27 @@ class Handler(BaseHTTPRequestHandler):
             current = json.loads(row["data"]) if row else {}
         except Exception:
             current = {}
+        cur_etag = etag_of(current)
         want = self.headers.get("If-Match")
-        if want and want != etag_of(current):
+        if want and want != cur_etag:
             con.close()
-            self._extra = {"ETag": etag_of(current)}
+            self._extra = {"ETag": cur_etag}
             return self._send_json(409, {
                 "error": "Tus datos cambiaron en otro lugar. Recarga o confirma sobrescribir.",
-                "server": current, "etag": etag_of(current)})
+                "server": current, "etag": cur_etag})
+        # Serialización canónica única: el mismo texto sirve para el hash y
+        # para guardar (el orden de claves JSON no cambia el contenido).
+        payload = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        new_etag = hashlib.sha256(payload.encode()).hexdigest()[:32]
         con.execute(
             "INSERT INTO user_data (user_id, data, updated_at) VALUES (?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
-            (user["id"], json.dumps(body, ensure_ascii=False), int(time.time())),
+            (user["id"], payload, int(time.time())),
         )
         con.commit()
         con.close()
-        self._extra = {"ETag": etag_of(body)}
-        self._send_json(200, {"ok": True, "etag": etag_of(body)})
+        self._extra = {"ETag": new_etag}
+        self._send_json(200, {"ok": True, "etag": new_etag})
 
     def _api_market_status(self):
         user = self._auth_user()

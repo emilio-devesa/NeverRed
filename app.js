@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.5';
+const NEVERRED_BUILD = '2.6.6';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -263,13 +263,32 @@ document.getElementById('btnOfflineRetry').addEventListener('click', async () =>
 });
 window.addEventListener('online', () => { lastReconnectTry = 0; maybeReconnect(); });
 
-function todayISO() { return new Date().toISOString().slice(0, 10); }
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function fmt(n) {
-  try { return new Intl.NumberFormat('es-ES', { style: 'currency', currency: state.user.currency || 'EUR' }).format(n || 0); }
-  catch { return (n || 0).toFixed(2); }
+function todayISO() {
+  // Fecha local, no UTC: entre las 00:00 y las 02:00 (España) toISOString()
+  // devolvía el día anterior y podía crear asientos en el mes equivocado.
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-function fmtNum(n) { return new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+// Formateadores memoizados: se recreaban en cada importe de cada render.
+let _fmtCurrency = null;
+let _fmtCurrencyCode = '';
+function fmt(n) {
+  const code = (state.user && state.user.currency) || 'EUR';
+  if (code !== _fmtCurrencyCode) {
+    try { _fmtCurrency = new Intl.NumberFormat('es-ES', { style: 'currency', currency: code }); }
+    catch { _fmtCurrency = null; }
+    _fmtCurrencyCode = code;
+  }
+  return _fmtCurrency ? _fmtCurrency.format(n || 0) : (n || 0).toFixed(2);
+}
+const _fmtNum = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtNum(n) { return _fmtNum.format(n || 0); }
+const _fmtDate = new Intl.DateTimeFormat('es-ES');
+const _fmtDateTime = new Intl.DateTimeFormat('es-ES', {
+  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+});
 function round2(n) { return NR.round2(n); }
 
 // ---------- Lógica contable (delegada en NR, testeada en frontend/tests/) ----------
@@ -283,12 +302,20 @@ function typeTotals() { return NR.typeTotals(state.accounts, state.entries); }
 function isBooksBalanced() { return NR.isBooksBalanced(state.accounts, state.entries); }
 
 // ---------- Navegación ----------
+// Vista activa: renderAll() repinta solo esta; el resto se pinta al entrar.
+let activeView = 'inicio';
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + b.dataset.view).classList.add('active');
-  if (b.dataset.view) track('vista_' + b.dataset.view);
+  if (b.dataset.view) {
+    activeView = b.dataset.view;
+    renderView(activeView);
+    // Cambiar de pestaña no debe heredar el scroll de la anterior.
+    window.scrollTo(0, 0);
+    track('vista_' + b.dataset.view);
+  }
 }));
 
 // ---------- Dashboard ----------
@@ -1585,7 +1612,7 @@ async function loadSessions() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error();
     box.innerHTML = (data.sessions || []).map(s => {
-      const until = new Date(s.expires_at * 1000).toLocaleDateString('es-ES');
+      const until = _fmtDate.format(new Date(s.expires_at * 1000));
       return `<div class="acc-row"><span class="code">…${esc(s.id.slice(-4))}</span>
         <span>${s.current ? 'Este dispositivo ✓' : 'Otro dispositivo'}</span>
         <span class="bal muted small">hasta ${until}</span></div>`;
@@ -1729,7 +1756,7 @@ function marketSVG(dates, closes, color, events) {
 function marketWhen(ts) {
   if (!ts) return 'sin datos';
   try {
-    const s = new Date(ts * 1000).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const s = _fmtDateTime.format(new Date(ts * 1000));
     return 'actualizado: ' + s;
   } catch { return ''; }
 }
@@ -1833,9 +1860,14 @@ function paintTickerChart(symbol, h) {
   const svg = slot.querySelector('svg');
   if (svg) svg.addEventListener('mouseleave', showLast);
 }
+const marketLoading = new Set();
 async function loadTickerChart(symbol, force) {
   const slot = document.querySelector(`[data-chart="${symbol}"]`);
   if (!slot) return;
+  // Una sola descarga en vuelo por símbolo: dos renders seguidos (al entrar en
+  // Herramientas) ya no duplican peticiones ni gastan cuota.
+  if (!force && marketLoading.has(symbol)) return;
+  marketLoading.add(symbol);
   try {
     const h = await marketFetch(`/api/market/history?symbol=${encodeURIComponent(symbol)}${force ? '&refresh=1' : ''}`);
     marketDrawn[symbol] = true;
@@ -1849,6 +1881,8 @@ async function loadTickerChart(symbol, force) {
     }
   } catch (e) {
     if (String(e.message) !== 'sesión') slot.innerHTML = `<p class="muted small">Sin serie: ${esc(e.message)}</p>`;
+  } finally {
+    marketLoading.delete(symbol);
   }
 }
 document.querySelectorAll('.subtab').forEach(b => b.addEventListener('click', () => {
@@ -2106,7 +2140,21 @@ document.getElementById('btnYieldCalc').addEventListener('click', () => {
 });
 
 // ---------- Init ----------
-function renderAll() { renderDashboard(); renderDiario(); renderMayor(); renderAccounts(); renderReports(); renderTools(); }
+const VIEW_RENDERERS = {
+  inicio: renderDashboard,
+  diario: renderDiario,
+  mayor: renderMayor,
+  cuentas: renderAccounts,
+  informes: renderReports,
+  herramientas: renderTools,
+};
+function renderView(name) {
+  const fn = VIEW_RENDERERS[name];
+  if (fn) fn();
+}
+// Repinta solo la vista visible: las ocultas se actualizan al entrar (antes se
+// reconstruían cientos de nodos SVG en cada guardado, sin que nadie los viera).
+function renderAll() { renderView(activeView); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; consentModal.hidden = true; } });
 // Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
 document.addEventListener('keydown', e => {

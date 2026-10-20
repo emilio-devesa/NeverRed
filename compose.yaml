@@ -2,6 +2,8 @@ services:
   neverred:
     build: .
     ports:
+      # Publica en claro: expón solo en localhost o pon Caddy/TLS delante.
+      # Para TLS directo, define NEVERRED_TLS_CERT y NEVERRED_TLS_KEY.
       - "8000:8000"
     volumes:
       - neverred-data:/data   # la BD sobrevive a rebuilds y reinicios

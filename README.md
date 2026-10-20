@@ -88,7 +88,8 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
   se usa en el modo archivo local.
 - **Recuperar contraseña**: enlace de un solo uso (1 h) por correo con SMTP
   estándar (`NEVERRED_SMTP_HOST/PORT/USER/PASS/FROM`, `NEVERRED_APP_URL`).
-  Sin SMTP, el enlace sale por la consola (desarrollo).
+  Sin SMTP, el enlace sale por la consola (desarrollo). En la app de
+  escritorio esa consola no es visible: configura SMTP para recibir el enlace.
 - **Sesiones**: listado propio y rotación (`GET /api/sessions`,
   `POST /api/sessions/rotate`); caducidad con `NEVERRED_SESSION_DAYS`.
 - **Autoapagado** (modo `.app`): `NEVERRED_QUIT_WHEN_IDLE=1` apaga el
@@ -187,7 +188,7 @@ docs/                     — capturas para este README
 | GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
 | POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
 | DELETE | `/api/market/tickers?symbol=X` | Quita un ticker (la serie en caché se conserva) |
-| GET | `/api/market/history?symbol=X` | Serie ajustada (~100 sesiones) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
+| GET | `/api/market/history?symbol=X` | Serie diaria de cierre (~100 sesiones; sin ajustar, la ajustada es premium) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
 | POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
 
@@ -207,6 +208,9 @@ docker compose up -d --build
 ```
 
 - La BD vive en el volumen (`/data/neverred.db` vía `NEVERRED_DB`) y sobrevive a rebuilds.
+- ⚠️ `-p 8000:8000` publica en claro: si el puerto es accesible fuera de
+  localhost, pon delante Caddy/TLS (ver `Caddyfile`) o configura
+  `NEVERRED_TLS_CERT`/`NEVERRED_TLS_KEY`. No lo expongas directo a Internet.
 - Variables: `HOST` (por defecto `0.0.0.0` en Docker), `PORT`, `NEVERRED_DB`.
 - La imagen usa `python:3.12-slim`, usuario no-root y healthcheck contra `/api/health`.
 - Backup externo del contenedor (cron del host):
@@ -234,11 +238,11 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 20 tests (solo stdlib)
-python3 backend/tests/test_market.py    # mercado: 17 tests (sin red, con mock)
+python3 backend/tests/test_server.py   # backend: 26 tests (solo stdlib)
+python3 backend/tests/test_market.py    # mercado: 19 tests (sin red, con mock)
 python3 backend/tests/test_telemetry_forward.py   # forward: 7 tests
 python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
-node --test frontend/tests/            # frontal: contabilidad, mercado y simuladores (sin dependencias)
+node --test frontend/tests/*.test.js    # frontal: contabilidad, mercado y simuladores (sin dependencias)
 ```
 
 ## Releases (automáticas con GitHub Actions)

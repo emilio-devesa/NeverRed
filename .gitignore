@@ -7,6 +7,9 @@ dist/
 __pycache__/
 # Basura de macOS
 .DS_Store
+# Binario descargado por packaging/linux/build.sh (se verifica y no se versiona)
+/appimagetool
+/appimagetool.tmp
 packaging/release-key
 backend/install.id
 # Clave de Alpha Vantage (Mercado): solo vive en el servidor local, jamás en git

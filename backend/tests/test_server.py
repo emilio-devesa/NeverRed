@@ -331,6 +331,39 @@ class ServerCase(unittest.TestCase):
         with urllib.request.urlopen(req) as r:
             self.assertEqual(r.status, 200)
 
+    def test_sesion_amortizada(self):
+        tok = mkuser(self.port, "amortiza")
+        con = server.db()
+
+        def last_seen():
+            return con.execute("SELECT last_seen FROM sessions WHERE token = ?",
+                               (tok,)).fetchone()[0]
+
+        t0 = last_seen()
+        time.sleep(1.1)
+        st, _, _ = call(self.port, "/api/me", token=tok)
+        self.assertEqual(st, 200)
+        # Menos de 5 min: no se reescribe last_seen.
+        self.assertEqual(last_seen(), t0)
+        # Pasados 5 min, la siguiente petición sí lo actualiza y mantiene viva
+        # la sesión (la comprobación de caducidad se hace en lectura).
+        con.execute("UPDATE sessions SET last_seen = ? WHERE token = ?",
+                    (int(time.time()) - 400, tok))
+        con.commit()
+        st, _, _ = call(self.port, "/api/me", token=tok)
+        self.assertEqual(st, 200)
+        self.assertGreater(last_seen(), int(time.time()) - 10)
+        con.close()
+
+    def test_foreign_keys_activas(self):
+        con = server.db()
+        self.assertEqual(con.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        with self.assertRaises(server.sqlite3.IntegrityError):
+            con.execute(
+                "INSERT INTO sessions (token, user_id, created_at, expires_at, last_seen)"
+                " VALUES ('huerfana', 999999, 0, 0, 0)")
+        con.close()
+
     def test_tope_sesiones(self):
         mkuser(self.port, "tope")
         toks = []
