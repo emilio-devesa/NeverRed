@@ -78,6 +78,8 @@ En el pie: cambiar contraseña, ver sesiones activas (y cerrar las demás) o eli
 
 La insignia junto a tu correo indica el estado: ✓ sincronizado, ● subiendo, ⚠ revisa. Si editas en dos sitios a la vez, la app te avisa y eliges: recargar esos datos o mantener los tuyos.
 
+Si al entrar el servidor no responde (o se cae la conexión), verás una barra de aviso con dos botones: **Recargar del servidor** y **Trabajar sin conexión**. En ningún caso tus datos se machacan solos: sin tu selección, la app espera y reintenta.
+
 ## Cerrar la app (macOS)
 
 NeverRed vive en el Dock mientras está abierta. Al salir de ella (cmd+Q o clic derecho → Salir) se detiene el servidor sin dejar actividad en segundo plano. Además, si cierras su **última pestaña** en el navegador, todo se apaga solo en unos 20 segundos. Tus otras pestañas no se ven afectadas.

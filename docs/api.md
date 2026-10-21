@@ -29,8 +29,9 @@ Sesión en cookie `HttpOnly` (`Bearer` solo para el modo archivo local). CORS re
 | DELETE | `/api/market/key` | Olvida tu clave de Alpha Vantage |
 | GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
 | POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
+| POST | `/api/market/order` | `{order}` guarda tu orden personalizado de tickers (lista de tus símbolos) |
 | DELETE | `/api/market/tickers?symbol=X` | Quita un ticker |
-| GET | `/api/market/history?symbol=X` | Serie ajustada (~100 sesiones) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
+| GET | `/api/market/history?symbol=X` | Serie diaria de cierre (~100 sesiones; sin ajustar, la ajustada es premium) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
 | POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | `200 {ok: true, version}` |
 | POST | `/api/telemetry` | Envío de telemetría opt-in (solo conteos, 403 sin consentimiento) |

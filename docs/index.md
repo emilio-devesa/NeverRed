@@ -37,6 +37,22 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.8
+
+Mejoras internas: el backend queda separado en módulos (`config`, `schema`, `auth`, `static`, `market` y `telemetry`), con más pruebas (115 en verde), métricas de latencia opt-in y un dashboard de telemetría más robusto. No cambia nada en el uso diario.
+
+## Novedades en v2.6.7
+
+La app carga y responde más rápido: HTTP/1.1 real (conexiones reutilizadas), estáticos comprimidos con gzip y ETag (recargas sin re-descargar) y CSP estricta que bloquea estilos inyectados. Además, los actualizadores de macOS y Linux se reescriben y unifican.
+
+## Novedades en v2.6.6
+
+Sesiones mejoradas (30 días con inactividad garantizada a los 7) y rendimiento: solo se repinta la pestaña que estás viendo. Fechas en formato local y validación contable más rigurosa en el servidor.
+
+## Novedades en v2.6.5
+
+Más privacidad y protección: CORS y cabeceras endurecidas, la API nunca se cachea (`no-store`), recursos estáticos solo desde lista blanca y el modo sin conexión más cuidadoso — si la carga inicial falla no se machacan los datos del servidor: elegirás «Recargar del servidor» o «Trabajar sin conexión».
+
 ## Novedades en v2.6.4
 
 Tickers de Mercado reordenables: arrastra las tarjetas (o usa ↑/↓) y tu orden se conserva entre sesiones.
