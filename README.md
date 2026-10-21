@@ -131,7 +131,7 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 - **Informes**: balance general y PyG lado a lado, evolución diaria de activos
   y pasivos (con gráficas plegables), balance de comprobación (con CSV).
 - **Herramientas**: Mercado (gráficas de tickers con tu clave gratuita de
-  Alpha Vantage y cuota visible),
+  Alpha Vantage y cuota visible; reordenables arrastrando o con ↑/↓),
   simulador de préstamos y simulador de rendimientos.
 - **Panel**: patrimonio neto, ecuación fundamental en vivo, gráfico ingresos vs gastos 6 meses, accesos rápidos (sueldo, gasto, transferencia).
 - **Presupuestos**: límite mensual por gasto con avisos al 80 % y al superar.
@@ -195,6 +195,7 @@ docs/                     — capturas y notas de operación redactadas
 | POST | `/api/password` | `{current, new}` cambia la contraseña y cierra otras sesiones |
 | POST | `/api/reset-request` | `{email}` envía enlace de recuperación (1 h, sin filtrar usuarios) |
 | POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
+| POST | `/api/demo` | Crea o restablece la demo y abre sesión (sin registro) |
 | DELETE | `/api/account` | Elimina el usuario y todos sus datos |
 | GET | `/api/me` | Usuario de la sesión actual + `last_export` (última copia) |
 | POST | `/api/export-log` | Marca una exportación manual (para el aviso de copia) |
@@ -207,10 +208,14 @@ docs/                     — capturas y notas de operación redactadas
 | DELETE | `/api/market/key` | Olvida tu clave de Alpha Vantage |
 | GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
 | POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
+| POST | `/api/market/order` | `{order}` guarda tu orden personalizado de tickers (lista de tus símbolos) |
 | DELETE | `/api/market/tickers?symbol=X` | Quita un ticker (la serie en caché se conserva) |
 | GET | `/api/market/history?symbol=X` | Serie diaria de cierre (~100 sesiones; sin ajustar, la ajustada es premium) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |
 | POST | `/api/ping` | `{tab}` latido de pestaña para el autoapagado (sin auth) |
 | GET | `/api/health` | Salud del servicio → `200 {ok: true, version}` (usado por Docker) |
+| POST | `/api/telemetry` | Telemetría opt-in (solo conteos; 403 sin consentimiento) |
+| GET | `/api/telemetry-consent` | Estado de la opción de telemetría |
+| PUT | `/api/telemetry-consent` | Activa o desactiva (desactivar borra lo acumulado) |
 
 ## Despliegue
 
