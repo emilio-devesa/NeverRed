@@ -125,6 +125,26 @@ después de cerrar la última pestaña** y el asistente interactivo (vía
 desinstalación silenciosa funciona siempre que la app no esté en marcha
 y preserva siempre los datos.
 
+### Firma (paridad con dmg/AppImage)
+
+Como en macOS y Linux, los binarios Windows van **sin firma de
+plataforma** (sin Authenticode): la confianza la da la `.sig` Ed25519
+del proyecto que se publica junto a cada asset (`docs/ops/releases.md`).
+El `.exe` va en la Release **sin firmar Authenticode**: Windows puede
+mostrar el aviso de SmartScreen («Windows protegió tu PC → Más
+información → Ejecutar de todas formas»), análogo al «Abrir igualmente»
+de Gatekeeper en el DMG. Tras firmar el asset con la clave Ed25519 del
+proyecto:
+
+```bash
+ssh-keygen -Y sign -f packaging/release-key -n neverred-update NeverRed-setup-<v>.exe
+gh release upload vX.Y.Z NeverRed-setup-<v>.exe.sig
+```
+
+Si algún día se usa un certificado Authenticode, configurar `SignTool` +
+`SignedUninstaller=yes` en `installer.iss` (los desinstaladores sin
+firmar pueden ser bloqueados por Defender ASR).
+
 ## Lo probado en Windows real (VM de pruebas Win11, build 10.0.26200)
 
 Máquina: Windows 11 Pro con acceso por SSH (sshd de terceros, sesiones

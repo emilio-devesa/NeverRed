@@ -41,9 +41,10 @@
    git push origin vX.Y.Z
    ```
 
-5. **Workflows del tag:** CI, DMG macOS, AppImage Linux y Release. Comprobar
-   que los cuatro terminan en `success` y que la Release adjunta el `.dmg`,
-   el `.AppImage` y sus `.sig`.
+5. **Workflows del tag:** CI, DMG macOS, AppImage Linux, Release y Windows.
+   Comprobar que los cinco terminan en `success` y que la Release adjunta el
+   `.dmg`, el `.AppImage`, los zips de Windows y el instalador
+   `NeverRed-setup-<v>.exe` (más sus `.sig`, añadidos a mano tras firmar).
 
 ## Firma de los assets
 
@@ -51,6 +52,8 @@ La app solo instala actualizaciones con firma Ed25519 válida. Tras publicar
 la Release, firmar cada asset y subir el `.sig`:
 
 ```bash
+# El asset exacto depende de la versión: dmg, AppImage, ambos zips de
+# Windows y el instalador NeverRed-setup-<v>.exe. Para cada uno:
 ssh-keygen -Y sign -f packaging/release-key -n neverred-update <asset>
 gh release upload vX.Y.Z <asset>.sig
 ```
@@ -61,6 +64,18 @@ gh release upload vX.Y.Z <asset>.sig
 - Si se pierde, no se pueden firmar más actualizaciones. Si se filtra, rotar
   el par y mantener ambas firmas durante una versión de gracia.
 - Sin `.sig` no hay auto-update: el actualizador falla cerrado.
+
+### Sin firma de plataforma (codesign / Authenticode)
+
+Decisión deliberada, paridad con el DMG (no codesign): los binarios
+Windows van **sin Authenticode**. El equivalente Windows del "Abrir
+igualmente" de Gatekeeper es el aviso de SmartScreen
+("Windows protegió tu PC → Más información → Ejecutar de todas formas"),
+que se atenua con la prevalencia del binario. Si algún día se compra un
+certificado Authenticode, configurarlo en `installer.iss` con `SignTool`
+y **`SignedUninstaller=yes`** (los desinstaladores/temporales sin firmar
+pueden ser bloqueados por el Attack Surface Reduction de Defender). La
+confianza la sigue dando la `.sig` Ed25519, no el certificado.
 
 ## Destino de telemetría del build
 
