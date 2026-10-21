@@ -6,7 +6,7 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 📖 **Documentación web**: [emilio-devesa.github.io/NeverRed](https://emilio-devesa.github.io/NeverRed/) (guía de uso, despliegue, API y desarrollo).
 
-- [Descargar para macOS](#descargar-para-macos-sin-instalar-nada) · [Puesta en marcha](#puesta-en-marcha-con-usuarios-y-base-de-datos) · [Qué incluye](#qué-incluye) · [Capturas](#capturas) · [Reglas contables](#reglas-contables-aplicadas) · [Estructura](#estructura) · [API](#api) · [Despliegue](#despliegue) · [Releases](#releases-automáticas-con-github-actions)
+- [Descargar para macOS](#descargar-para-macos-sin-instalar-nada) · [Descargar para Windows](#descargar-para-windows-sin-instalar-nada) · [Puesta en marcha](#puesta-en-marcha-con-usuarios-y-base-de-datos) · [Qué incluye](#qué-incluye) · [Capturas](#capturas) · [Reglas contables](#reglas-contables-aplicadas) · [Estructura](#estructura) · [API](#api) · [Despliegue](#despliegue) · [Releases](#releases-automáticas-con-github-actions)
 
 ## Descargar para macOS (sin instalar nada)
 
@@ -55,6 +55,33 @@ ven afectadas).
 > **Ajustes → Privacidad y seguridad**, baja hasta el aviso y pulsa
 > **Abrir igualmente**, y confirma una vez más. Solo pasa la primera vez
 > ([paso a paso con capturas](https://emilio-devesa.github.io/NeverRed/guia#instalar-en-macos-primera-vez)).
+
+## Descargar para Windows (sin instalar nada)
+
+1. Descarga `NeverRed-setup-*.exe` desde **Releases** en GitHub.
+2. Haz doble clic: instala con asistente en español, **sin permisos de
+   administrador** (se instala para tu usuario en
+   `%LOCALAPPDATA%\NeverRed`), con accesos directos en el menú inicio y
+   —si los marcas— en el escritorio.
+3. Abre NeverRed desde el menú inicio: se abre en tu navegador. Listo.
+
+No pide instalar Python ni nada más (el `exe` lleva todo lo suyo). Tus
+datos quedan en tu equipo (`%APPDATA%\NeverRed`) y **se conservan** si
+desinstalas (Apps y características → NeverRed: quita el programa, no
+toca los datos). Como el resto de plataformas, comprueba
+actualizaciones al abrirse y las instala sola (diálogo con los cambios).
+
+> Windows puede mostrar el aviso de SmartScreen la primera vez
+> («Windows protegió tu PC»): pulsa **Más información → Ejecutar de
+> todas formas**. Solo pasa la primera vez; el binario va sin
+> certificado Authenticode a propósito (igual que el DMG que no se
+> firma con certificado Apple): la integridad la garantiza la firma
+> Ed25519 que acompaña a cada release.
+
+También hay un **ZIP portable** (`NeverRed-windows-*-portable.zip`) para
+llevarla en una carpeta sin instalar nada. Requiere Python 3.12 en el
+equipo; se arranca con `NeverRed.bat` y se detiene con
+`NeverRed-stop.bat`.
 
 ## Puesta en marcha (con usuarios y base de datos)
 
@@ -179,9 +206,10 @@ backend/tests/            — suites unittest (server, market, telemetry, integr
 backend/neverred.db       — base de datos (se crea al arrancar; no se versiona)
 frontend/tests/           — tests node de la lógica pura (contabilidad, mercado, simuladores)
 packaging/macos/          — Launcher.sh + build.sh (.app + .dmg sin dependencias)
+packaging/windows/        — launcher.py + update_run.py + build.ps1 + installer.iss (Inno Setup)
 packaging/update-common.sh — firma, descarga y versiones comunes a macOS/Linux
 Dockerfile, compose.yaml, Caddyfile — despliegue
-.github/workflows/       — CI (5 suites + node), release + packaging-macos/-linux (tags v*)
+.github/workflows/       — CI (5 suites + node), release + packaging-macos/-linux/-windows (tags v*)
 docs/                     — capturas y notas de operación redactadas
 ```
 
@@ -277,8 +305,8 @@ Total: **115** (73 backend + 42 frontal).
 
 Publicar un tag `v*` dispara los workflows, que verifican todo (suite Python +
 tests node), construyen la imagen Docker (→ `ghcr.io/emilio-devesa/neverred`
-con tags `X.Y.Z`, `X.Y` y `latest`), generan los `.dmg` de macOS (Intel y ARM)
-y crean la Release con notas y comandos de despliegue:
+con tags `X.Y.Z`, `X.Y` y `latest`), generan los `.dmg` de macOS (Intel y ARM),
+el instalador y los zips de Windows, y crean la Release con notas y comandos de despliegue:
 
 ```bash
 git tag -a v1.3.0 -m "NeverRed v1.3.0" && git push origin v1.3.0
