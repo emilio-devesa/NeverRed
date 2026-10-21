@@ -13,6 +13,8 @@ Contabilidad personal con el sistema de **doble partida**. Simple para empezar, 
 
 **En Mac, sin instalar nada:** descarga el `.dmg` ([Releases](https://github.com/emilio-devesa/NeverRed/releases), vale para Intel y Apple Silicon), arrástralo a Aplicaciones y haz doble clic. Si macOS lo bloquea la primera vez, sigue la [guía de apertura](guia#instalar-en-macos-primera-vez). La app avisa sola cuando hay actualización. Al salir de la app o cerrar su última pestaña, todo se detiene solo.
 
+**En Windows, sin instalar nada:** descarga el instalador `NeverRed-setup-*.exe` de Releases y haz doble clic: asistente en español, sin permisos de administrador y sin instalar Python. Si Windows muestra el aviso de SmartScreen la primera vez, pulsa **Más información → Ejecutar de todas formas** (más detalles en la [guía](guia#instalar-en-windows-primera-vez)). Tus datos quedan en `%APPDATA%\NeverRed` y se conservan aunque desinstales; las actualizaciones llegan solas. También hay un ZIP portable (requiere Python 3.12 en el equipo).
+
 **En Linux, sin instalar nada:** descarga el `.AppImage` de Releases, dale permiso de ejecución y haz doble clic. Tus datos quedan en `~/.local/share/NeverRed`; `./NeverRed-*.AppImage --stop` lo detiene del todo.
 
 **Desde código:**
@@ -39,7 +41,7 @@ Sigue en la [guía de uso](guia).
 
 ## Novedades en v2.6.8
 
-Mejoras internas: el backend queda separado en módulos (`config`, `schema`, `auth`, `static`, `market` y `telemetry`), con más pruebas (115 en verde), métricas de latencia opt-in y un dashboard de telemetría más robusto. No cambia nada en el uso diario.
+Mejoras internas: el backend queda separado en módulos (`config`, `schema`, `auth`, `static`, `market` y `telemetry`), con más pruebas (115 en verde), métricas de latencia opt-in y un dashboard de telemetría más robusto. No cambia nada en el uso diario. Y en lo visible para ese sistema: **NeverRed debuta en Windows** con instalador nativo y actualizaciones integradas.
 
 ## Novedades en v2.6.7
 

@@ -23,6 +23,16 @@ A partir de ahí la app abre con normalidad. Las siguientes actualizaciones lleg
 
 > **Atajo por Terminal**: si prefieres saltarte los pasos 2 y 3, ejecuta una sola vez `xattr -cr /Applications/NeverRed.app` antes del primer doble clic (elimina la marca de descarga de internet).
 
+## Instalar en Windows (primera vez)
+
+1. Descarga `NeverRed-setup-*.exe` de [Releases](https://github.com/emilio-devesa/NeverRed/releases) y haz doble clic. El asistente está en español e **instala sin permisos de administrador** (se instala para tu usuario), con accesos directos en el menú inicio y —si los marcas— en el escritorio.
+2. Abre NeverRed desde el menú inicio: arranca su servidor y se abre en tu navegador. No hace falta instalar Python ni nada más.
+3. La primera ejecución puede mostrar el aviso de SmartScreen (**"Windows protegió tu PC"**). No es un virus: pulsa **Más información → Ejecutar de todas formas**. Solo pasa la primera vez — el programa va sin certificado Authenticode a propósito, igual que no firmamos con certificado Apple; la integridad la garantiza la firma Ed25519 que acompaña a cada release.
+
+Tus datos se guardan en `%APPDATA%\NeverRed` y **se conservan** si algún día desinstalas (Apps y características → NeverRed quita el programa, no los datos). Las actualizaciones llegan solas desde la propia app.
+
+También hay un **ZIP portable** (`NeverRed-windows-*-portable.zip`) para llevarla en una carpeta sin instalar nada; requiere Python 3.12 en el equipo (arranque con `NeverRed.bat`, parada con `NeverRed-stop.bat`).
+
 ## Entrar
 
 Lo primero es el inicio de sesión, con casilla **Recuérdame**. Encima verás
@@ -80,10 +90,10 @@ La insignia junto a tu correo indica el estado: ✓ sincronizado, ● subiendo, 
 
 Si al entrar el servidor no responde (o se cae la conexión), verás una barra de aviso con dos botones: **Recargar del servidor** y **Trabajar sin conexión**. En ningún caso tus datos se machacan solos: sin tu selección, la app espera y reintenta.
 
-## Cerrar la app (macOS)
+## Cerrar la app (macOS y Windows)
 
-NeverRed vive en el Dock mientras está abierta. Al salir de ella (cmd+Q o clic derecho → Salir) se detiene el servidor sin dejar actividad en segundo plano. Además, si cierras su **última pestaña** en el navegador, todo se apaga solo en unos 20 segundos. Tus otras pestañas no se ven afectadas.
+En macOS NeverRed vive en el Dock mientras está abierta. Al salir de ella (cmd+Q o clic derecho → Salir) se detiene el servidor sin dejar actividad en segundo plano. En Windows, cierra la ventana del navegador: no queda otra cosa corriendo en tu cuenta de usuario. En ambos sistemas, si cierras la **última pestaña** de NeverRed en el navegador, todo se apaga solo en unos 20 segundos. Tus otras pestañas no se ven afectadas.
 
-## Actualizaciones (macOS)
+## Actualizaciones (todas las plataformas)
 
 Al abrir la app se comprueba si hay versión nueva: verás el diálogo del sistema con los cambios y tres opciones — **Instalar** (descarga, sustituye y reabre sola), **Omitir versión** o **Más tarde**.
