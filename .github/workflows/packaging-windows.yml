@@ -15,10 +15,11 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+          fetch-tags: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0 (Node 24)
         with:
           python-version: "3.12"
       - name: Inno Setup 6 (instalador)
@@ -28,7 +29,15 @@ jobs:
       - name: Humo del backend
         run: python backend/tests/test_server.py
       - name: Selftest del paquete
-        run: python packaging/windows/selftest.py
+        shell: pwsh
+        # -v con salida completa al summary del job: si algo falla en el
+        # runner (diferente de la VM y del Mac), queda a la vista sin login.
+        run: |
+          python -X utf8 -u packaging/windows/selftest.py -v *> selftest-out.txt
+          $code = $LASTEXITCODE
+          Get-Content selftest-out.txt -Encoding utf8 |
+            Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit $code
       - name: Build (exe + portable + instalador)
         shell: powershell
         run: ./packaging/windows/build.ps1

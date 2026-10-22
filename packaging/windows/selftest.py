@@ -156,14 +156,31 @@ class Firma(unittest.TestCase):
                 self._run(
                     ["ssh-keygen", "-Y", "sign", "-f", key,
                      "-n", update_run.SIGN_NS, target])
-                sig_url = "file://" + target + ".sig"
-                # Intacto: firma válida.
-                self.assertTrue(update_run.verify_sig(d, target, sig_url))
+                # URL canónica del fichero (en Windows path absoluto lleva
+                # unidad: file://C:\... es mala forma; file:///C:/.QRect es
+                # lo que urllib espera).
+                if sys.platform == "win32":
+                    sig_url = "file:///" + target.replace("\\", "/") + ".sig"
+                else:
+                    sig_url = "file://" + target + ".sig"
+                ok = update_run.verify_sig(d, target, sig_url)
+                if not ok:
+                    try:
+                        with open(os.path.join(d, "update.log"),
+                                  encoding="utf-8", errors="replace") as f:
+                            log = f.read()
+                    except OSError:
+                        log = "(sin log)"
+                    self.fail("firma íntegra rechazada; ulog:\n" + log)
                 # Un byte cambiado: rechazada.
                 with open(target, "rb+") as f:
                     f.seek(0)
                     f.write(b"t")
-                self.assertFalse(update_run.verify_sig(d, target, sig_url))
+                ok = update_run.verify_sig(d, target, sig_url)
+                if ok:
+                    self.fail("firma manipulada aceptada; ver '%s'"
+                              % os.path.join(d, "update.log"))
+                self.assertFalse(ok)
         finally:
             (update_run.RELEASE_PUBKEY, update_run.SIGN_ID) = prev
 
