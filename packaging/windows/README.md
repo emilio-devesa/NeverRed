@@ -74,8 +74,11 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 `
 - Icono: si existe `assets/icon.ico` se aplica (convierte `icon.svg` a `.ico`
   una vez; p. ej. con ImageMagick: `magick -background none icon.svg -define
   icon:auto-resize=16,32,48,256 assets/icon.ico`).
-- Telemetría del build: `-SinkUrl`, `-SinkToken` (vacíos = local pura), igual
-  que NEVERRED_BUILD_SINK en los builds de mac/Linux.
+- Telemetría del build: `-SinkUrl`, `-SinkToken`, paridad con
+  `NEVERRED_BUILD_SINK`/`NEVERRED_BUILD_TOKEN` en los builds de mac/Linux.
+  Si no se pasan ni parámetros ni entorno, usa el mismo receptor por defecto
+  que mac/Linux; para un build **sin destino** (telemetría local pura) hay
+  que pedirlo explícito: `-SinkUrl ''`.
 - Tras publicar, firma cada zip y sube sus `.sig` (docs/ops/releases.md):
   el flujo Ed25519 es el mismo.
 

@@ -58,8 +58,8 @@ class CAs(unittest.TestCase):
 
 class Versiones(unittest.TestCase):
     def test_version_oficial(self):
-        self.assertEqual(launcher.config_version(REPO), "2.6.8")
-        self.assertEqual(update_run.read_installed_version(REPO), "2.6.8")
+        self.assertEqual(launcher.config_version(REPO), "2.6.9")
+        self.assertEqual(update_run.read_installed_version(REPO), "2.6.9")
 
     def test_version_otro_arbol(self):
         with tempfile.TemporaryDirectory() as d:

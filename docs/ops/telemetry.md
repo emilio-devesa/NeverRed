@@ -54,12 +54,58 @@ python3 backend/telemetry_sink.py --host 127.0.0.1 --port 8140
 
 El dashboard muestra totales, picos por día/hora, funciones, versiones,
 plataformas, fallos medios e instalaciones pendientes/aprobadas/vetadas.
-Debe escucharse en loopback o en una red privada, nunca expuesto directamente.
+Debe escucharse en loopback o en una red privada, nunca expuesto
+directamente.
+
+## Despliegue permanente (monitor + relay + funnel)
+
+Para recibir telemetría de máquinas externas sin depender de que una
+instalación de la app esté abierta:
+
+- **Monitor** (`telemetry_sink.py`, loopback 127.0.0.1:8140): la BD es
+  `telemetry-sink.db` junto al propio script. Copia operativa en
+  `~/Library/Application Support/NeverRed-monitor/` — los LaunchAgents
+  no pueden leer `~/Documents` (TCC), así que allí se copian los módulos
+  (`telemetry_common.py`, `telemetry_forward.py`, `telemetry_sink.py`,
+  `telemetry_relay.py`) y la BD; el repo queda como fuente. Poner al día:
+  re-copiar módulos + BD y `launchctl bootout`/`bootstrap`.
+- **Relay público** (`telemetry_relay.py`, loopback 127.0.0.1:8082):
+  servicio independiente, pequeño, que SOLO retransmite
+  `POST /api/telemetry-ingest` y `/api/telemetry-enroll` al monitor
+  (Authorization intacta; el monitor revalida todo). El dashboard y
+  `/api/sink-identity` (aprobar/vetar) **no se exponen**: el proxy de
+  Tailscale entra como 127.0.0.1 y el control «Solo local.» del monitor
+  vendría de menos — por eso no sale por el funnel. Rate-limit por IP
+  con `X-Forwarded-For` (60 en 600 s, `NEVERRED_RELAY_RATE_MAX/WINDOW`,
+  fail-closed) y prefijo de camino por `NEVERRED_RELAY_PREFIX`
+  (`/telemetry`).
+- **LaunchAgents** (`~/Library/LaunchAgents/io.github.emilio-devesa.
+  neverred.telemetry-{sink,relay}.plist`): RunAtLoad + KeepAlive, logs
+  en `~/Library/Logs/NeverRed/`.
+- **Funnel** (Tailscale): publicado en la raíz del host público sin que
+  la app esté abierta. Servir/revisión:
+
+  ```bash
+  /Applications/Tailscale.app/Contents/MacOS/Tailscale funnel --bg http://127.0.0.1:8082/telemetry
+  /Applications/Tailscale.app/Contents/MacOS/Tailscale funnel status
+  ```
+
+Los clientes apuntan `NEVERRED_TELEMETRY_SINK` a la URL pública del host
+(sin sufijo). End-to-end verificado desde una máquina Windows externa:
+`ingest` inválido → 401 del monitor, `enroll` válido →
+`{"enroll": "pending"}`; el `approve` sigue siendo solo local.
+
+Nota Sybil: el `enroll` público sigue aceptando altas pendientes sin
+límite de registro (quedan en el dashboard para aprobar/vetar); nada se
+almacena como telemetría hasta que la identidad esté aprobada y la firma
+verificar. Es el «Pendiente de protocolo» de abajo.
 
 ## Relay
 
 Las betas sin acceso directo al monitor pueden enviar a
-`POST /api/telemetry-ingest` o `/api/telemetry-enroll` de la app. El relay:
+`POST /api/telemetry-ingest` o `/api/telemetry-enroll`. Hay dos relays:
+el de la app (`server.py`, vivo mientras la app corre) y el permanente
+(`telemetry_relay.py`, el funnel). Ambos:
 
 - valida tamaño y JSON,
 - aplica rate-limit,

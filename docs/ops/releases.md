@@ -79,14 +79,23 @@ confianza la sigue dando la `.sig` Ed25519, no el certificado.
 
 ## Destino de telemetría del build
 
-`packaging/macos/build.sh` y `packaging/linux/build.sh` aceptan
-`NEVERRED_BUILD_SINK` y `NEVERRED_BUILD_TOKEN` (token vacío por defecto).
-Sustituyen los marcadores en `Launcher.sh` / `AppRun`; el lanzador escribe
+`packaging/macos/build.sh`, `packaging/linux/build.sh` y
+`packaging/windows/build.ps1` aceptan `NEVERRED_BUILD_SINK` y
+`NEVERRED_BUILD_TOKEN` (token vacío por defecto). Sustituyen los marcadores
+en `Launcher.sh` / `AppRun` / `launcher.py`; el lanzador escribe
 `telemetry.conf` en el primer arranque. Para una release sin destino:
 
 ```bash
 NEVERRED_BUILD_SINK= ./packaging/macos/build.sh X.Y.Z
 NEVERRED_BUILD_SINK= ./packaging/linux/build.sh X.Y.Z
+```
+
+En Windows, si no vienen ni por parámetro ni por entorno se usa el mismo
+destino default que mac/Linux; un build sin destino se pide explícito
+(PowerShell no distingue entorno vacío de no definido):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -SinkUrl ''
 ```
 
 Verificar en un paquete instalado que `telemetry.conf` contiene lo esperado.

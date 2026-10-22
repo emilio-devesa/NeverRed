@@ -1,5 +1,51 @@
 # NeverRed — Historial de cambios
 
+## v2.6.9 — Debut en Windows y telemetría permanente
+- **Instalador Windows (Inno Setup 6):** asistente en español que instala
+  per-usuario y **sin permisos de administrador** en
+  `%LOCALAPPDATA%\NeverRed` (el auto-update renombra su propio dir; en
+  `Program Files` exigiría elevación constante), con tareas de accesos en
+  menú inicio/escritorio y datos del usuario en `%APPDATA%\NeverRed` que
+  **se conservan al desinstalar**. `AppMutex=NeverRedAppMutex` +
+  `CloseApplications` cierra la app en el setup; el desinstalador
+  silencioso con la app en marcha aborta a nivel de engine (limitación
+  de Inno, documentada; con la app cerrada funciona siempre).
+- **Launcher Windows:** mutex global (`NeverRedAppMutex`, ctypes) y el
+  bloque de stdlib que el hijo `--serve` necesita cuando el exe está
+  congelado (PyInstaller solo embebe los imports estáticos del
+  entry-point: `ModuleNotFoundError: 'json'` sin él). Telemetría del
+  launcher con paridad mac/Linux: entorno > `telemetry.conf` junto a los
+  datos > destino por defecto del build.
+- **Defecto de telemetría por plataforma:** `build.ps1` entra con el
+  mismo receptor por defecto que `build.sh` (mac/Linux); un build sin
+  destino se pide explícito (`-SinkUrl ''`). Antes el exe quedaba en modo
+  local puro de serie («Sin receptor configurado»).
+- **Relay permanente:** `backend/telemetry_relay.py`, punto de entrada
+  del funnel público. Solo retransmite `ingest`/`enroll` al monitor
+  (Authorization intacta; el monitor revalida) con rate-limit por IP
+  (`X-Forwarded-For`, 60/600 s, fail-closed) y cuerpo ≤ 1 MB. El
+  dashboard y `/api/sink-identity` (aprobar/vetar) nunca salen por el
+  funnel: el proxy entra como `127.0.0.1` y «Solo local.»
+  vendría de menos. Despliegue documentado como LaunchAgents con
+  KeepAlive y funnel de Tailscale; end-to-end verificado desde Windows
+  (`ingest` → 401 del monitor, `enroll` → `pending`).
+- **Empaquetado Windows:** PyInstaller 6 + `build.ps1` con 3 bugs del
+  build real arreglados (directorio `backend` creado antes de copiar;
+  redirección con `Start-Process -Wait` para exes GUI; `New-Item` previo
+  en el portable). `selftest.py` del paquete: 27 verificaciones (+4 del
+  instalador).
+- **CI:** `packaging-windows.yml` instala Inno Setup en el runner,
+  ejecuta el selftest y adjunta a la Release los dos zips y el
+  `NeverRed-setup-<v>.exe`. Más workflows de firma y SmartScreen
+  documentados (`docs/ops/releases.md`): sin Authenticode a propósito,
+  paridad con dmg/AppImage; la integridad la da la `.sig` Ed25519.
+- **Documentación:** README con sección «Descargar para Windows», web
+  (GitHub Pages) con instalación en Windows y cierre/actualizaciones
+  generalizadas, y despliegue permanente de telemetría en
+  `docs/ops/telemetry.md`.
+- Service worker `v9`; versiones de la app en `config.py`, `app.js` y el
+  cache-buster del `index.html` a `2.6.9`.
+
 ## v2.6.8 — Cuarta iteración de la auditoría (P3)
 - **Backend modular:** `server.py` baja de 2.163 a ~1.400 líneas. Separados
   `config.py` (rutas/versión), `schema.py` (BD y migraciones), `auth.py`

@@ -7,17 +7,26 @@
 # Tras publicar, firmar cada ZIP y subir sus .sig (docs/ops/releases.md).
 param(
     [string]$Version = "",
-    # Destino de telemetría por defecto del build (vacío = telemetría local, sin
-    # salida). Para builds coordinados: NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN
-    # por entorno, igual que en los builds de macOS y Linux.
-    [string]$SinkUrl = "",
-    [string]$SinkToken = "",
+    # Destino de telemetría por defecto del build. Paridad con build.sh de
+    # macOS/Linux: hereda NEVERRED_BUILD_SINK / NEVERRED_BUILD_TOKEN del
+    # entorno; si no hay entorno, usa el receptor por defecto del coordinador
+    # (el mismo que mac/Linux). Build SIN destino: -SinkUrl '' (explícito).
+    # Sin destino, la app instalada queda en modo local puro (nada sale).
+    [string]$SinkUrl = $env:NEVERRED_BUILD_SINK,
+    [string]$SinkToken = $env:NEVERRED_BUILD_TOKEN,
     # Omite los .exe (solo el ZIP portable).
     [switch]$SkipExe = $false
 )
 
 # ── Cuerpo ────────────────────────────────────────────────────────────────
 $ErrorActionPreference = "Stop"
+
+# Paridad con build.sh (`: ${NEVERRED_BUILD_SINK=...}`): si no vino ni por
+# parámetro ni por entorno, destino por defecto. En PowerShell no se distingue
+# entorno vacío de no definido: un build sin destino se pide con -SinkUrl ''.
+if (-not $PSBoundParameters.ContainsKey('SinkUrl') -and -not $SinkUrl) {
+    $SinkUrl = "https://neverred-dev.tail2f2ed4.ts.net"
+}
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Push-Location $Root
