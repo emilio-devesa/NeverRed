@@ -39,6 +39,10 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en v2.6.9
+
+Las releases adjuntan ya también los zips de Windows y el instalador `NeverRed-setup-<v>.exe` generados por CI: la **primera versión de NeverRed para Windows publicada de fábrica** (Inno Setup, asistente en español, sin permisos de administrador). Además, la telemetría pasa a tener receptor permanente: un relay dedicado recibe los envíos de cualquier máquina a través del funnel aunque ninguna app esté abierta, y las aprobaciones de identidad siguen siendo siempre en local.
+
 ## Novedades en v2.6.8
 
 Mejoras internas: el backend queda separado en módulos (`config`, `schema`, `auth`, `static`, `market` y `telemetry`), con más pruebas (115 en verde), métricas de latencia opt-in y un dashboard de telemetría más robusto. No cambia nada en el uso diario. Y en lo visible para ese sistema: **NeverRed debuta en Windows** con instalador nativo y actualizaciones integradas.
