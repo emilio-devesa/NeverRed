@@ -1,5 +1,37 @@
 # NeverRed — Historial de cambios
 
+## Sin release (pendiente de etiquetado) — P1 de la auditoría 2.6.9
+Aterrizado en `main` como `d0e69ab` (2026-10-24). Sin cambio de versión ni
+de protocolo: las bases instaladas siguen en `v2.6.9` hasta el próximo tag.
+
+- **Registro robusto ante carreras (500 → 409):** el `IntegrityError` del
+  índice UNIQUE del email ya no escapa como «Error interno.» cuando dos
+  peticiones se cruzan (check-then-insert). Mismo 409 y mismo mensaje que
+  el check secuencial. Blindaje idéntico aplicado al usuario demo
+  (`/api/demo`) y al enrolamiento del monitor (`_enroll`), que es público
+  vía funnel. `market_add` no lo necesitaba (ya usaba
+  `ON CONFLICT(user_id, symbol) DO NOTHING`).
+- **Panel del monitor blindado (anti-CSRF + anti-DNS-rebinding):** el
+  dashboard de `telemetry_sink.py` (útil solo-lógicamente local) ahora
+  exige, en sus tres rutas de control (panel, `/api/sink-summary` y
+  `/api/sink-identity`):
+  1. `Host` de loopback (mata el rebinding);
+  2. `Origin`/`Referer` propios si el navegador los manda (rechaza
+     formularios cruzados; el CLI sin navegador sigue admitido);
+  3. token anti-CSRF (TTL 1 h, no de un solo uso: el panel comparte el
+     token entre los formularios de la misma página), imprimido en el
+     HTML como campo oculto y devuelto por `/api/sink-summary`.
+  El aprobado por CLI pasa a dos pasos (comando listo en
+  `docs/ops/telemetry.md`).
+- **Cabeceras de privacidad en toda respuesta:** `Referrer-Policy:
+  no-referrer` y `Permissions-Policy`
+  `camera=(), microphone=(), geolocation=()`, inyectadas en un punto
+  único (`end_headers()`) que cubre API, estáticos, OPTIONS y passthrough
+  de relay, tanto en `server.py` como en `telemetry_sink.py`.
+- **Tests:** backend 73 → 82 (carrera con 8 hilos; cabeceras en
+  HTML/JSON/OPTIONS; 9 pruebas nuevas de defensas del panel). Frontal 42
+  y selftest Windows 27 intactos.
+
 ## v2.6.9 — Debut en Windows y telemetría permanente
 - **Instalador Windows (Inno Setup 6):** asistente en español que instala
   per-usuario y **sin permisos de administrador** en

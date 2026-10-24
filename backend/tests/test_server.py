@@ -111,6 +111,54 @@ class ServerCase(unittest.TestCase):
         self.assertEqual(int(headers["Content-Length"]), len(raw))
         self.assertEqual(json.loads(raw.decode())["error"], "Error interno.")
 
+    def test_register_carrera_409(self):
+        """ Carrera de registro: dos+ hilos con el mismo email a la vez.
+        Nunca 500: el IntegrityError del índice UNIQUE se captura y sale 409
+        (o el 429 del rate-limit global de arranque)."""
+        # Hash barato: el test valida la lógica de carrera, no PBKDF2.
+        hbarato = "pbkdf2$1$ab$cd"
+        with unittest.mock.patch.object(server, "hash_password",
+                                        lambda pw, salt=None: hbarato):
+            email = "race@test.local"
+            resultados = []
+            lock = threading.Lock()
+
+            def go():
+                try:
+                    st, _, _ = call(self.port, "/api/register", "POST",
+                                    {"email": email, "password": "Abcdefgh1",
+                                     "name": "R"})
+                except Exception:
+                    st = -1
+                with lock:
+                    resultados.append(st)
+
+            hilos = [threading.Thread(target=go) for _ in range(8)]
+            for t in hilos:
+                t.start()
+            for t in hilos:
+                t.join(20)
+            self.assertEqual(len(resultados), 8)
+            self.assertNotIn(-1, resultados)
+            self.assertNotIn(500, resultados)
+            self.assertIn(201, resultados)
+            self.assertTrue(all(s in (201, 409, 429) for s in resultados),
+                            "códigos inesperados: %r" % resultados)
+
+    def test_cabeceras_privacidad(self):
+        # Referrer-Policy y Permissions-Policy en TODO tipo de respuesta:
+        # estático HTML, API JSON y preflight OPTIONS (punto único).
+        st, h, _ = get_raw(self.port, "/")
+        self.assertEqual(st, 200)
+        self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
+        self.assertIn("camera=()", h.get("Permissions-Policy", ""))
+        st, h, _ = call(self.port, "/api/health")
+        self.assertEqual(st, 200)
+        self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
+        st, h, _ = call(self.port, "/api/health", "OPTIONS", origin=None)
+        self.assertEqual(st, 204)
+        self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
+
     def test_register_login_datos(self):
         tok = mkuser(self.port, "flujo")
         st, _, me = call(self.port, "/api/me", token=tok)

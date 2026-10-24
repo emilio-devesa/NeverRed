@@ -18,11 +18,13 @@ import hmac
 import json
 import math
 import os
+import secrets
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -115,6 +117,46 @@ def _esc(s):
 
 def _norm_platform(platform):
     return platform if platform in PLATFORMS else "desconocida"
+
+
+# ---------------- CSRF del dashboard (rutas locales) -----------------------
+# El dashboard no tiene login: la barrera es "solo loopback". Para frenar
+# CSRF desde una página web (cruce a localhost) y DNS-rebinding se valida:
+#  1. Host del cliente apuntando a loopback (rebinding usa su propio host).
+#  2. Origin/Referer coincidiendo con este sink si el navegador los manda.
+#  3. Token anti-CSRF (aquí, emparejado con un valor impuesto en los formularios).
+_TS_LOCALHOST = ("127.0.0.1", "localhost", "::1")
+_CSRF_TTL = 3600        # validez de cada token (s)
+_CSRF_MAX = 1000        # tope de tokens vivos (se podan los más viejos)
+_CSRF_LOCK = threading.Lock()
+_CSRF_TOKENS = {}       # token -> marca de emisión
+_CSRF_MSG = ("Token CSRF inválido o caducado. Recupera uno nuevo recargando "
+             "el panel o con GET /api/sink-summary.")
+
+
+def csrf_issue():
+    """Emite un token anti-CSRF (y poda caducados/antiguos oportunista)."""
+    now = time.time()
+    with _CSRF_LOCK:
+        for t in [t for t, ts in _CSRF_TOKENS.items() if now - ts > _CSRF_TTL]:
+            del _CSRF_TOKENS[t]
+        while len(_CSRF_TOKENS) >= _CSRF_MAX:
+            del _CSRF_TOKENS[min(_CSRF_TOKENS, key=_CSRF_TOKENS.get)]
+        tok = secrets.token_urlsafe(24)
+        _CSRF_TOKENS[tok] = now
+        return tok
+
+
+def csrf_check(tok):
+    """True si el token existe y no ha caducado. No se consume: el panel
+    comparte un mismo token entre varios formularios de la misma página."""
+    tok = str(tok or "")
+    with _CSRF_LOCK:
+        ts = _CSRF_TOKENS.get(tok)
+        return ts is not None and time.time() - ts <= _CSRF_TTL
+
+
+
 
 
 def verify_envelope(pubkey, install_id, canonical, signature):
@@ -216,6 +258,38 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def end_headers(self):  # noqa: N802 - firma de la stdlib
+        # Privacidad (paridad con server.py): nada de referer saliendo ni
+        # permisos de navegador abiertos, también en el monitor.
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy",
+                         "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
+    def _loopback_host(self):
+        """True si el Host apunta a loopback. Un DNS-rebinding pide por el
+        dominio del atacante (Host: pagina-del-atacante.com): así se frena."""
+        try:
+            name = urlparse("//" + (self.headers.get("Host") or "")).hostname
+        except ValueError:
+            return False
+        return (name or "").lstrip("[").rstrip("]") in _TS_LOCALHOST
+
+    def _misma_origen(self):
+        """True si la petición no viene de un navegador (sin Origin/Referer,
+        p. ej. CLI con curl) o si apunta a este mismo sink. Un POST de
+        formulario cruzado web manda Origin externo: rechazado (anti-CSRF)."""
+        src = self.headers.get("Origin") or self.headers.get("Referer")
+        if not src:
+            return True
+        try:
+            u = urlparse(src)
+        except ValueError:
+            return False
+        host = (u.hostname or "").lstrip("[").rstrip("]")
+        port = u.port or (443 if u.scheme == "https" else 80)
+        return host in _TS_LOCALHOST and port == self.server.server_address[1]
+
     def _authorized(self):
         auth = self.headers.get("Authorization") or ""
         if not auth.startswith("Bearer "):
@@ -253,7 +327,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/sink-identity":
             return self._identity_action(body, "urlencoded" in ctype)
         return self._json(404, {"error": "Ruta no encontrada."})
-
     def _ingest(self, body):
         if not isinstance(body, dict):
             return self._json(400, {"error": "Cuerpo inválido."})
@@ -306,31 +379,54 @@ class Handler(BaseHTTPRequestHandler):
         row = con.execute("SELECT pubkey, status FROM sink_identities"
                           " WHERE install_id = ?", (iid,)).fetchone()
         if row is None:
-            con.execute("INSERT INTO sink_identities (install_id, pubkey, status,"
-                        " first_seen, updated_at) VALUES (?,?,?,?,?)",
-                        (iid, pubkey, "pending", now, now))
+            try:
+                con.execute("INSERT INTO sink_identities (install_id, pubkey, status,"
+                            " first_seen, updated_at) VALUES (?,?,?,?,?)",
+                            (iid, pubkey, "pending", now, now))
+            except sqlite3.IntegrityError:
+                # Carrera: otra petición enroló la misma identidad a la vez.
+                con.rollback()
+                row = con.execute("SELECT pubkey, status FROM sink_identities"
+                                  " WHERE install_id = ?", (iid,)).fetchone()
+                if row is None:
+                    con.close()
+                    raise
+        if row is None or row["pubkey"] != pubkey:
             status = "pending"
-        elif row["status"] == "approved" and row["pubkey"] == pubkey:
+        elif row["status"] == "approved":
             status = "approved"
         else:
-            if row["pubkey"] != pubkey:
-                # Clave cambiada: re-enrolar en pendiente (lo aprueba el coordinador).
-                con.execute("UPDATE sink_identities SET pubkey = ?, status = 'pending',"
-                            " updated_at = ? WHERE install_id = ?",
-                            (pubkey, now, iid))
-                status = "pending"
-            else:
-                status = row["status"]
+            status = row["status"]
+        if row is not None and row["pubkey"] != pubkey:
+            # Clave cambiada: re-enrolar en pendiente (lo aprueba el coordinador).
+            con.execute("UPDATE sink_identities SET pubkey = ?, status = 'pending',"
+                        " updated_at = ? WHERE install_id = ?",
+                        (pubkey, now, iid))
         con.commit()
         con.close()
         return self._json(200, {"enroll": status})
 
+    def _race403_form(self):
+        page = (b"<!doctype html><meta charset=utf-8>"
+                b"<p>Token CSRF invalido o caducado."
+                b" <a href='/'>Recarga el panel</a> e intentalo de nuevo.</p>")
+        self.send_response(403)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(page)))
+        self.end_headers()
+        self.wfile.write(page)
+        return None
+
     def _identity_action(self, body, from_form=False):
-        # Solo localhost: el dashboard no tiene auth y el sink no se expone.
+        # Página de control local: batería de defensas anti-CSRF/rebinding.
         if self.client_address[0] not in ("127.0.0.1", "::1"):
             return self._json(403, {"error": "Solo local."})
-        if not isinstance(body, dict):
-            return self._json(400, {"error": "Cuerpo inválido."})
+        if not self._loopback_host() or not self._misma_origen():
+            return self._json(403, {"error": "Solicitud cruzada rechazada."})
+        if not isinstance(body, dict) or not csrf_check(body.get("csrf")):
+            if from_form:
+                return self._race403_form()
+            return self._json(403, {"error": _CSRF_MSG})
         iid = str(body.get("install_id") or "")
         action = str(body.get("action") or "")
         new = {"approve": "approved", "reject": "rejected",
@@ -374,6 +470,10 @@ class Handler(BaseHTTPRequestHandler):
         fails = sum(r[1] for r in stats)
         mean = (fails / sends) if sends else 0
         now_s = time.strftime("%d/%m/%Y %H:%M")
+        # Un token por render: los formularios del panel lo llevan oculto y
+        # /api/sink-identity lo exige (ver _identity_action).
+        csrf = csrf_issue()
+        csrf_field = ("<input type=hidden name=csrf value='%s'>" % _esc(csrf))
 
         def section(title, pairs):
             if not pairs:
@@ -402,18 +502,23 @@ class Handler(BaseHTTPRequestHandler):
                 seen = time.strftime("%d/%m %H:%M", time.localtime(r["updated_at"] or 0))
                 if status == "pending":
                     acts = (("<form method=post action='/api/sink-identity'>"
+                             "%s"
                              "<input type=hidden name=install_id value='%s'>"
                              "<input type=hidden name=action value='approve'>"
                              "<button>Aprobar</button></form>"
                              "<form method=post action='/api/sink-identity'>"
+                             "%s"
                              "<input type=hidden name=install_id value='%s'>"
                              "<input type=hidden name=action value='reject'>"
-                             "<button>Rechazar</button></form>") % (_esc(iid), _esc(iid)))
+                             "<button>Rechazar</button></form>")
+                            % (csrf_field, _esc(iid), csrf_field, _esc(iid)))
                 elif status == "approved":
                     acts = (("<form method=post action='/api/sink-identity'>"
+                             "%s"
                              "<input type=hidden name=install_id value='%s'>"
                              "<input type=hidden name=action value='revoke'>"
-                             "<button>Expulsar</button></form>") % _esc(iid))
+                             "<button>Expulsar</button></form>")
+                            % (csrf_field, _esc(iid)))
                 else:
                     acts = "<span class=muted>rechazada</span>"
                 rows.append("<div class=row><span class=name>%s… · %s</span>"
@@ -479,6 +584,9 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if not self._loopback_host():
+            # Rutas de control local: DNS-rebinding no debe poder leerlas.
+            return self._json(403, {"error": "Host no válido."})
         if path == "/api/sink-summary":
             con = db()
             rows = con.execute(
@@ -487,7 +595,8 @@ footer{margin-top:2em;color:var(--muted);font-size:.8em}
             stats = con.execute("SELECT * FROM sink_stats").fetchall()
             con.close()
             return self._json(200, {"batches": [dict(r) for r in rows],
-                                    "stats": [dict(r) for r in stats]})
+                                    "stats": [dict(r) for r in stats],
+                                    "csrf": csrf_issue()})
         if path != "/":
             return self._json(404, {"error": "Ruta no encontrada."})
         body = self._dashboard()

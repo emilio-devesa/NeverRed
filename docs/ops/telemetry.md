@@ -41,8 +41,20 @@ Sin destino configurado no sale nada del servidor.
   BD y se enrola sola.
 - Sin aprobar, el monitor responde `pending` y la app retiene los agregados
   (watermark intacto). Al aprobar, el siguiente envío los entrega.
-- Aprobar, vetar o revocar desde el dashboard del monitor o con
-  `POST /api/sink-identity` (`approve`, `reject`, `revoke`).
+- Aprobar, vetar o revocar:
+  - desde el dashboard del monitor (los formularios llevan ya el token
+    anti-CSRF oculto), o
+  - por API en dos pasos (el endpoint exige token CSRF y valida Host de
+    loopback + Origin/Referer propios, anti CSRF web y anti DNS-rebinding):
+
+    ```bash
+    CSRF=$(curl -s http://127.0.0.1:8140/api/sink-summary | python3 -c "import json,sys; print(json.load(sys.stdin)['csrf'])")
+    curl -s -X POST http://127.0.0.1:8140/api/sink-identity \
+      -H "Content-Type: application/json" \
+      -d "{\"install_id\": \"...\",
+           \"action\": \"approve\",      # reject | revoke
+           \"csrf\": \"$CSRF\"}"
+    ```
 - El bearer compartido sigue disponible como modo legacy si el monitor define
   `NEVERRED_SINK_TOKEN`; el camino recomendado es la firma.
 
@@ -56,6 +68,28 @@ El dashboard muestra totales, picos por día/hora, funciones, versiones,
 plataformas, fallos medios e instalaciones pendientes/aprobadas/vetadas.
 Debe escucharse en loopback o en una red privada, nunca expuesto
 directamente.
+
+**Hardening del panel (desde `d0e69ab`, 2026-10-24):** el panel no tiene
+login, así que sus tres rutas de control (panel, `/api/sink-summary` y
+`/api/sink-identity`) ejecutan tres defensas, por este orden:
+1. **Host de loopback obligatorio** — mata el DNS-rebinding en todas las
+   rutas de control (el rebinding pide por el dominio del atacante);
+2. **`Origin`/`Referer` propios** si el navegador los manda — un
+   formulario cruzado de otra web (CSRF a localhost) queda rechazado; el
+   CLI sin cabeceras de navegador sigue admitido;
+3. **Token anti-CSRF** (TTL 1 h, no de un solo uso, tope 1000 activos) —
+   lo emite el propio HTML del panel (campo oculto `name=csrf` en
+   approve/reject/revoke) y `/api/sink-summary`; el POST lo exige.
+
+Además ambos servicios (app y monitor) mandan `Referrer-Policy:
+no-referrer` y `Permissions-Policy`
+`camera=(), microphone=(), geolocation=()` en toda respuesta.
+
+Al actualizar la copia desplegada en
+`~/Library/Application Support/NeverRed-monitor/`, re-copiar los cuatro
+módulos (`telemetry_common.py`, `telemetry_forward.py`,
+`telemetry_sink.py`, `telemetry_relay.py`) y `launchctl bootout` +
+`bootstrap` de los dos agentes (la capa incluye este hardening).
 
 ## Despliegue permanente (monitor + relay + funnel)
 

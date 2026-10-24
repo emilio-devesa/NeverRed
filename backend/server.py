@@ -660,18 +660,25 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
         if con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
             con.close()
             return self._send_json(409, {"error": "Ese correo ya está registrado. Inicia sesión."})
-        cur = con.execute(
-            "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
-            (name, email, hash_password(password), int(time.time())),
-        )
-        user_id = cur.lastrowid
-        con.execute(
-            "INSERT INTO user_data (user_id, data, updated_at) VALUES (?, '{}', ?)",
-            (user_id, int(time.time())),
-        )
-        con.execute("INSERT INTO user_flags (user_id, last_export) VALUES (?,?) "
-                    "ON CONFLICT(user_id) DO NOTHING",
-                    (user_id, int(time.time())))
+        try:
+            cur = con.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
+                (name, email, hash_password(password), int(time.time())),
+            )
+            user_id = cur.lastrowid
+            con.execute(
+                "INSERT INTO user_data (user_id, data, updated_at) VALUES (?, '{}', ?)",
+                (user_id, int(time.time())),
+            )
+            con.execute("INSERT INTO user_flags (user_id, last_export) VALUES (?,?) "
+                        "ON CONFLICT(user_id) DO NOTHING",
+                        (user_id, int(time.time())))
+        except sqlite3.IntegrityError:
+            # Carrera: otro hilo registró el mismo email entre el check y el
+            # INSERT (el índice UNIQUE manda). Mismo mensaje que el check.
+            con.rollback()
+            con.close()
+            return self._send_json(409, {"error": "Ese correo ya está registrado. Inicia sesión."})
         con.commit()
         user = con.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         con.close()
@@ -1039,10 +1046,22 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
         con = db()
         user = con.execute("SELECT * FROM users WHERE email = ?", (DEMO_EMAIL,)).fetchone()
         if user is None:
-            cur = con.execute(
-                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
-                (DEMO_NAME, DEMO_EMAIL, hash_password(DEMO_PASSWORD), int(time.time())))
-            user_id = cur.lastrowid
+            try:
+                cur = con.execute(
+                    "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
+                    (DEMO_NAME, DEMO_EMAIL, hash_password(DEMO_PASSWORD), int(time.time())))
+                user_id = cur.lastrowid
+            except sqlite3.IntegrityError:
+                # Carrera: otro hilo creó el demo a la vez; se reutiliza el suyo.
+                con.rollback()
+                user = con.execute("SELECT * FROM users WHERE email = ?",
+                                   (DEMO_EMAIL,)).fetchone()
+                if user is None:
+                    con.close()
+                    raise
+                user_id = user["id"]
+                con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                            (hash_password(DEMO_PASSWORD), user_id))
         else:
             user_id = user["id"]
             con.execute("UPDATE users SET password_hash = ? WHERE id = ?",
@@ -1352,6 +1371,15 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/api/market/tickers":
             return self._api_market_del()
         return self._send_json(404, {"error": "Ruta no encontrada."})
+
+    def end_headers(self):  # noqa: N802 - firma de la stdlib
+        # Privacidad, en un solo punto para TODA respuesta (API, estáticos,
+        # OPTIONS y relays): la app es local y no debe fugarse nada por
+        # referer; los permisos del navegador se cierran explícitamente.
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy",
+                         "camera=(), microphone=(), geolocation=()")
+        super().end_headers()
 
     def do_OPTIONS(self):  # noqa: N802 - firma de la stdlib
         # 204 no lleva cuerpo ni Content-Length (RFC 9110 §8.6).

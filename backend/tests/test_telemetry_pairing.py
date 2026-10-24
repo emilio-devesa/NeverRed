@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sqlite3
+import http.client
 import sys
 import tempfile
 import threading
@@ -63,6 +64,15 @@ def signed_body(iid, priv, aggs, stats=None):
             "client_stats": stats, "aggregates": aggs, "signature": sig}
 
 
+def identity(port, iid, action):
+    """Aprobar/vetar como el CLI documentado: 1) token CSRF de
+    /api/sink-summary, 2) POST /api/sink-identity con él."""
+    st, summ = call(port, "/api/sink-summary")
+    assert st == 200 and summ.get("csrf"), "no se pudo obtener token CSRF: %s" % summ
+    return call(port, "/api/sink-identity",
+                {"install_id": iid, "action": action, "csrf": summ["csrf"]})
+
+
 @unittest.skipUnless(HAVE_SSH, "sin ssh-keygen")
 class PairingCase(unittest.TestCase):
     @classmethod
@@ -107,8 +117,7 @@ class PairingCase(unittest.TestCase):
         self.assertEqual(n, 0)
 
     def test_04_approve_e_ingest(self):
-        st, body = call(self.port, "/api/sink-identity",
-                         {"install_id": self.iid, "action": "approve"})
+        st, body = identity(self.port, self.iid, "approve")
         self.assertEqual((st, body.get("enroll")), (200, "approved"))
         st, body = call(self.port, "/api/telemetry-ingest",
                          signed_body(self.iid, self.priv, self.agg()))
@@ -138,8 +147,7 @@ class PairingCase(unittest.TestCase):
         self.assertEqual(body.get("enroll"), "pending")
 
     def test_08_reject_bloquea(self):
-        st, body = call(self.port, "/api/sink-identity",
-                         {"install_id": self.iid, "action": "reject"})
+        st, body = identity(self.port, self.iid, "reject")
         self.assertEqual(body.get("enroll"), "rejected")
         st, body = call(self.port, "/api/telemetry-ingest",
                          signed_body(self.iid, self.priv, self.agg()))
@@ -182,8 +190,7 @@ class ForwardPairingCase(unittest.TestCase):
         self.assertFalse(st["sent"])
         # 2) el coordinador aprueba (viaja el install_id real de este equipo)
         iid = telemetry.get_install_id()
-        st2, body = call(8161, "/api/sink-identity",
-                         {"install_id": iid, "action": "approve"})
+        st2, body = identity(8161, iid, "approve")
         self.assertEqual(body.get("enroll"), "approved")
         # 3) reintento: envía firmado y avanza
         st = telemetry.forward_once(force=True)
@@ -216,6 +223,113 @@ class EnrollRelayCase(unittest.TestCase):
         st, body = call(8164, "/api/telemetry-enroll",
                          {"install_id": "r" * 32, "pubkey": pub})
         self.assertEqual((st, body.get("enroll")), (200, "pending"))
+
+
+@unittest.skipUnless(HAVE_SSH, "sin ssh-keygen")
+class DashboardCSRFCase(unittest.TestCase):
+    """Defensas del panel local: token CSRF, Origin/Referer y Host."""
+    @classmethod
+    def setUpClass(cls):
+        server.init_db()
+        sink.init_db()
+        from http.server import ThreadingHTTPServer
+        cls.port = 8167
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", cls.port), sink.Handler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        time.sleep(0.3)
+
+    def _post(self, path, body, headers=None):
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d%s" % (self.port, path), method="POST",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, dict(r.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers)
+
+    def test_01_resumen_da_token(self):
+        st, summ = call(self.port, "/api/sink-summary")
+        self.assertEqual(st, 200)
+        self.assertTrue(summ.get("csrf"))
+
+    def test_02_token_valido_aprueba_y_identities(self):
+        kd = tempfile.mkdtemp(prefix="nr-csrf-")
+        _, pub = fwd.ensure_keypair(kd)
+        iid = "c" * 32
+        st, _ = call(self.port, "/api/telemetry-enroll",
+                     {"install_id": iid, "pubkey": pub})
+        self.assertEqual(st, 200)
+        st, body = identity(self.port, iid, "approve")
+        self.assertEqual((st, body.get("enroll")), (200, "approved"))
+        # y con la misma página (domacen token distinto) se puede expulsar:
+        st, body = identity(self.port, iid, "revoke")
+        self.assertEqual((st, body.get("enroll")), (200, "rejected"))
+
+    def test_03_sin_token_rechazado(self):
+        st, _ = self._post("/api/sink-identity",
+                           {"install_id": "z" * 32, "action": "approve"})
+        self.assertEqual(st, 403)
+
+    def test_04_token_falso_rechazado(self):
+        st, body = self._post("/api/sink-identity",
+                              {"install_id": "z" * 32, "action": "approve",
+                               "csrf": "no-es-mi-token"})
+        self.assertEqual(st, 403)
+
+    def test_05_origin_ajeno_rechazado(self):
+        st, _ = self._post("/api/sink-identity",
+                           {"install_id": "z" * 32, "action": "approve"},
+                           headers={"Origin": "http://evil.example",
+                                    "Referer": "http://evil.example/"})
+        self.assertEqual(st, 403)
+
+    def test_06_rebinding_host_rechazado(self):
+        # El DNS-rebinding pide por el dominio del atacante (Host ajeno):
+        # ni el GET del dashboard ni el POST de acciones han de salir.
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/", headers={"Host": "pagina-del-atacante.example"})
+        r = conn.getresponse(); r.read()
+        self.assertEqual(r.status, 403)
+        conn.close()
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("POST", "/api/sink-identity",
+                     body=json.dumps({"install_id": "z" * 32,
+                                      "action": "approve"}).encode(),
+                     headers={"Host": "pagina-del-atacante.example",
+                              "Content-Type": "application/json"})
+        r = conn.getresponse(); j = json.loads(r.read().decode())
+        self.assertEqual(r.status, 403)
+        conn.close()
+        self.assertIn("cruzada", j.get("error", ""))
+
+    def test_07_host_loopback_aceptado(self):
+        # Una identidad pendiente hace que el panel dibuje formularios.
+        kd = tempfile.mkdtemp(prefix="nr-csrf2-")
+        _, pub = fwd.ensure_keypair(kd)
+        iid = "d" * 32
+        st, _ = call(self.port, "/api/telemetry-enroll",
+                     {"install_id": iid, "pubkey": pub})
+        self.assertEqual(st, 200)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/", headers={"Host": "127.0.0.1:%d" % self.port})
+        r = conn.getresponse(); texto = r.read().decode()
+        self.assertEqual(r.status, 200)
+        conn.close()
+        self.assertIn("name=csrf", texto)   # los formularios llevan token
+        self.assertEqual(r.headers.get("Referrer-Policy"), "no-referrer")
+        self.assertIn("camera=()", r.headers.get("Permissions-Policy", ""))
+
+    def test_08_origen_localhost_ok(self):
+        # Formulario legítimo del panel: Origin del propio sink con puerto.
+        st, summ = call(self.port, "/api/sink-summary")
+        st, _ = self._post("/api/sink-identity",
+                           {"install_id": "z" * 32, "action": "approve",
+                            "csrf": summ["csrf"]},
+                           headers={"Origin": "http://127.0.0.1:%d" % self.port})
+        self.assertNotIn(st, (403,))  # 404 = instalación desconocida (token OK)
+        self.assertEqual(st, 404)
 
 
 if __name__ == "__main__":
