@@ -16,7 +16,7 @@ docker run -d --name neverred -p 8000:8000 \
 
 O con el `compose.yaml` incluido: `docker compose up -d --build`. La base de datos persiste en el volumen.
 
-La imagen la construye y publica el workflow de Release a cada tag (`ghcr.io/emilio-devesa/neverred:2.6.8`, con también `:2.6` y `:latest`).
+La imagen la construye y publica el workflow de Release a cada tag (`ghcr.io/emilio-devesa/neverred:2.6.9`, con también `:2.6` y `:latest`).
 
 ## VPS clásico
 

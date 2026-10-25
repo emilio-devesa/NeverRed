@@ -17,7 +17,7 @@ Sesión en cookie `HttpOnly` (`Bearer` solo para el modo archivo local). CORS re
 | POST | `/api/reset-request` | `{email}` envía enlace de recuperación (1 h) |
 | POST | `/api/reset-confirm` | `{token, new}` completa la recuperación |
 | POST | `/api/demo` | Crea o restablece la demo y abre sesión (sin registro) |
-| DELETE | `/api/account` | Elimina el usuario y todos sus datos |
+| DELETE | `/api/account` | Elimina el usuario y todos sus datos (también sin rastro en el registro interno de eventos) |
 | GET | `/api/me` | Usuario actual + `last_export` (última copia manual) |
 | POST | `/api/export-log` | Marca una exportación manual (para el aviso de copia) |
 | GET | `/api/sessions` | Sesiones propias |
@@ -28,7 +28,7 @@ Sesión en cookie `HttpOnly` (`Bearer` solo para el modo archivo local). CORS re
 | POST | `/api/market/key` | `{key}` guarda tu clave personal de Alpha Vantage (solo vive en el servidor) |
 | DELETE | `/api/market/key` | Olvida tu clave de Alpha Vantage |
 | GET | `/api/market/tickers` | Tus tickers con último cierre y tendencia (de caché, sin gastar cuota) |
-| POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie) |
+| POST | `/api/market/tickers` | `{symbol}` añade un ticker (valida y descarga su serie; si Alpha Vantage no responde, 429 «no responde» — sin gastar cuota) |
 | POST | `/api/market/order` | `{order}` guarda tu orden personalizado de tickers (lista de tus símbolos) |
 | DELETE | `/api/market/tickers?symbol=X` | Quita un ticker |
 | GET | `/api/market/history?symbol=X` | Serie diaria de cierre (~100 sesiones; sin ajustar, la ajustada es premium) + mín/máx/variación + dividendos/splits (`&refresh=1` fuerza descarga) |

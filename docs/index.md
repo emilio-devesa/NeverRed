@@ -39,6 +39,15 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
+## Novedades en preparación (tras auditoría 2.6.9)
+
+Antes de la próxima versión, un lote de higiene y seguridad revisa la app a fondo. Lo que notarás:
+
+- **Mercado más honesto cuando tu conexión falla:** si Alpha Vantage no responde, ya no te dice «no se encontró el ticker» (no es que no exista: es la red) — ahora te lo dice claro: «no responde, prueba otra vez». Y ese fallo ya no consume tu cuota diaria.
+- **«Eliminar cuenta» deja cero rastro:** al borrar tu cuenta se purga también tu estela del registro interno de eventos (como el correo guardado cuando te registraste); solo quedan los hechos como contador estadístico, sin datos personales.
+- **Actualizaciones más robustas:** si una versión nueva no llegara a arrancar, ya no se descarta para siempre — volverá a ofrecerse en el siguiente arranque.
+- El resto es invisible: preflights CORS cacheados (menos cháchara en la red), un índice de base de datos redundante retirado y los generadores de paquetes ya no etiquetan nunca una versión antigua por defecto.
+
 ## Novedades en v2.6.9
 
 Las releases adjuntan ya también los zips de Windows y el instalador `NeverRed-setup-<v>.exe` generados por CI: la **primera versión de NeverRed para Windows publicada de fábrica** (Inno Setup, asistente en español, sin permisos de administrador). Además, la telemetría pasa a tener receptor permanente: un relay dedicado recibe los envíos de cualquier máquina a través del funnel aunque ninguna app esté abierta, y las aprobaciones de identidad siguen siendo siempre en local.
