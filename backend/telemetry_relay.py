@@ -169,10 +169,6 @@ class RelayHandler(BaseHTTPRequestHandler):
         self.log(code, path)
         self._send(code, resp)
 
-    do_PUT = do_DELETE = do_PATCH = do_POST.__wrapped__ if False else None
-    for _m in ("do_PUT", "do_DELETE", "do_PATCH", "do_HEAD"):
-        pass
-
 
 def _method_not_allowed(self):
     return self._send(405, b'{"error": "Metodo no permitido."}')

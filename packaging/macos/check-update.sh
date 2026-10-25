@@ -72,6 +72,9 @@ MNT="$(hdiutil attach -nobrowse -readonly "$DMG" 2>/dev/null | awk -F'\t' '/Volu
 TARGET="$(cd "$MACOS_DIR/../.." && pwd)"
 PARENT="$(dirname "$TARGET")"
 BASE="$(basename "$TARGET")"
+# Restos huérfanos de un intento anterior cuyo proceso murió a mitad de
+# swap (el rm -rf por $$ de cada ejecución solo cubre su propio PID).
+rm -rf "$PARENT/.$BASE.nuevo."* "$PARENT/.$BASE.viejo."* 2>/dev/null
 STAGE="$PARENT/.$BASE.nuevo.$$"
 OLD="$PARENT/.$BASE.viejo.$$"
 

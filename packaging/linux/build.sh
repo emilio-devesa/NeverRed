@@ -7,7 +7,11 @@ cd "$ROOT"
 
 if [ "${1:-}" != "" ]; then VERSION="$1";
 elif git describe --tags --abbrev=0 >/dev/null 2>&1; then VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')";
-else VERSION="1.7.0"; fi
+else
+  echo "ERROR: no se pudo deducir la versión (¿sin tags git?)." >&2
+  echo "Pasa la versión explícita: ./packaging/linux/build.sh X.Y.Z" >&2
+  exit 1
+fi
 # Destino de telemetría por defecto (ver build.sh de macOS).
 : "${NEVERRED_BUILD_SINK=https://neverred-dev.tail2f2ed4.ts.net}"
 

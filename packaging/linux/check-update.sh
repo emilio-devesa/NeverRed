@@ -25,6 +25,20 @@ NOTES="$(printf '%s' "$EVAL" | tail -n +4)"
 [ -z "$REMOTE" ] || [ -z "$ASSET" ] && exit 0
 
 mkdir -p "$DATA"
+
+# Protocolo del intercambio (portado de Windows): si un intento anterior
+# quedó a medias (.update_pending sin .update_ok), se borra la marca de
+# «omitir versión» para que esa versión vuelva a ofertarse. Nota: en Linux
+# «instalada» significa «la AppImage nueva arrancó» (la original no se
+# sustituye en disco), así que .update_ok guarda la versión lanzada.
+PEND="$DATA/.update_pending"
+OKF="$DATA/.update_ok"
+if [ -f "$OKF" ]; then
+  rm -f "$PEND"
+elif [ -f "$PEND" ]; then
+  echo "[neverred] intercambio anterior no concluido: se reofrece $REMOTE" >&2
+  rm -f "$DATA/skipped_version" "$PEND"
+fi
 if is_skipped "$REMOTE"; then exit 0; fi
 
 NEWER="$(version_newer "$REMOTE" "$LOCAL")"
@@ -58,12 +72,25 @@ if [ -z "$CHOICE" ]; then
   fi
 fi
 
-# Descarga la nueva AppImage, verifica su firma, la abre y salimos
+# Descarga la nueva AppImage, verifica su firma, la arranca y se retira.
+# Solo se marca «omitir versión» cuando la nueva está viva: si el arranque
+# falla, la versión vuelve a ofrecerse en la próxima comprobación (antes se
+# marcaba antes de arrancar y un fallo la descartaba para siempre).
 NEW="$DATA/$(basename "$ASSET")"
 download_signed "$ASSET" "$NEW" "$ASSET_SIG" 300 || exit 0
 chmod +x "$NEW"
-mark_skipped "$REMOTE"
+printf '%s\n' "$REMOTE" > "$PEND"
 if [ -f "$DATA/server.pid" ]; then stop_server "$DATA/server.pid"; fi
 sleep 1
 "$NEW" &
-exit 42
+NPID=$!
+sleep 4
+if kill -0 "$NPID" 2>/dev/null; then
+  mark_skipped "$REMOTE"
+  printf '%s\n' "$REMOTE" > "$OKF"
+  exit 42
+fi
+# La nueva murió al arrancar: sin marca; la vieja sigue intacta en disco.
+rm -f "$PEND"
+echo "[neverred] la nueva AppImage no arrancó; se conserva la $LOCAL" >&2
+exit 0

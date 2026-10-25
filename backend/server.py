@@ -464,9 +464,11 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
 
     @staticmethod
     def _etag_matches(header, etag):
+        # Igualdad exacta o validador débil con prefijo real "W/" (no un
+        # lstrip de caracteres, que casaría con p. ej. "WoW/etag").
         for tag in (header or "").split(","):
             tag = tag.strip()
-            if tag == "*" or tag == etag or tag == "W/" + etag or tag.lstrip("W/") == etag:
+            if tag == "*" or tag == etag or tag == "W/" + etag:
                 return True
         return False
 
@@ -532,6 +534,9 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
             self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
+            # Navegador cachea el preflight (por defecto lo repetiría cada
+            # vez): un día de caches quita miles de preflights.
+            self.send_header("Access-Control-Max-Age", "86400")
 
     def _send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -857,9 +862,15 @@ class Handler(StaticMixin, BaseHTTPRequestHandler):
         con.execute("DELETE FROM telemetry_events WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM telemetry_consent WHERE user_id = ?", (user["id"],))
         con.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        # "Eliminar mi cuenta" debe borrar su estela también del registro de
+        # auditoría (dura 90 días): se anonimiza (user_id a NULL, detalle
+        # vacío — p. ej. el email del "register") conservando el contador de
+        # hechos para la métrica global.
+        con.execute("UPDATE audit_log SET user_id = NULL, detail = ''"
+                    " WHERE user_id = ?", (user["id"],))
         con.commit()
         con.close()
-        audit("account_delete", user["id"], user["email"])
+        audit("account_delete")
         self._send_json(200, {"ok": True})
 
     def _api_sessions(self):

@@ -75,7 +75,8 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'none',
             updated_at INTEGER NOT NULL DEFAULT 0
         );
-        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+        -- sessions.token ya es PRIMARY KEY (índice propio); el índice
+        -- redundante idx_sessions_token se retiró (migración abajo).
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
         CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
@@ -130,4 +131,8 @@ def init_db():
         con.execute("ALTER TABLE market_tickers ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
         con.execute("UPDATE market_tickers SET position = added_at")
         con.commit()
+    # Migración: el índice redundante idx_sessions_token (token ya es PRIMARY
+    # KEY de sessions) se quitó del esquema; se limpia de BDs anteriores.
+    con.execute("DROP INDEX IF EXISTS idx_sessions_token")
+    con.commit()
     con.close()

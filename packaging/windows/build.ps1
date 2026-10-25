@@ -34,7 +34,9 @@ try {
     if (-not $Version) {
         $Version = (& git describe --tags --abbrev=0 2>$null) -replace '^v', ''
     }
-    if (-not $Version) { $Version = "2.6.8" }
+    if (-not $Version) {
+        throw "No se pudo deducir la versión (¿sin tags git?). Pasa la versión explícita: .\packaging\windows\build.ps1 -Version X.Y.Z"
+    }
     Write-Host "== NeverRed Windows $Version =="
 
     $Dist     = Join-Path $Root "dist\windows"

@@ -179,7 +179,9 @@ def _market_set_meta(key, value):
 
 def _av_today_key():
     import datetime as _dt
-    return "av_used_" + _dt.datetime.utcnow().strftime("%Y-%m-%d")
+    # Aware (DeprecationWarning de utcnow en 3.12+); UTC fol usado para la
+    # clave diaria de cuota.
+    return "av_used_" + _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
 
 
 def _av_count_call():
@@ -245,10 +247,13 @@ def market_history(symbol, key, force=False):
                 return 200, out
             return 429, {"error": "Cuota de la API: reintenta en %d s." % wait}
         _market_last_call = int(time.time())
-    # Ajustado en compact: 1 llamada siempre, sin sondeo premium.
-    _av_count_call()
+    # Ajustado en compact: 1 llamada siempre, sin sonseo premium. La cuota se
+    # computa solo si la petición SALIÓ de verdad y hubo respuesta (antes se
+    # sumaba también ante fallo de red/timeout, perdiendo cómputo del día).
     payload = _av_get(symbol, key)
-    data, err = parse_av_daily(payload or {})
+    if payload is not None:
+        _av_count_call()
+    data, err = parse_av_daily(payload)
     con = db()
     if err is None:
         con.execute("INSERT INTO market_cache (symbol, fetched_at, points) VALUES (?,?,?) "

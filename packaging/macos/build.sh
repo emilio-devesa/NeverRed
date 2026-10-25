@@ -8,7 +8,11 @@ cd "$ROOT"
 
 if [ "${1:-}" != "" ]; then VERSION="$1";
 elif git describe --tags --abbrev=0 >/dev/null 2>&1; then VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')";
-else VERSION="1.2.0"; fi
+else
+  echo "ERROR: no se pudo deducir la versión (¿sin tags git?)." >&2
+  echo "Pasa la versión explícita: ./packaging/macos/build.sh X.Y.Z" >&2
+  exit 1
+fi
 SUFFIX="${2:-}"
 DMG="NeverRed-macOS-$VERSION$SUFFIX.dmg"
 # Destino de telemetría por defecto en los paquetes. El token sigue siendo

@@ -301,6 +301,25 @@ class MarketApiCase(unittest.TestCase):
         q = body["quota"]
         self.assertEqual((q["used"], q["limit"]), (2, 25))
 
+    def test_cuota_fallo_red_no_cuenta(self):
+        # Si la petición a Alpha Vantage no llega a salir (_av_get → None,
+        # p. ej. timeout), el contador NO se incrementa: antes se computaba
+        # siempre y un fallo de red quemaba cómputo del día.
+        market._market_set_meta(market._av_today_key(), "0")
+        market._market_last_call = 0
+        orig = market._av_get
+        market._av_get = lambda symbol, key: None
+        try:
+            tok = mkuser(self.port, "mktfail")
+            st, body = call(self.port, "/api/market/tickers", "POST",
+                            {"symbol": "FDNET"}, token=tok)
+            self.assertEqual(st, 429, body)
+        finally:
+            market._av_get = orig
+        used, limit = market._av_quota()
+        self.assertEqual(used, 0, "el fallo de red no debe computar cuota")
+        self.assertEqual(limit, 25)
+
     def test_demo_limpia_mercado(self):
         # La demo es efímera: entrar restablece tickers y clave.
         tok = mkuser(self.port, "mkdemo")

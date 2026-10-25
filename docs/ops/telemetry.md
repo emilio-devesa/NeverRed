@@ -113,6 +113,11 @@ instalación de la app esté abierta:
   con `X-Forwarded-For` (60 en 600 s, `NEVERRED_RELAY_RATE_MAX/WINDOW`,
   fail-closed) y prefijo de camino por `NEVERRED_RELAY_PREFIX`
   (`/telemetry`).
+  - Límite de confianza (auditoría 2.6.9, T-4): el rate-limit fía la IP a
+    `X-Forwarded-For`, razonable **solo** mientras el único cliente del
+    relay sea el proxy del funnel (en loopback). Si algo más hablara con
+    el 8082, un cliente podría falsificar el XFF y evadir el límite;
+    hipotético `--allowed-host` queda como mejora P3.
 - **LaunchAgents** (`~/Library/LaunchAgents/io.github.emilio-devesa.
   neverred.telemetry-{sink,relay}.plist`): RunAtLoad + KeepAlive, logs
   en `~/Library/Logs/NeverRed/`.
@@ -132,7 +137,12 @@ Los clientes apuntan `NEVERRED_TELEMETRY_SINK` a la URL pública del host
 Nota Sybil: el `enroll` público sigue aceptando altas pendientes sin
 límite de registro (quedan en el dashboard para aprobar/vetar); nada se
 almacena como telemetría hasta que la identidad esté aprobada y la firma
-verificar. Es el «Pendiente de protocolo» de abajo.
+verificar.
+
+> **Decisión 24/10/2026 (auditoría 2.6.9, D-13):** el riesgo se **acepta
+> tal cual** — la barrera real es la aprobación manual y no cambia nada el
+> que haya pendientes de más. El «pendiente de protocolo» (ventanas/
+> límites) queda como opción futura si la superficie del funnel crece.
 
 ## Relay
 
@@ -161,4 +171,5 @@ El destino no lo elige el cliente: no hay SSRF.
 ## Pendiente de protocolo
 
 Ventanas de enrolamiento, límite de altas por periodo y alertas de lote para
-mitigar Sybil si el endpoint público se expone. No cambia el formato actual.
+mitigar Sybil si el endpoint público se expone. Opción futura: la decisión
+de 24/10/2026 fue aceptar el riesgo actual (ver nota de arriba).

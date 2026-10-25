@@ -39,8 +39,21 @@ SIGN_ID = "neverred-release"
 SIGN_NS = "neverred-update"
 UPDATED_EXIT = 42
 
+# ── Helpers compartidos con launcher.py ────────────────────────────────
+# app_root/data_dir/ulog vivían por partida doble (launcher.py y aquí).
+# Ahora la fuente es launcher.py; queda un respaldo local mínimo para el
+# caso improbable de que el import falle (p. ej. un empaquetado que no
+# embeba launcher en el exe del actualizador).
+try:
+    import launcher as _launcher
+except ImportError:  # pragma: no cover - solo en empaquetados recortados
+    _launcher = None
+
 
 def data_dir():
+    """Igual que launcher.data_dir (con gancho NEVERRED_APPDATA_DATA)."""
+    if _launcher is not None:
+        return _launcher.data_dir()
     if os.environ.get("NEVERRED_APPDATA_DATA"):
         return os.environ["NEVERRED_APPDATA_DATA"]
     if os.name == "nt":
@@ -52,15 +65,12 @@ def data_dir():
 
 
 def app_root():
+    """Igual que launcher.app_root, con el gancho NEVERRED_APPDATA_ROOT."""
     if os.environ.get("NEVERRED_APPDATA_ROOT"):
         return os.environ["NEVERRED_APPDATA_ROOT"]
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(os.path.abspath(sys.executable))
-    try:
-        import launcher
-        return launcher.app_root()
-    except ImportError:
-        return os.path.dirname(os.path.abspath(__file__))
+    if _launcher is not None:
+        return _launcher.app_root()
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def parse_args(argv):
@@ -77,6 +87,9 @@ def parse_args(argv):
 
 
 def ulog(data, msg):
+    """Igual que launcher.ulog (log con cola de 200 líneas)."""
+    if _launcher is not None:
+        return _launcher.ulog(data, msg)
     try:
         os.makedirs(data, exist_ok=True)
         log = os.path.join(data, "update.log")

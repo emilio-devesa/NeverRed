@@ -159,6 +159,13 @@ class ServerCase(unittest.TestCase):
         self.assertEqual(st, 204)
         self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
 
+    def test_preflight_max_age(self):
+        # El preflight se cachea en el navegador (Access-Control-Max-Age).
+        st, h, _ = call(self.port, "/api/data", "OPTIONS",
+                        origin="http://127.0.0.1:%d" % self.port)
+        self.assertEqual(st, 204)
+        self.assertEqual(h.get("Access-Control-Max-Age"), "86400")
+
     def test_register_login_datos(self):
         tok = mkuser(self.port, "flujo")
         st, _, me = call(self.port, "/api/me", token=tok)
@@ -236,6 +243,35 @@ class ServerCase(unittest.TestCase):
         st, _, _ = call(self.port, "/api/login", "POST",
                         {"email": "adios@t.local", "password": "secreta123"})
         self.assertEqual(st, 401)
+
+    def test_borrar_cuenta_anonimiza_audit(self):
+        # Tras "eliminar mi cuenta", audit_log no conserva su estela
+        # (user_id a NULL y detail vacío — p. ej. el email del register),
+        # conservando el contador de hechos.
+        email = "estela@t.local"
+        tok = mkuser(self.port, "estela")
+        uid = server.db().execute(
+            "SELECT id FROM users WHERE email = ?", (email,)).fetchone()["id"]
+        con = server.db()
+        init_rows = con.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE user_id = ?", (uid,)).fetchone()[0]
+        self.assertGreater(init_rows, 0)   # register + demo… ya quedó auditada
+        con.close()
+        st, _, _ = call(self.port, "/api/account", "DELETE",
+                        {"current": "secreta123"}, token=tok)
+        self.assertEqual(st, 200)
+        con = server.db()
+        self.assertEqual(
+            con.execute("SELECT COUNT(*) FROM audit_log WHERE user_id = ?",
+                        (uid,)).fetchone()[0], 0)
+        self.assertEqual(
+            con.execute("SELECT COUNT(*) FROM audit_log WHERE action = 'register'"
+                        " AND detail = ?", (email,)).fetchone()[0], 0)
+        deletes = con.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'account_delete'"
+            " AND user_id IS NULL AND detail = ''").fetchone()[0]
+        self.assertGreaterEqual(deletes, 1)
+        con.close()
 
     def test_validacion_datos(self):
         tok = mkuser(self.port, "val")
@@ -393,6 +429,26 @@ class ServerCase(unittest.TestCase):
         req.add_header("If-Match", h2["ETag"])
         with urllib.request.urlopen(req) as r:
             self.assertEqual(r.status, 200)
+        # Validador débil exacto: If-None-Match con prefijo W/ real casado con
+        # _etag_matches (el lstrip suelto anterior habría dejado p. ej.
+        # "WoW/…" pasar). Sobre estáticos.
+        etag = None
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/app.js")
+        r = conn.getresponse()
+        r.read()
+        etag = r.headers.get("ETag")
+        self.assertTrue(etag)
+        conn.request("GET", "/app.js", headers={"If-None-Match": 'W/"' + etag.strip('"') + '"'})
+        r = conn.getresponse()
+        r.read()
+        self.assertEqual(r.status, 304)
+        # Y un tag sin correspondencia con el prefijo NO casaba (robustez):
+        conn.request("GET", "/app.js", headers={"If-None-Match": 'WoW/"' + etag.strip('"') + '"'})
+        r = conn.getresponse()
+        r.read()
+        self.assertEqual(r.status, 200)
+        conn.close()
 
     def test_sesion_amortizada(self):
         tok = mkuser(self.port, "amortiza")

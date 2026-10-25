@@ -1,8 +1,9 @@
 # NeverRed — Historial de cambios
 
-## Sin release (pendiente de etiquetado) — P1 de la auditoría 2.6.9
-Aterrizado en `main` como `d0e69ab` (2026-10-24). Sin cambio de versión ni
-de protocolo: las bases instaladas siguen en `v2.6.9` hasta el próximo tag.
+## Sin release (pendiente de etiquetado) — auditoría 2.6.9 (P0/P1/P2)
+Lote P1 aterrizado como `d0e69ab` y lote P2 como commit temático único
+(2026-10-24/25). Sin cambio de versión ni de protocolo: las bases
+instaladas siguen en `v2.6.9` hasta el próximo tag.
 
 - **Registro robusto ante carreras (500 → 409):** el `IntegrityError` del
   índice UNIQUE del email ya no escapa como «Error interno.» cuando dos
@@ -31,6 +32,43 @@ de protocolo: las bases instaladas siguen en `v2.6.9` hasta el próximo tag.
 - **Tests:** backend 73 → 82 (carrera con 8 hilos; cabeceras en
   HTML/JSON/OPTIONS; 9 pruebas nuevas de defensas del panel). Frontal 42
   y selftest Windows 27 intactos.
+
+### Lote P2 — higiene con impacto (2026-10-25)
+
+- **Mercado honesto ante fallos de red:** un timeout o caída de Alpha
+  Vantage ya no consume cuota del día, y ya no responde **404 «No se encontró el
+  ticker»** (mentiroso): responde 429 «Alpha Vantage no responde…».
+  `datetime.utcnow()` (deprecado en 3.12+) sustituido por
+  `datetime.now(timezone.utc)`.
+- **Borrar la cuenta deja cero estela en el registro interno:** `DELETE
+  /api/account` anonimiza las filas de `audit_log` del usuario (el email
+  del «register» incluido) conservando solo el contador de hechos.
+- **Preflights CORS cacheados:** `Access-Control-Max-Age: 86400` — el
+  navegador deja de repetir miles de preflights al día.
+- **ETag más correcto:** la comparación de validadores débiles usa el
+  prefijo real `W/` (el `lstrip` anterior casara cadenas imposibles como
+  `WoW/…`).
+- **Índice redundante eliminado:** `idx_sessions_token` fuera del esquema
+  (token ya es PRIMARY KEY de `sessions`); migración automática
+  `DROP INDEX IF EXISTS` para bases anteriores.
+- **Código muerto fuera del relay:** el bloque roto-inerte
+  (`do_POST.__wrapped__ if False else None` + `for _m… pass`) de
+  `telemetry_relay.py` desaparece; queda el `setattr` real.
+- **Empaquetado más seguro:** los tres build (`macos/build.sh`,
+  `linux/build.sh`, `windows/build.ps1`) **fallan con error** si no
+  deducen versión de git (antes caían a defaults antiguos 1.2.0/1.7.0/2.6.8
+  que habrían etiquetado paquetes viejos).
+- **Actualizadores más robustos:** Linux adopta el protocolo
+  `update_pending`/`update_ok` de Windows — la «omitir versión» solo se
+  marca si la AppImage nueva está viva (un fallo de arranque ya no
+  descarta la versión para siempre). macOS limpia los restos
+  `.nuevo.$$`/`.viejo.$$` de procesos muertos a mitad de swap. Los
+  helpers `app_root`/`data_dir`/`ulog` del actualizador Windows se
+  deduplican (fuente única: `launcher.py`, con respaldo local).
+- **Docs de operación:** límite de confianza del `X-Forwarded-For` del
+  relay y decisión Sybil del enroll público (riesgo aceptado, documentada).
+- **Tests:** backend 86 (36 server + 20 market + 9 forward + 19 pairing +
+  2 integration), frontal 42, selftest Windows 27 — todos en verde.
 
 ## v2.6.9 — Debut en Windows y telemetría permanente
 - **Instalador Windows (Inno Setup 6):** asistente en español que instala
