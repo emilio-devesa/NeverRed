@@ -39,13 +39,14 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 Sigue en la [guía de uso](guia).
 
-## Novedades en preparación (tras auditoría 2.6.9)
+## Novedades en v2.7.0
 
-Antes de la próxima versión, un lote de higiene y seguridad revisa la app a fondo. Lo que notarás:
+Publicado el 26/10/2026. Un buen puñado de mejoras del lote de auditoría 2.6.9, en un solo carril:
 
 - **Mercado más honesto cuando tu conexión falla:** si Alpha Vantage no responde, ya no te dice «no se encontró el ticker» (no es que no exista: es la red) — ahora te lo dice claro: «no responde, prueba otra vez». Y ese fallo ya no consume tu cuota diaria.
 - **«Eliminar cuenta» deja cero rastro:** al borrar tu cuenta se purga también tu estela del registro interno de eventos (como el correo guardado cuando te registraste); solo quedan los hechos como contador estadístico, sin datos personales.
 - **Actualizaciones más robustas:** si una versión nueva no llegara a arrancar, ya no se descarta para siempre — volverá a ofrecerse en el siguiente arranque.
+- **Avisos y confirmaciones con el estilo de la app:** los popups del navegador (`alert`/`confirm`) desaparecen — eliminar un asiento, borrar todo o eliminar tu cuenta se preguntan ahora en la propia ventana de NeverRed, con el mismo dibujo, trampa de foco y tecla Esc (Esc = «Cancelar»).
 - El resto es invisible: preflights CORS cacheados (menos cháchara en la red), un índice de base de datos redundante retirado y los generadores de paquetes ya no etiquetan nunca una versión antigua por defecto.
 
 ## Novedades en v2.6.9
