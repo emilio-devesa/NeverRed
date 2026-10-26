@@ -7,4 +7,4 @@ DB_PATH = os.environ.get(
     "NEVERRED_DB",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "neverred.db"),
 )
-VERSION = os.environ.get("NEVERRED_VERSION", "2.6.9")
+VERSION = os.environ.get("NEVERRED_VERSION", "2.7.0")

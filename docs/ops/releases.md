@@ -29,7 +29,7 @@
    node --test frontend/tests/*.test.js
    ```
 
-   Estado actual: 32 + 19 + 9 + 11 + 2 backend y 42 frontal = **115**.
+   Estado actual: 38 + 20 + 9 + 19 + 2 backend y 42 frontal = **130**.
 
 4. **Commit y tag:**
 

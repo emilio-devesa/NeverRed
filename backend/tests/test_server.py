@@ -78,7 +78,7 @@ class ServerCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         server.init_db()
-        cls.srv = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        cls.srv = server.Server(("127.0.0.1", 0), server.Handler)
         cls.port = cls.srv.server_address[1]
         cls.th = threading.Thread(target=cls.srv.serve_forever, daemon=True)
         cls.th.start()
@@ -121,6 +121,7 @@ class ServerCase(unittest.TestCase):
                                         lambda pw, salt=None: hbarato):
             email = "race@test.local"
             resultados = []
+            exs = []
             lock = threading.Lock()
 
             def go():
@@ -128,8 +129,9 @@ class ServerCase(unittest.TestCase):
                     st, _, _ = call(self.port, "/api/register", "POST",
                                     {"email": email, "password": "Abcdefgh1",
                                      "name": "R"})
-                except Exception:
+                except Exception as e:
                     st = -1
+                    exs.append(repr(e))
                 with lock:
                     resultados.append(st)
 
@@ -139,7 +141,7 @@ class ServerCase(unittest.TestCase):
             for t in hilos:
                 t.join(20)
             self.assertEqual(len(resultados), 8)
-            self.assertNotIn(-1, resultados)
+            self.assertNotIn(-1, resultados, "excepciones: %r" % exs)
             self.assertNotIn(500, resultados)
             self.assertIn(201, resultados)
             self.assertTrue(all(s in (201, 409, 429) for s in resultados),
@@ -158,6 +160,13 @@ class ServerCase(unittest.TestCase):
         st, h, _ = call(self.port, "/api/health", "OPTIONS", origin=None)
         self.assertEqual(st, 204)
         self.assertEqual(h.get("Referrer-Policy"), "no-referrer")
+
+    def test_server_header_sin_python(self):
+        # B-12: Server informa la versión de la app sin destapar la de
+        # Python del sistema (sys_version vacío, como relay y sink).
+        st, h, _ = call(self.port, "/api/health")
+        self.assertEqual(st, 200)
+        self.assertEqual(h.get("Server"), "NeverRed/" + server.VERSION)
 
     def test_preflight_max_age(self):
         # El preflight se cachea en el navegador (Access-Control-Max-Age).
@@ -272,6 +281,32 @@ class ServerCase(unittest.TestCase):
             " AND user_id IS NULL AND detail = ''").fetchone()[0]
         self.assertGreaterEqual(deletes, 1)
         con.close()
+
+    def test_audit_tope_por_tamano(self):
+        # B-8/A-3-9: audit_log no puede engordar sin límite entre purgas por
+        # fecha — tras cada inserción solo se conservan las AUDIT_MAX filas
+        # más recientes (tope configurable con NEVERRED_AUDIT_MAX).
+        limite, anterior = 5, server.AUDIT_MAX
+        server.AUDIT_MAX = limite
+        try:
+            for i in range(12):
+                server.audit("login_fail", detail="tope%d" % i)
+            con = server.db()
+            total = con.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'login_fail'"
+                " AND detail LIKE 'tope%'").fetchone()[0]
+            primera = con.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'login_fail'"
+                " AND detail = 'tope0'").fetchone()[0]
+            ultima = con.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'login_fail'"
+                " AND detail = 'tope11'").fetchone()[0]
+            con.close()
+        finally:
+            server.AUDIT_MAX = anterior
+        self.assertLessEqual(total, limite)   # cabe el tope, no más
+        self.assertEqual(primera, 0)          # las viejas quedan fuera
+        self.assertEqual(ultima, 1)           # las recientes se conservan
 
     def test_validacion_datos(self):
         tok = mkuser(self.port, "val")

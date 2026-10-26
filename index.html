@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NeverRed — Contabilidad personal por partida doble</title>
   <meta name="description" content="NeverRed: empieza y mantén tu contabilidad personal con el sistema de doble partida. Sin números rojos." />
-  <link rel="stylesheet" href="styles.css?v=2.6.9" />
+  <link rel="stylesheet" href="styles.css?v=2.7.0" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0e1116" />
@@ -568,6 +568,31 @@
         <span class="spacer"></span>
         <button class="btn ghost" id="btnCancelCsv">Cancelar</button>
         <button class="btn primary" id="btnSaveCsv" disabled>Importar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AVISO (sustituye al alert() nativo) -->
+  <div class="modal-backdrop" id="msgModal" hidden>
+    <div class="modal small" role="alertdialog" aria-modal="true" aria-labelledby="msgTitle" aria-describedby="msgText">
+      <h3 id="msgTitle">Aviso</h3>
+      <p id="msgText" class="pre-line"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn primary" id="msgOk">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIRMAR (sustituye al confirm() nativo) -->
+  <div class="modal-backdrop" id="confirmModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+      <h3 id="confirmTitle">Confirmar</h3>
+      <p id="confirmText" class="pre-line"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="confirmCancel">Cancelar</button>
+        <span class="spacer"></span>
+        <button class="btn danger" id="confirmOk">Confirmar</button>
       </div>
     </div>
   </div>

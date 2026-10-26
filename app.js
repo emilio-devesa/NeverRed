@@ -4,7 +4,7 @@
 const LS_KEY = 'neverred_v1';
 // Versión de esta carcasa: debe subir con cada release (ver checklist).
 // Si el servidor informa otra, la carcasa está obsoleta y se refresca sola.
-const NEVERRED_BUILD = '2.6.9';
+const NEVERRED_BUILD = '2.7.0';
 // Lógica contable pura compartida con los tests (lib/contabilidad.js)
 const TYPES = NR.TYPES;
 const DEBIT_NATURE = NR.DEBIT_NATURE;
@@ -57,7 +57,13 @@ function setSync(s) {
     : 'Sin conexión o conflicto: tus cambios están a salvo en este navegador'));
 }
 
-function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+function uid() {
+  // UUID estándar cuando el contexto es seguro (https, localhost, file://);
+  // respaldo al generador anterior si la API no está (p. ej. http en LAN).
+  return (globalThis.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
 function load() { try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } }
 /** Clave de caché local por usuario (la fuente de verdad es la BD vía API). */
 function userKey() { return LS_KEY + ':' + (currentUser ? currentUser.id : 'local'); }
@@ -159,8 +165,8 @@ async function syncToServer(force) {
       // sigue a salvo en este navegador, pero no se está sincronizando).
       if (!warnedRejected) {
         warnedRejected = true;
-        alert('El servidor rechazó los datos: ' + (data.error || 'formato inválido') +
-          '\n\nTus cambios siguen guardados en este navegador.');
+        showAlert('El servidor rechazó los datos: ' + (data.error || 'formato inválido') +
+          '\n\nTus cambios siguen guardados en este navegador.', 'No se pudo sincronizar');
       }
       setSync('conflict');
       return false;
@@ -505,7 +511,7 @@ document.getElementById('btnSaveCsv').addEventListener('click', () => {
   csvModal.hidden = true;
   save();
   clearDiarioFilters(); if (maxM) diarioMonth = maxM; renderAll();
-  alert(`Importados ${n} movimientos como asientos cuadrados${dup ? ` (${dup} ya existían).` : '.'}`);
+  showAlert(`Importados ${n} movimientos como asientos cuadrados${dup ? ` (${dup} ya existían).` : '.'}`, 'Importación CSV');
   track('csv_importado', { n_filas: n });
 });
 
@@ -549,10 +555,10 @@ document.getElementById('btnRunRecurring').addEventListener('click', () => {
     });
     r.lastRun = mk; n++;
   }
-  if (!n) { alert('Nada pendiente: las plantillas de este mes ya están generadas.'); return; }
+  if (!n) { showAlert('Nada pendiente: las plantillas de este mes ya están generadas.', 'Recurrentes'); return; }
   save();
   clearDiarioFilters(); diarioMonth = NR.currentMonth(); renderAll();
-  alert(`Generados ${n} asiento(s) del mes.`);
+  showAlert(`Generados ${n} asiento(s) del mes.`, 'Recurrentes');
   track('recurrentes_generados', { n });
 });
 
@@ -639,13 +645,13 @@ function dupeEntry(id) {
     lines: e.lines.map(l => ({ accountId: l.accountId, debit: l.debit, credit: l.credit })),
   });
 }
-document.getElementById('diarioList').addEventListener('click', ev => {
+document.getElementById('diarioList').addEventListener('click', async ev => {
   if (ev.target.id === 'btnDiarioMore') { diarioShown += DIARIO_PAGE; renderDiario(); return; }
   const ed = ev.target.dataset.edit, del = ev.target.dataset.del, dupe = ev.target.dataset.dupe, mon = ev.target.dataset.monthly;
   if (ed) openEntryModal(null, ed);
   if (dupe) dupeEntry(dupe);
   if (mon) makeMonthly(mon);
-  if (del && confirm('¿Eliminar este asiento?')) {
+  if (del && await showConfirm('¿Eliminar este asiento?', { title: 'Eliminar asiento', ok: 'Eliminar' })) {
     state.entries = state.entries.filter(e => e.id !== del); save(); renderAll();
     track('asiento_eliminado');
   }
@@ -1062,8 +1068,8 @@ document.getElementById('btnSaveAcc').addEventListener('click', () => {
   else state.accounts.push({ id: uid(), name, type, code, archived: false });
   save(); accountModal.hidden = true; renderAll();
 });
-document.getElementById('btnReset').addEventListener('click', () => {
-  if (!confirm('¿Restablecer el plan de cuentas base? No se borran tus asientos.')) return;
+document.getElementById('btnReset').addEventListener('click', async () => {
+  if (!await showConfirm('¿Restablecer el plan de cuentas base? No se borran tus asientos.', { title: 'Restablecer plan', ok: 'Restablecer', okClass: 'btn primary' })) return;
   const existing = new Set(state.accounts.map(a => a.code + '|' + a.name));
   BASE_ACCOUNTS.forEach((a, i) => { if (!existing.has(a.code + '|' + a.name)) state.accounts.push({ id: uid(), ...a, archived: false }); });
   save(); renderAll();
@@ -1124,12 +1130,12 @@ document.getElementById('fileImport').addEventListener('change', ev => {
       const ok = await syncToServer();
       if (ok === false) {
         state = JSON.parse(backup); save(); renderAll();
-        alert('Archivo no válido: la base de datos lo ha rechazado. Se han restaurado tus datos.');
+        await showAlert('Archivo no válido: la base de datos lo ha rechazado. Se han restaurado tus datos.', 'Importar');
       } else {
-        alert('Datos importados correctamente.');
+        await showAlert('Datos importados correctamente.', 'Importar');
         track('import_json', { n_asientos: (data.entries || []).length });
       }
-    } catch { alert('Archivo no válido.'); }
+    } catch { await showAlert('Archivo no válido.', 'Importar'); }
   };
   r.readAsText(f); ev.target.value = '';
 });
@@ -1142,8 +1148,8 @@ document.getElementById('btnCsvTrial').addEventListener('click', () => {
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = `neverred-balance-${todayISO()}.csv`; a.click();
 });
-document.getElementById('btnWipe').addEventListener('click', () => {
-  if (!confirm('¿Borrar TODOS los datos de NeverRed? Exporta antes si los quieres conservar.')) return;
+document.getElementById('btnWipe').addEventListener('click', async () => {
+  if (!await showConfirm('¿Borrar TODOS los datos de NeverRed? Exporta antes si los quieres conservar.', { title: 'Borrar todo', ok: 'Borrar todo' })) return;
   localStorage.removeItem(LS_KEY);
   state = { user: { name: '', currency: 'EUR' }, accounts: BASE_ACCOUNTS.map(a => ({ id: uid(), ...a, archived: false })), entries: [], seq: 1, budgets: {}, recurring: [] };
   save(); renderAll();
@@ -1384,12 +1390,14 @@ function showLoadFailure() {
   document.getElementById('btnRetryBackend').hidden = false;
   document.getElementById('btnWorkOffline').hidden = false;
 }
-document.getElementById('btnWorkOffline').addEventListener('click', () => {
+document.getElementById('btnWorkOffline').addEventListener('click', async () => {
   if (!currentUser) {
     authNote.textContent = 'Vuelve a iniciar sesión para continuar.';
     return;
   }
-  const ok = confirm('Vas a trabajar sin conexión.\n\nLo que cambies se guardará solo en este navegador. Cuando vuelva la conexión se te preguntará si quieres subir esta copia o conservar la del servidor.\n\n¿Continuar?');
+  const ok = await showConfirm('Vas a trabajar sin conexión.\n\nLo que cambies se guardará solo en este navegador. Cuando vuelva la conexión se te preguntará si quieres subir esta copia o conservar la del servidor.\n\n¿Continuar?', {
+    title: 'Trabajar sin conexión', ok: 'Continuar', okClass: 'btn primary',
+  });
   if (!ok) return;
   const cached = cachedState();
   state = cached || freshState(currentUser.name);
@@ -1537,8 +1545,8 @@ function enterApp() {
 
 // ---------- Eliminar cuenta ----------
 document.getElementById('btnDeleteAccount').addEventListener('click', async () => {
-  if (!confirm('¿Eliminar tu cuenta y TODA tu contabilidad? Esta acción no se puede deshacer.')) return;
-  if (!confirm('Última confirmación: se borrarán tu usuario y todos tus datos del servidor.')) return;
+  if (!await showConfirm('¿Eliminar tu cuenta y TODA tu contabilidad? Esta acción no se puede deshacer.', { title: 'Eliminar cuenta', ok: 'Eliminar' })) return;
+  if (!await showConfirm('Última confirmación: se borrarán tu usuario y todos tus datos del servidor.', { title: 'Última confirmación', ok: 'Eliminar definitivamente' })) return;
   const current = prompt('Escribe tu contraseña actual para confirmar el borrado:');
   if (current === null) return;
   try {
@@ -1547,13 +1555,13 @@ document.getElementById('btnDeleteAccount').addEventListener('click', async () =
       headers: authHeaders(),
       body: JSON.stringify({ current }),
     });
-    if (!res.ok) { alert('No se pudo eliminar: la contraseña no es correcta.'); return; }
+    if (!res.ok) { await showAlert('No se pudo eliminar: la contraseña no es correcta.', 'Eliminar cuenta'); return; }
   } catch { return; }
   try {
     localStorage.removeItem(userKey());
   } catch {}
   endSession();
-  alert('Tu cuenta ha sido eliminada.');
+  await showAlert('Tu cuenta ha sido eliminada.', 'Eliminar cuenta');
 });
 
 // ---------- Recuperar contraseña ----------
@@ -1694,7 +1702,7 @@ document.getElementById('btnSavePw').addEventListener('click', async () => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { err.textContent = data.error || 'No se pudo cambiar la contraseña.'; return; }
     passwordModal.hidden = true;
-    alert('Contraseña cambiada. Las demás sesiones se han cerrado.');
+    await showAlert('Contraseña cambiada. Las demás sesiones se han cerrado.', 'Contraseña');
   } catch { err.textContent = 'Sin conexión con el servidor.'; }
 });
 
@@ -1923,7 +1931,7 @@ document.getElementById('btnMarketKeySave').addEventListener('click', async () =
   } catch (e) { err.textContent = e.message; }
 });
 document.getElementById('btnMarketKeyDel').addEventListener('click', async () => {
-  if (!confirm('¿Quitar la clave de Alpha Vantage de este servidor? Los tickers se conservan.')) return;
+  if (!await showConfirm('¿Quitar la clave de Alpha Vantage de este servidor? Los tickers se conservan.', { title: 'Clave de Alpha Vantage', ok: 'Quitar clave', okClass: 'btn primary' })) return;
   try {
     await fetch(api('/api/market/key'), { method: 'DELETE', headers: authHeaders() });
     marketConfigured = false;
@@ -2170,7 +2178,52 @@ function renderView(name) {
 // Repinta solo la vista visible: las ocultas se actualizan al entrar (antes se
 // reconstruían cientos de nodos SVG en cada guardado, sin que nadie los viera).
 function renderAll() { renderView(activeView); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; consentModal.hidden = true; } });
+
+// ---------- Diálogos propios (sustituyen a alert()/confirm() nativos) ----------
+// Sobre la infraestructura .modal-backdrop: heredan la trampa de foco (Tab) y
+// la coherencia visual. Devuelven promesas: showConfirm() resuelve true/false
+// (Esc, «Cancelar» o clic en el fondo = false) y showAlert() al aceptar.
+const msgModal = document.getElementById('msgModal');
+const confirmModal = document.getElementById('confirmModal');
+let dialogResolve = null;
+function closeDialog(modal, value) {
+  if (modal.hidden) return;
+  modal.hidden = true;
+  if (dialogResolve) { const r = dialogResolve; dialogResolve = null; r(value); }
+}
+function showAlert(message, title = 'Aviso') {
+  return new Promise(resolve => {
+    document.getElementById('msgTitle').textContent = title;
+    document.getElementById('msgText').textContent = message;
+    dialogResolve = resolve;
+    msgModal.hidden = false;
+    document.getElementById('msgOk').focus();
+  });
+}
+function showConfirm(message, opts = {}) {
+  return new Promise(resolve => {
+    document.getElementById('confirmTitle').textContent = opts.title || 'Confirmar';
+    document.getElementById('confirmText').textContent = message;
+    const ok = document.getElementById('confirmOk');
+    ok.textContent = opts.ok || 'Confirmar';
+    ok.className = opts.okClass || 'btn danger';   // rojo por defecto: pensado para acciones destructivas
+    dialogResolve = resolve;
+    confirmModal.hidden = false;
+    document.getElementById('confirmCancel').focus();
+  });
+}
+document.getElementById('msgOk').addEventListener('click', () => closeDialog(msgModal));
+document.getElementById('confirmOk').addEventListener('click', () => closeDialog(confirmModal, true));
+document.getElementById('confirmCancel').addEventListener('click', () => closeDialog(confirmModal, false));
+msgModal.addEventListener('click', e => { if (e.target === msgModal) closeDialog(msgModal); });
+confirmModal.addEventListener('click', e => { if (e.target === confirmModal) closeDialog(confirmModal, false); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Los diálogos propios primero: Esc en showConfirm() significa «no».
+  if (!msgModal.hidden) { closeDialog(msgModal); return; }
+  if (!confirmModal.hidden) { closeDialog(confirmModal, false); return; }
+  entryModal.hidden = true; accountModal.hidden = true; passwordModal.hidden = true; resetModal.hidden = true; csvModal.hidden = true; sessionsModal.hidden = true; telemetryModal.hidden = true; consentModal.hidden = true;
+});
 // Trampa de foco: el Tab no sale del modal abierto (accesibilidad)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;

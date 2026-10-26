@@ -245,6 +245,10 @@ def pie_svg(pairs, size=180):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "NeverRedSink/2"
+    sys_version = ""  # sin «Python/x.y» en Server (B-12)
+
+    def version_string(self):
+        return (self.server_version or "").strip()  # sin espacio colgante
 
     def log_message(self, fmt, *args):
         print("[sink] " + fmt % args)

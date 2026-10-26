@@ -1,9 +1,12 @@
 # NeverRed — Historial de cambios
 
-## Sin release (pendiente de etiquetado) — auditoría 2.6.9 (P0/P1/P2)
-Lote P1 aterrizado como `d0e69ab` y lote P2 como commit temático único
-(2026-10-24/25). Sin cambio de versión ni de protocolo: las bases
-instaladas siguen en `v2.6.9` hasta el próximo tag.
+## v2.7.0 — consolidación tras la auditoría 2.6.9
+Publicado el 2026-10-26. Esta versión recoge en un solo carril los tres
+lotes (P0/P1/P2/P3) de la auditoría de la 2.6.9: seguridad y carreras en
+el registro, higiene con impacto en el mercado y el borrado, y acabados
+de usabilidad (modales propios, cabecera `Server:` discreta, tope del
+registro interno). Sin migración de datos: las bases 2.6.9 siguen
+funcionando tal cual (con una limpieza de índice automática al arrancar).
 
 - **Registro robusto ante carreras (500 → 409):** el `IntegrityError` del
   índice UNIQUE del email ya no escapa como «Error interno.» cuando dos
@@ -69,6 +72,48 @@ instaladas siguen en `v2.6.9` hasta el próximo tag.
   relay y decisión Sybil del enroll público (riesgo aceptado, documentada).
 - **Tests:** backend 86 (36 server + 20 market + 9 forward + 19 pairing +
   2 integration), frontal 42, selftest Windows 27 — todos en verde.
+
+### Lote P3 — acabados y aceptaciones (2026-10-25)
+
+- **Adiós a los `alert()`/`confirm()` nativos:** los 17 avisos y
+  confirmaciones del frontal (eliminar asiento, borrar todo, eliminar
+  cuenta, importar, trabajar sin conexión…) pasan a los modales propios de
+  la app (`showAlert`/`showConfirm`, promesas sobre la infraestructura
+  `.modal-backdrop`): mismo estilo que el resto de la interfaz, no cortan
+  el hilo de render, heredan la trampa de foco (Tab) y se cierran con Esc
+  (un confirm con Esc = «no»). Los destructivos van con botón rojo
+  (`.btn.danger`) y los de información con el verde primario.
+- **Cabecera `Server:` discreta:** `Server: NeverRed/2.6.9` — se deja de
+  anunciar la versión de Python del sistema (y el espacio colgante del
+  encabezado por defecto); mismo criterio ya aplicado en el relay.
+- **IDs estándar en el frontal:** `uid()` usa `crypto.randomUUID()` cuando
+  el contexto es seguro (https/localhost), con respaldo al generador
+  anterior si la API no está (HTTP en LAN). Nunca fue un ID de seguridad;
+  ahora es además el estándar.
+- **Un solo `stop_server`:** el lanzador AppImage (AppRun) deja de llevar
+  su copia inline de la función y carga la de `update-common.sh`, que ya
+  viaja dentro del paquete (fuente única junto a los check-update de
+  macOS/Linux; verificado con arnés: PID real de `server.py` detenido,
+  pidfiles rancios y basura cubiertos).
+- **`audit_log` con tope por tamaño:** además de la purga por antigüedad
+  (90 días), la tabla no supera 5 000 filas (configurable con
+  `NEVERRED_AUDIT_MAX`) — los `login_fail` no pueden engordar la BD sin
+  límite entre purgas. Test nuevo.
+- **Acuerdos documentados (sin código):** el triple escaneo del dashboard
+  y la duplicación conceptual `seed_demo`/`demo_data` se aceptan tal cual
+  hasta que el volumen de datos lo pida; la auditoría además dedujo mal el
+  hallazgo F-7 (Esc y trampa de foco ya estaban implementados desde el
+  27-29/09 — verificado con `git blame`).
+- **Backlog del servidor más ancho (hallazgo nuevo durante el lote):** el
+  `listen` usaba el backlog por defecto de TCPServer (5); una ráfaga de 8
+  conexiones simultáneas dejaba fuera 2 con «Connection refused» sin rastro
+  en el servidor (reproducido y capturado por el test de carrera del P1
+  de forma intermitente). Ahora `request_queue_size = 128` y el test de
+  carrera pasó 10/10 limpio.
+- **Tests:** backend 86 → 88 (38 server: +tope de `audit_log`, +cabecera
+  `Server`), frontal 42, selftest Windows 27 — todos en verde. La suite
+  `test_server` usa ahora la clase de producción (`Server`) en vez de la
+  base de stdlib.
 
 ## v2.6.9 — Debut en Windows y telemetría permanente
 - **Instalador Windows (Inno Setup 6):** asistente en español que instala

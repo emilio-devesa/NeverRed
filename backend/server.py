@@ -342,6 +342,12 @@ def audit(action, user_id=None, detail=""):
         con = db()
         con.execute("INSERT INTO audit_log (ts, user_id, action, detail) VALUES (?,?,?,?)",
                     (int(time.time()), user_id, action, str(detail)[:200]))
+        # Rotación por tamaño: se conservan las AUDIT_MAX más recientes
+        # (empate de ts resuelto por orden de inserción con rowid).
+        con.execute(
+            "DELETE FROM audit_log WHERE rowid NOT IN"
+            " (SELECT rowid FROM audit_log ORDER BY ts DESC, rowid DESC LIMIT ?)",
+            (AUDIT_MAX,))
         con.commit()
         con.close()
     except Exception:
@@ -352,6 +358,9 @@ APP_URL = os.environ.get("NEVERRED_APP_URL", "http://127.0.0.1:8000").rstrip("/"
 RESET_TTL = int(os.environ.get("NEVERRED_RESET_TTL", "3600"))
 SESSION_COOKIE = "nr_session"
 COOKIE_SECURE = False  # se activa al servir por TLS (ver main)
+# Tope de audit_log por tamaño (además de la purga por antigüedad AUDIT_DAYS):
+# los login_fail entre purgas no deben poder engordar la BD sin límite (B-8).
+AUDIT_MAX = max(100, int(os.environ.get("NEVERRED_AUDIT_MAX", "5000")))
 
 
 def _send_reset_email(to, link):
@@ -386,6 +395,14 @@ def _send_reset_email(to, link):
 # ---------------- Servidor HTTP ----------------
 class Handler(StaticMixin, BaseHTTPRequestHandler):
     server_version = "NeverRed/" + VERSION
+    # Sin «Python/x.y» en Server: no aporta y sí revela el entorno
+    # (mismo criterio que el relay y el sink; B-12). Se redefine
+    # version_string() para además no dejar el espacio colgante de
+    # «server_version + ' ' + sys_version» cuando sys_version es vacío.
+    sys_version = ""
+
+    def version_string(self):
+        return (self.server_version or "").strip()
     # HTTP/1.1 permite keep-alive; todas las respuestas van con Content-Length
     # (o son 204/304 sin cuerpo) para que el framing sea inequívoco.
     protocol_version = "HTTP/1.1"
@@ -1404,6 +1421,11 @@ class Server(ThreadingHTTPServer):
     # Cada conexión tiene su hilo; daemon para que un cliente lento no impida
     # cerrar el proceso (el timeout de Handler corta la conexión a los 15 s).
     daemon_threads = True
+    # Backlog por defecto de TCPServer (5) se queda corto en una ráfaga real
+    # (p. ej. pestañas arrancando a la vez o reintentos simultáneos): los
+    # connects que no cabían en la cola morían con «Connection refused»
+    # sin razón visible y sin registro en el servidor.
+    request_queue_size = 128
 
 
 def main():

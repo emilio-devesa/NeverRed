@@ -1,6 +1,6 @@
 /* NeverRed service worker: la carcasa funciona sin conexión; la API siempre va a red.
  * HTML/JS/CSS en red-primero para recibir actualizaciones; el resto, caché-primero. */
-const CACHE = 'neverred-v9';
+const CACHE = 'neverred-v10';
 const MAX_ENTRIES = 40;
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'lib/contabilidad.js', 'icon.svg', 'manifest.webmanifest'];
 const SHELL = new Set(['/', '/index.html', '/styles.css', '/app.js', '/lib/contabilidad.js', '/icon.svg', '/manifest.webmanifest']);

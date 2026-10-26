@@ -291,15 +291,15 @@ o por cron cada noche (ver cabecera del script). La app también permite
 Exportar JSON manual. Tests:
 
 ```bash
-python3 backend/tests/test_server.py   # backend: 32 tests (solo stdlib)
-python3 backend/tests/test_market.py    # mercado: 19 tests (sin red, con mock)
+python3 backend/tests/test_server.py   # backend: 38 tests (solo stdlib)
+python3 backend/tests/test_market.py    # mercado: 20 tests (sin red, con mock)
 python3 backend/tests/test_telemetry_forward.py   # forward: 9 tests
-python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 11 tests
+python3 backend/tests/test_telemetry_pairing.py   # emparejamiento: 19 tests
 python3 backend/tests/test_integration.py   # integración HTTP: 2 tests
 node --test frontend/tests/*.test.js    # frontal: 42 tests (contabilidad, mercado, simuladores y SW; sin dependencias)
 ```
 
-Total: **115** (73 backend + 42 frontal).
+Total: **130** (88 backend + 42 frontal). Además el selftest de Windows (27) corre en su máquina.
 
 ## Releases (automáticas con GitHub Actions)
 

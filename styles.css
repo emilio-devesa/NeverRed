@@ -73,6 +73,9 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 6px; }
 .btn.primary { background: var(--green); border-color: var(--green); color: #06130b; font-weight: 700; }
 .btn.ghost { background: transparent; }
 .btn.small { padding: 5px 10px; font-size: 12px; }
+.btn.danger { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
+.btn.danger:hover { border-color: var(--red); opacity: .9; }
+.pre-line { white-space: pre-line; }
 .quick-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
 .toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }

@@ -83,7 +83,10 @@ def client_ip(args):
 class RelayHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "NeverRedRelay"
-    sys_version = ""
+    sys_version = ""  # sin «Python/x.y» en Server (B-12)
+
+    def version_string(self):
+        return (self.server_version or "").strip()  # sin espacio colgante
 
     # ---------- infra ----------
     def _cors(self):
