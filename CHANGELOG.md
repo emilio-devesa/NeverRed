@@ -1,5 +1,20 @@
 # NeverRed — Historial de cambios
 
+## Sin release (en `main`, sin etiquetar) — 2026-10-28
+
+- **Monitor de telemetría: aprobación desde Safari.** El botón «Aprobar» del
+  panel devolvía «Solicitud cruzada rechazada.» en Safari (modo privado),
+  porque ese navegador manda `Origin: null` o un `Origin` sin puerto al
+  enviar el formulario; la defensa anti-CSRF lo trataba como origen
+  cruzado. `_misma_origen()` ahora tolera ambos casos cuando el `Host` es
+  loopback y el token CSRF es válido (la barrera principal sigue siendo el
+  token; el DNS-rebinding queda cubierto por la defensa de `Host`). La
+  protección contra orígenes cruzados reales y el rebinding siguen activas
+  (tests `test_05`/`test_06` en verde). No cambia el protocolo ni los datos;
+  basta re-copiar `telemetry_sink.py` en
+  `~/Library/Application Support/NeverRed-monitor/` y hacer
+  `launchctl bootout`/`bootstrap`.
+
 ## v2.7.0 — consolidación tras la auditoría 2.6.9
 Publicado el 2026-10-26. Esta versión recoge en un solo carril los tres
 lotes (P0/P1/P2/P3) de la auditoría de la 2.6.9: seguridad y carreras en

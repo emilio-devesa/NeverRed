@@ -76,7 +76,12 @@ login, así que sus tres rutas de control (panel, `/api/sink-summary` y
    rutas de control (el rebinding pide por el dominio del atacante);
 2. **`Origin`/`Referer` propios** si el navegador los manda — un
    formulario cruzado de otra web (CSRF a localhost) queda rechazado; el
-   CLI sin cabeceras de navegador sigue admitido;
+   CLI sin cabeceras de navegador sigue admitido. Tolerancia para clientes
+   reales: un `Origin` con valor `null` (Safari en modo privado, webviews)
+   o sin puerto (quirk de Safari) se trata como «sin Origin» siempre que
+   el `Host` sea loopback y el token CSRF sea válido — la barrera
+   principal sigue siendo el token, y el DNS-rebinding queda cubierto por
+   la defensa 1.
 3. **Token anti-CSRF** (TTL 1 h, no de un solo uso, tope 1000 activos) —
    lo emite el propio HTML del panel (campo oculto `name=csrf` en
    approve/reject/revoke) y `/api/sink-summary`; el POST lo exige.

@@ -282,17 +282,36 @@ class Handler(BaseHTTPRequestHandler):
     def _misma_origen(self):
         """True si la petición no viene de un navegador (sin Origin/Referer,
         p. ej. CLI con curl) o si apunta a este mismo sink. Un POST de
-        formulario cruzado web manda Origin externo: rechazado (anti-CSRF)."""
+        formulario cruzado web manda Origin externo: rechazado (anti-CSRF).
+
+        Tolerancias para clientes reales (p. ej. Safari) que mandan Origin
+        sin puerto o como ``null``: en esos casos se confía en el Host (ya
+        validado como loopback) y en el token CSRF, que sigue siendo la
+        barrera principal. Sin Origin/Referer el CLI sigue admitido."""
         src = self.headers.get("Origin") or self.headers.get("Referer")
-        if not src:
+        if not src or src.strip().lower() == "null":
             return True
         try:
             u = urlparse(src)
         except ValueError:
             return False
         host = (u.hostname or "").lstrip("[").rstrip("]")
-        port = u.port or (443 if u.scheme == "https" else 80)
-        return host in _TS_LOCALHOST and port == self.server.server_address[1]
+        if host not in _TS_LOCALHOST:
+            return False
+        port = u.port
+        if port is None:
+            # Origin sin puerto (p. ej. Safari): tomar el puerto del Host.
+            try:
+                hname = urlparse("//" + (self.headers.get("Host") or "")).hostname
+                if (hname or "").lstrip("[").rstrip("]") in _TS_LOCALHOST:
+                    port = self.server.server_address[1]
+                else:
+                    port = 443 if u.scheme == "https" else 80
+            except ValueError:
+                port = 443 if u.scheme == "https" else 80
+        if port is None:
+            port = 443 if u.scheme == "https" else 80
+        return port == self.server.server_address[1]
 
     def _authorized(self):
         auth = self.headers.get("Authorization") or ""
