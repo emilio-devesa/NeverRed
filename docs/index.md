@@ -31,11 +31,11 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 ## Qué verás
 
-![Acceso](NeverRed-Login.jpeg)
-![Inicio](NeverRed-Inicio.jpeg)
-![Libro diario](NeverRed-Diario.jpeg)
-![Informes](NeverRed-Informes.jpeg)
-![Herramientas](NeverRed-Herramientas.jpeg)
+![Acceso](assets/screenshots/NeverRed-Login.jpeg)
+![Inicio](assets/screenshots/NeverRed-Inicio.jpeg)
+![Libro diario](assets/screenshots/NeverRed-Diario.jpeg)
+![Informes](assets/screenshots/NeverRed-Informes.jpeg)
+![Herramientas](assets/screenshots/NeverRed-Herramientas.jpeg)
 
 Sigue en la [guía de uso](guia).
 

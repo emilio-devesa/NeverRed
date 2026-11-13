@@ -11,12 +11,12 @@ permalink: /guia/
 1. Descarga el `.dmg` de [Releases](https://github.com/emilio-devesa/NeverRed/releases) (vale para Intel y Apple Silicon), ábrelo y arrastra **NeverRed** a **Aplicaciones**.
 2. Haz doble clic en NeverRed. Como la app aún no lleva firma de pago de Apple, macOS la bloquea con el aviso **"No se ha abierto NeverRed.app"**. No es un virus: pulsa **Aceptar**.
 
-   ![Aviso de Gatekeeper](NeverRed-MacOS-GateKeeper-Alerta.png)
+   ![Aviso de Gatekeeper](assets/screenshots/NeverRed-MacOS-GateKeeper-Alerta.png)
 3. Abre **Ajustes → Privacidad y seguridad**, baja hasta el apartado de seguridad y verás el aviso del bloqueo con el botón **Abrir igualmente**. Púlsalo y confirma una vez más.
 
-   ![Abrir igualmente en Privacidad y seguridad](NeverRed-MacOS-Ajustes-Privacidad-y-seguridad.png)
+   ![Abrir igualmente en Privacidad y seguridad](assets/screenshots/NeverRed-MacOS-Ajustes-Privacidad-y-seguridad.png)
 
-   ![Confirmación](NeverRed-MacOS-GateKeeper-Confirmación.png)
+   ![Confirmación](assets/screenshots/NeverRed-MacOS-GateKeeper-Confirmación.png)
 4. La app arranca su servidor y se abre en tu navegador. Solo pasa la primera vez.
 
 A partir de ahí la app abre con normalidad. Las siguientes actualizaciones llegan solas desde la propia app y no necesitan repetir este paso.
