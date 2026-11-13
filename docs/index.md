@@ -4,7 +4,7 @@ title: Inicio
 ---
 
 <section class="hero">
-  <div class="hero-grid">
+  <div class="wrap hero-grid">
     <div>
       <span class="badge"><span class="badge-dot"></span> v2.7.0 · publicada y firmada</span>
       <h1>Contabilidad personal por partida doble. <span class="accent">Nunca en rojo.</span></h1>
@@ -25,6 +25,8 @@ title: Inicio
     </figure>
   </div>
 </section>
+
+<div class="wrap">
 
 ## Empezar en 1 minuto
 
@@ -107,3 +109,4 @@ Nueva pestaña **Herramientas**: **Mercado** (gráficas de tickers como AAPL o A
 ## Novedades en v2.0.0
 
 **Telemetría opcional**: la app puede registrar qué funciones usas (solo conteos, nunca importes ni textos) para ayudar a mejorarla. Apagada por defecto —se pregunta una sola vez al entrar— y puedes activarla o desactivarla cuando quieras desde el pie de la app, en **Telemetría**.
+</div>
