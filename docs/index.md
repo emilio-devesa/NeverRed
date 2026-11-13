@@ -3,11 +3,28 @@ layout: home
 title: Inicio
 ---
 
-# NeverRed 🟢
-
-Contabilidad personal con el sistema de **doble partida**. Simple para empezar, rigurosa para mantener.
-
-> Cada euro tiene dos caras: de dónde viene y a dónde va. Si **debe = haber**, nunca estarás en rojo sin saberlo.
+<section class="hero">
+  <div class="hero-grid">
+    <div>
+      <span class="badge"><span class="badge-dot"></span> v2.7.0 · publicada y firmada</span>
+      <h1>Contabilidad personal por partida doble. <span class="accent">Nunca en rojo.</span></h1>
+      <p class="lead">Cada euro tiene dos caras: de dónde viene y a dónde va. Si <strong>debe = haber</strong>, nunca estarás en rojo sin saberlo. Simple para empezar, rigurosa para mantener.</p>
+      <div class="hero-actions">
+        <a class="button primary" href="https://github.com/emilio-devesa/NeverRed/releases/latest">Descargar la última versión</a>
+        <a class="button ghost" href="{{ '/guia/' | relative_url }}">Guía de uso</a>
+      </div>
+      <dl class="hero-stats">
+        <div><dt>Plataformas</dt><dd>macOS · Windows · Linux</dd></div>
+        <div><dt>Instalación</dt><dd>Sin Python, sin admin</dd></div>
+        <div><dt>Actualizaciones</dt><dd>Automáticas y firmadas</dd></div>
+      </dl>
+    </div>
+    <figure class="hero-shot">
+      <img src="{{ '/assets/screenshots/NeverRed-Inicio.jpeg' | relative_url }}" alt="Pantalla de inicio de NeverRed" loading="eager">
+      <figcaption>Inicio: saldos, evolución y acceso rápido a todo.</figcaption>
+    </figure>
+  </div>
+</section>
 
 ## Empezar en 1 minuto
 
@@ -31,11 +48,13 @@ python3 backend/seed_demo.py   # demo@neverred.local / DemoNeverRed2026
 
 ## Qué verás
 
-![Acceso](assets/screenshots/NeverRed-Login.jpeg)
-![Inicio](assets/screenshots/NeverRed-Inicio.jpeg)
-![Libro diario](assets/screenshots/NeverRed-Diario.jpeg)
-![Informes](assets/screenshots/NeverRed-Informes.jpeg)
-![Herramientas](assets/screenshots/NeverRed-Herramientas.jpeg)
+<div class="shot-grid">
+  <figure class="shot"><img src="{{ '/assets/screenshots/NeverRed-Login.jpeg' | relative_url }}" alt="Acceso" loading="lazy"><figcaption>Acceso</figcaption></figure>
+  <figure class="shot"><img src="{{ '/assets/screenshots/NeverRed-Inicio.jpeg' | relative_url }}" alt="Inicio" loading="lazy"><figcaption>Inicio</figcaption></figure>
+  <figure class="shot"><img src="{{ '/assets/screenshots/NeverRed-Diario.jpeg' | relative_url }}" alt="Libro diario" loading="lazy"><figcaption>Libro diario</figcaption></figure>
+  <figure class="shot"><img src="{{ '/assets/screenshots/NeverRed-Informes.jpeg' | relative_url }}" alt="Informes" loading="lazy"><figcaption>Informes</figcaption></figure>
+  <figure class="shot"><img src="{{ '/assets/screenshots/NeverRed-Herramientas.jpeg' | relative_url }}" alt="Herramientas" loading="lazy"><figcaption>Herramientas</figcaption></figure>
+</div>
 
 Sigue en la [guía de uso](guia).
 

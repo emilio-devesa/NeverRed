@@ -1,6 +1,6 @@
 title: NeverRed
 description: Contabilidad personal por partida doble. Nunca en rojo.
-theme: minima
+# Sin tema gem: el sitio usa los layouts propios de _layouts/ y assets/site.css.
 plugins: []
 header_pages:
   - index.md
