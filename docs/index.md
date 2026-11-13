@@ -26,7 +26,7 @@ title: Inicio
   </div>
 </section>
 
-<div class="wrap">
+<div class="wrap" markdown="1">
 
 ## Empezar en 1 minuto
 
