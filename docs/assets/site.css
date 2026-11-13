@@ -279,17 +279,11 @@ main hr {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #c084fc);
-  color: #0b1020;
-  font-family: var(--mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: -0.06em;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .brand-text strong {
